@@ -1,0 +1,71 @@
+"""Unit tests for the settlement / day-window logic — the contract everything
+else depends on. Uses synthetic series so the windowing and rounding are tested
+independently of any live data."""
+
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
+
+import settlement as S
+from config import TIMEZONE
+
+TZ = ZoneInfo(TIMEZONE)
+DAY = date(2025, 7, 15)
+
+
+def _series(pairs):
+    """pairs: list of (hour_offset_from_midnight, temp) -> (times, temps)."""
+    start = datetime(DAY.year, DAY.month, DAY.day, tzinfo=TZ)
+    times = [start + timedelta(hours=h) for h, _ in pairs]
+    temps = [t for _, t in pairs]
+    return times, temps
+
+
+def test_high_low_within_day():
+    times, temps = _series([(3, 78.4), (15, 99.6), (23, 80.0)])
+    hi, lo = S.day_high_low(times, temps, DAY)
+    assert hi == 100  # 99.6 rounds to 100
+    assert lo == 78   # 78.4 rounds to 78
+
+
+def test_excludes_other_days():
+    # A scorching reading at the next midnight must NOT count for DAY.
+    start = datetime(DAY.year, DAY.month, DAY.day, tzinfo=TZ)
+    times = [start + timedelta(hours=12), start + timedelta(days=1)]  # noon, next 00:00
+    temps = [95.0, 110.0]
+    hi, _ = S.day_high_low(times, temps, DAY)
+    assert hi == 95  # 110 at next-day midnight excluded
+
+
+def test_empty_returns_none():
+    assert S.day_high_low([], [], DAY) == (None, None)
+
+
+def test_observed_so_far_respects_now():
+    times, temps = _series([(6, 70.0), (10, 85.0), (16, 99.0)])
+    now = datetime(DAY.year, DAY.month, DAY.day, 11, tzinfo=TZ)  # before the 16:00 peak
+    mx, mn = S.observed_so_far(times, temps, DAY, now)
+    assert mx == 85.0  # afternoon peak not yet observed
+    assert mn == 70.0
+
+
+def test_bin_for_temp():
+    assert S.bin_for_temp(95.4) == "95"
+    assert S.bin_for_temp(95.6) == "96"
+    assert S.bin_for_temp(40) == f"<= {S.BIN_LOW}"
+    assert S.bin_for_temp(130) == f">= {S.BIN_HIGH}"
+
+
+def test_round_half_up_matches_nws_not_bankers():
+    # Python's built-in round() would send 90.5 -> 90 (banker's); NWS/WU send it up.
+    assert S.round_half_up(90.5) == 91
+    assert S.round_half_up(91.5) == 92
+    assert S.round_half_up(89.49) == 89
+    assert S.round_half_up(89.6) == 90  # so 89.6 settles as 90, not "greater than 90"
+
+
+def test_greater_than_uses_whole_degree():
+    # "Greater than 90" needs the rounded high to be 91+, so an 89.6 (=>90) loses.
+    import model
+    probs = {"89": 0.2, "90": 0.5, "91": 0.2, "92": 0.1}
+    assert abs(model.prob_greater_than(probs, 90) - 0.3) < 1e-9   # 91 + 92
+    assert abs(model.prob_at_least(probs, 90) - 0.8) < 1e-9       # 90 or hotter

@@ -1,0 +1,8 @@
+requests
+numpy
+scipy
+pandas
+streamlit
+streamlit-autorefresh
+tzdata
+pytest

@@ -1,0 +1,187 @@
+"""Backtest / calibration scoring.
+
+Replays the distributional pipeline over recent days using archived forecasts
+and KDFW actuals, then reports whether the probabilities are *honest*:
+
+  * MAE of the consensus point estimate (sanity).
+  * Brier score and CRPS over the bins (lower = sharper + accurate).
+  * Interval coverage — of the days, how often the actual fell inside the
+    predicted 50% / 80% central intervals. Well-calibrated => ~50% / ~80%.
+  * A no-bias-correction baseline, to confirm calibration actually helps.
+
+This validates the core engine (consensus + bias + calibrated spread + binning).
+It uses deterministic archived forecasts as input because per-member ensemble
+history isn't freely available at scale; the live model adds real ensemble
+spread on top, so live sharpness is at least as good as shown here.
+"""
+
+from __future__ import annotations
+
+import math
+from datetime import date, timedelta
+
+import calibration
+import model
+from config import BIN_HIGH, BIN_LOW, bin_labels
+from model import _bin_probabilities, _MIN_SIGMA
+from settlement import bin_for_temp, day_high_low
+from sources import open_meteo_models, station_history
+
+LABELS = bin_labels()
+
+
+def _label_to_center(label: str) -> float:
+    if label.startswith("<="):
+        return float(label.split()[-1])
+    if label.startswith(">="):
+        return float(label.split()[-1])
+    return float(label)
+
+
+def _brier(probs: dict, actual_label: str) -> float:
+    return sum((p - (1.0 if lab == actual_label else 0.0)) ** 2
+               for lab, p in probs.items())
+
+
+def _crps(probs: dict, actual: float) -> float:
+    """CRPS via the integral of (CDF_pred - 1[x>=actual])^2 over bin centers."""
+    cum = 0.0
+    total = 0.0
+    for lab in LABELS:
+        cum += probs[lab]
+        x = _label_to_center(lab)
+        indicator = 1.0 if x >= actual else 0.0
+        total += (cum - indicator) ** 2
+    return total
+
+
+def contract_points(probs: dict, actual: float, variable: str) -> list[tuple]:
+    """(predicted_YES, outcome) pairs over the informative part of the ladder.
+
+    For each integer strike where the model's YES probability is non-degenerate
+    (between 1% and 99%), pair the predicted probability with whether the
+    contract actually resolved YES given the realized `actual` (rounded) extreme.
+    These feed the reliability diagram and use the *traded* contract semantics
+    via model.prob_for_contract (High = "Greater than T", Low = "Lower than T").
+    """
+    kind = ">" if variable == "high" else "<"
+    pts = []
+    for strike in range(BIN_LOW, BIN_HIGH + 1):
+        p = model.prob_for_contract(probs, kind, strike)
+        if not (0.01 <= p <= 0.99):
+            continue
+        won = (actual > strike) if variable == "high" else (actual < strike)
+        pts.append((p, 1.0 if won else 0.0))
+    return pts
+
+
+def reliability_bins(points: list[tuple], n: int = 10) -> list[dict]:
+    """Bin (predicted, outcome) pairs into `n` equal-width probability buckets.
+
+    Returns one row per non-empty bucket: mean predicted probability vs the
+    observed hit frequency. A well-calibrated model has predicted ≈ observed.
+    """
+    buckets: list[list[tuple]] = [[] for _ in range(n)]
+    for p, o in points:
+        buckets[min(int(p * n), n - 1)].append((p, o))
+    out = []
+    for b in buckets:
+        if not b:
+            continue
+        out.append({
+            "predicted": round(sum(p for p, _ in b) / len(b), 3),
+            "observed": round(sum(o for _, o in b) / len(b), 3),
+            "n": len(b),
+        })
+    return out
+
+
+def _interval_contains(probs: dict, actual_label: str, level: float) -> bool:
+    """Does the central `level` mass interval (by cumulative prob) include the
+    actual bin?"""
+    lo_tail = (1 - level) / 2
+    cum = 0.0
+    lo_idx = hi_idx = None
+    for i, lab in enumerate(LABELS):
+        prev = cum
+        cum += probs[lab]
+        if lo_idx is None and cum > lo_tail:
+            lo_idx = i
+        if cum >= 1 - lo_tail and hi_idx is None:
+            hi_idx = i
+            break
+    hi_idx = hi_idx if hi_idx is not None else len(LABELS) - 1
+    actual_idx = LABELS.index(actual_label)
+    return lo_idx <= actual_idx <= hi_idx
+
+
+def run(days: int = 60) -> dict:
+    end = date.today() - timedelta(days=1)
+    start = end - timedelta(days=days)
+    actual = station_history.fetch_actual(start, end)
+    series = open_meteo_models.fetch_historical(start, end)
+    calib = calibration.get(refresh=True) or {}
+    bias = calib.get("bias", {}).get("deterministic", {})
+    sigma_cfg = calib.get("sigma", {})
+
+    metrics = {}
+    for var in ("high", "low"):
+        sigma = max(sigma_cfg.get(var) or 3.0, _MIN_SIGMA)
+        rec = {"mae": [], "brier": [], "crps": [], "cov50": [], "cov80": [],
+               "mae_base": [], "crps_base": []}
+        rel_points: list[tuple] = []
+        for day, (act_hi, act_lo) in actual.items():
+            act = act_hi if var == "high" else act_lo
+            samples = []
+            for _lab, (t, v) in series.items():
+                hi, lo = day_high_low(t, v, day)
+                if hi is None:
+                    continue
+                samples.append(hi if var == "high" else lo)
+            if not samples:
+                continue
+            actual_label = bin_for_temp(act)
+
+            corrected = [s - bias.get(var, 0.0) for s in samples]
+            probs = _bin_probabilities(corrected, sigma)
+            mu = sum(corrected) / len(corrected)
+            rec["mae"].append(abs(mu - act))
+            rec["brier"].append(_brier(probs, actual_label))
+            rec["crps"].append(_crps(probs, act))
+            rec["cov50"].append(_interval_contains(probs, actual_label, 0.50))
+            rec["cov80"].append(_interval_contains(probs, actual_label, 0.80))
+            rel_points.extend(contract_points(probs, act, var))
+
+            # Baseline: no bias correction, fixed wide sigma.
+            base = _bin_probabilities(samples, 3.0)
+            mu0 = sum(samples) / len(samples)
+            rec["mae_base"].append(abs(mu0 - act))
+            rec["crps_base"].append(_crps(base, act))
+
+        n = len(rec["mae"])
+        metrics[var] = {
+            "n_days": n,
+            "mae": round(sum(rec["mae"]) / n, 2),
+            "brier": round(sum(rec["brier"]) / n, 3),
+            "crps": round(sum(rec["crps"]) / n, 3),
+            "coverage_50": round(100 * sum(rec["cov50"]) / n, 0),
+            "coverage_80": round(100 * sum(rec["cov80"]) / n, 0),
+            "mae_baseline": round(sum(rec["mae_base"]) / n, 2),
+            "crps_baseline": round(sum(rec["crps_base"]) / n, 3),
+            "reliability": reliability_bins(rel_points),
+        }
+    return metrics
+
+
+def _report(metrics: dict):
+    for var, m in metrics.items():
+        print(f"\n=== {var.upper()} ({m['n_days']} days) ===")
+        print(f"  consensus MAE   : {m['mae']}°F   (baseline {m['mae_baseline']}°F)")
+        print(f"  Brier           : {m['brier']}")
+        print(f"  CRPS            : {m['crps']}   (baseline {m['crps_baseline']})")
+        print(f"  50% interval cov: {m['coverage_50']:.0f}%   (target ~50%)")
+        print(f"  80% interval cov: {m['coverage_80']:.0f}%   (target ~80%)")
+
+
+if __name__ == "__main__":
+    _report(run())

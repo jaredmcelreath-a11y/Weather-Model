@@ -1,0 +1,8 @@
+.venv/
+.cache/
+.streamlit/secrets.toml
+calibration.json
+forecast_log.jsonl
+__pycache__/
+*.pyc
+.DS_Store

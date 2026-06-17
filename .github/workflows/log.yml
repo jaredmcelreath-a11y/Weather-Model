@@ -1,0 +1,60 @@
+name: Log forecast snapshot
+
+# Records a model snapshot to the forward log every hour so live self-scoring and
+# per-lead sigma keep accumulating in the cloud — independent of any computer.
+# The log lives on an orphan `data` branch (just the one file), kept separate
+# from the deployed branch so these hourly commits don't restart the app.
+
+on:
+  schedule:
+    - cron: "7 * * * *"        # hourly at :07 (off the top of the hour)
+  workflow_dispatch: {}         # allow manual runs from the Actions tab
+
+permissions:
+  contents: write               # lets the built-in token push the data branch
+
+concurrency:
+  group: forecast-log           # never let two runs race on the data branch
+  cancel-in-progress: false
+
+jobs:
+  log:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore existing log from the data branch
+        run: |
+          if git ls-remote --exit-code --heads origin data >/dev/null 2>&1; then
+            git fetch --depth=1 origin data
+            git show origin/data:forecast_log.jsonl > forecast_log.jsonl || true
+          fi
+
+      - name: Append this hour's snapshot
+        run: python scheduled_log.py
+
+      - name: Publish the log to the data branch
+        run: |
+          set -e
+          tmp="$(mktemp -d)"
+          cp forecast_log.jsonl "$tmp/forecast_log.jsonl"
+          cd "$tmp"
+          git init -q
+          git config user.name "weather-log-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git checkout -q -b data
+          git add forecast_log.jsonl
+          git commit -q -m "log: snapshot $(date -u +%FT%TZ)"
+          git push -fq \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" \
+            data
