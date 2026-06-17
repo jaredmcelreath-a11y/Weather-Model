@@ -27,6 +27,11 @@ TZ = ZoneInfo(TIMEZONE)
 # ranking knob — candidates clearing it are ranked by risk-adjusted return).
 SAFE_HOLD_MIN_PROB = 0.80
 
+# Most the "Safest hold to $1" box will pay for a contract. Above this the price
+# is already near settlement value, so the remaining upside doesn't justify the
+# capital — exclude it from the safe-hold pick regardless of edge.
+SAFE_HOLD_MAX_ASK = 0.92
+
 st.set_page_config(page_title="KDFW Temp Markets", layout="wide")
 
 # On Streamlit Cloud, point the forward log at the GitHub-hosted copy maintained
@@ -292,9 +297,11 @@ def render_variable(col, title, d, variable, day_iso, featured=False,
             edge_no = ((1 - p) - na) if na is not None else -9
             # Safe hold-to-$1 candidates: scan BOTH sides (the safe side may not be
             # the edge-signal side), keep only high win-prob, positively-priced
-            # bets, and score by risk-adjusted return edge / sqrt(p*(1-p)).
+            # bets that don't cost more than 92¢ (above that the upside is too thin
+            # to be worth the capital), and score by risk-adjusted return
+            # edge / sqrt(p*(1-p)).
             for h_side, h_win, h_ask in (("YES", p, ya), ("NO", 1 - p, na)):
-                if h_ask is None or h_win < safe_min:
+                if h_ask is None or h_win < safe_min or h_ask > SAFE_HOLD_MAX_ASK:
                     continue
                 h_edge = h_win - h_ask
                 if h_edge <= 0:
@@ -337,12 +344,53 @@ def render_variable(col, title, d, variable, day_iso, featured=False,
                    "A contract shown in 🔴 red is too wide-spread to flip — hold it to "
                    "settlement. Prices in ¢, live from Robinhood (refreshes ~30s).")
 
-        # Top 3 contracts to buy for this variable. Each pick is scored by blending
-        # absolute edge (p - ask) with return-on-cost EV ((p - ask)/ask): the score
-        # is their geometric mean, edge / sqrt(ask). That rewards real mispricing
-        # while giving cheaper contracts (higher % return) a lift — without letting
-        # penny longshots dominate the way raw ROI would.
-        st.markdown(f"**🎯 Top 3 {variable} picks to buy** — edge × expected value")
+        # Top 3 FLIP trades: buys you intend to sell for a +20% gain before
+        # settlement, so only contracts tight-spread enough to actually reach that
+        # target (exit plan == 'flip @ X') qualify. Ranked by P(flip) × edge — the
+        # touch-probability of the +20% level weighted by how underpriced the
+        # contract is, so the list favors flips that are both likely AND profitable.
+        st.markdown(f"**🔁 Top 3 {variable} flip trades** — buy to sell for +20% "
+                    "before settling")
+        flips = []
+        for lbl, side, mp, price, edge, bid in picks:
+            ask = max(price, 0.01)               # guard div-by-zero on a 0¢ ask
+            fp = flip_prob(ask, bid)
+            if fp is None or not exit_plan(ask, bid).startswith("flip"):
+                continue                          # not tight-spread enough to flip
+            flips.append((fp * edge, lbl, side, mp, ask, edge, fp, bid))
+        if flips:
+            flips.sort(key=lambda x: x[0], reverse=True)
+            ftop = [{
+                "contract": lbl,
+                "side": side,
+                "model %": f"{mp*100:.0f}%",
+                "ask": cents(ask),
+                "spread": cents(spread_c(ask, bid)),
+                "edge (pp)": f"+{edge*100:.0f}",
+                "flip @": cents(ask * 1.2),
+                "P(flip)": pct(fp),
+            } for _, lbl, side, mp, ask, edge, fp, bid in flips[:3]]
+            st.dataframe(pd.DataFrame(ftop), width="stretch", height=140,
+                         hide_index=True)
+            st.caption("Ranked by P(flip) × edge — the contracts most likely to "
+                       "swing up to a profitable exit before settling. "
+                       "flip @ = the price you'd sell into for +20% on cost. "
+                       "P(flip) = rough chance the price touches that target before "
+                       "settling (mid ÷ target-level); wider spreads lower it. It's "
+                       "an optimistic estimate — thin longshots often just decay, and "
+                       "you must be watching to catch the tick. Only positive-edge "
+                       "(>3pp) contracts tight-spread enough to flip are shown.")
+        else:
+            st.caption("No contract is both underpriced (>3pp edge) and tight-spread "
+                       "enough to flip right now — see the hold-to-settlement picks "
+                       "below.")
+
+        # Top 3 HOLD-TO-SETTLEMENT trades: the model's best value picks to carry to
+        # $1. Scored by edge × return-on-cost EV (geometric mean, edge / sqrt(ask)):
+        # rewards real mispricing while lifting cheaper contracts, without letting
+        # penny longshots dominate. Held to settlement, so the spread is irrelevant.
+        st.markdown(f"**🎯 Top 3 {variable} hold-to-settlement trades** — best value "
+                    "held to $1")
         if picks:
             scored = []
             for lbl, side, mp, price, edge, bid in picks:
@@ -360,23 +408,18 @@ def render_variable(col, title, d, variable, day_iso, featured=False,
                 "edge (pp)": f"+{edge*100:.0f}",
                 "EV %/cost": f"+{ev*100:.0f}%",
                 "exit": exit_plan(ask, bid),
-                "P(flip)": pct(flip_prob(ask, bid)),
             } for _, lbl, side, mp, ask, edge, ev, bid in scored[:3]]
             st.dataframe(_flag_hold_only(pd.DataFrame(top), "exit"),
                          width="stretch", height=140, hide_index=True)
-            st.caption("Ranked by a blend of edge and expected value (this is "
-                       "hold-to-settlement value, so the spread does NOT affect the "
-                       "ranking — at settlement it costs nothing). "
+            st.caption("The model's most likely winning bets for the "
+                       f"{variable}, ranked by a blend of edge and expected value "
+                       "(this is hold-to-settlement value, so the spread does NOT "
+                       "affect the ranking — at settlement it costs nothing). "
                        "edge (pp) = model prob for that side minus the ask. "
                        "EV %/cost = expected return per dollar risked (edge ÷ ask). "
-                       "spread / exit = liquidity check: a wide spread means 'hold to "
-                       "settle' rather than flip. P(flip) = rough chance the price "
-                       "swings up to your +20% flip target before settling (mid ÷ "
-                       "target-level); wider spreads lower it, '—' means the +20% "
-                       "target would exceed $1. It's an optimistic estimate — thin "
-                       "longshots often just decay, and you must be watching to catch "
-                       "the tick. Only contracts clearing the 3pp edge threshold are "
-                       "shown.")
+                       "spread / exit = liquidity cue if you change your mind: a wide "
+                       "spread (🔴) means flipping early isn't viable. Only contracts "
+                       "clearing the 3pp edge threshold are shown.")
         else:
             st.caption("No contracts clear the 3pp edge threshold right now — "
                        "model and market agree, so there's no clear buy.")
