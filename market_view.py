@@ -186,7 +186,9 @@ def lock_status(d, variable):
 
 
 def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
-                    safe_min=0.80):
+                    safe_min=None):
+    if safe_min is None:
+        safe_min = adapter.safe_hold_default
     with col:
         head = f"### {title}"
         if featured:
