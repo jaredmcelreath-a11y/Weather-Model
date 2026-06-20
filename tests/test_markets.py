@@ -34,3 +34,9 @@ def test_kalshi_greater_bucket():
 def test_safe_hold_defaults():
     assert (ROBINHOOD.safe_hold_default, ROBINHOOD.safe_hold_min) == (0.80, 0.60)
     assert (KALSHI.safe_hold_default, KALSHI.safe_hold_min) == (0.55, 0.50)
+
+
+def test_market_view_imports_and_exposes_render():
+    import market_view
+    assert callable(market_view.render_page)
+    assert callable(market_view.render_variable)
