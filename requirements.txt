@@ -2,7 +2,7 @@ requests
 numpy
 scipy
 pandas
-streamlit
+streamlit>=1.36
 streamlit-autorefresh
 tzdata
 pytest
