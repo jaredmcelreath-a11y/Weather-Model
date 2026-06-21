@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo(TIMEZONE)
 URL = "https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py"
+DAILY_URL = "https://mesonet.agron.iastate.edu/cgi-bin/request/daily.py"
 
 
 def _fetch_series(start: date, end: date) -> tuple[list[datetime], list[float]]:
@@ -58,3 +59,35 @@ def fetch_actual(start: date, end: date) -> dict[date, tuple[float, float]]:
             out[day] = (hi, lo)
         day += timedelta(days=1)
     return out
+
+
+def _parse_daily(text: str) -> dict[date, tuple[float, float]]:
+    """Parse the IEM daily-summary CSV into {day: (max_temp_f, min_temp_f)}.
+
+    Rows with a missing/'None'/'M' max or min are skipped. This is the NWS-CLI
+    settlement basis (continuous ASOS daily extremes) that Kalshi resolves on.
+    """
+    out: dict[date, tuple[float, float]] = {}
+    for row in csv.DictReader(io.StringIO(text)):
+        hi, lo = row.get("max_temp_f"), row.get("min_temp_f")
+        if hi in (None, "", "M", "None") or lo in (None, "", "M", "None"):
+            continue
+        try:
+            out[date.fromisoformat(row["day"])] = (float(hi), float(lo))
+        except (ValueError, KeyError):
+            continue
+    return out
+
+
+def fetch_actual_cli(start: date, end: date) -> dict[date, tuple[float, float]]:
+    """{day: (cli_high_f, cli_low_f)} from the IEM daily summary for [start, end].
+
+    The CLI daily max/min come from continuous (1-minute) ASOS data, so they can
+    exceed the hourly METAR extremes that `fetch_actual` returns — this is the
+    basis Kalshi settles on (vs Robinhood's hourly basis)."""
+    params = {
+        "network": "TX_ASOS", "stations": "DFW", "format": "comma",
+        "year1": start.year, "month1": start.month, "day1": start.day,
+        "year2": end.year, "month2": end.month, "day2": end.day,
+    }
+    return _parse_daily(get_text(DAILY_URL, params))

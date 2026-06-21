@@ -40,3 +40,8 @@ def test_market_view_imports_and_exposes_render():
     import market_view
     assert callable(market_view.render_page)
     assert callable(market_view.render_variable)
+
+
+def test_basis_note_kalshi_set_robinhood_none():
+    assert ROBINHOOD.basis_note is None
+    assert KALSHI.basis_note and "CLI" in KALSHI.basis_note

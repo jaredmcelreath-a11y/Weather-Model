@@ -51,10 +51,36 @@ def _forecast_daily_extremes(start: date, end: date):
     return out
 
 
+def _settlement_offset(cli: dict, hourly: dict) -> dict:
+    """Mean (CLI - hourly) daily-extreme gap, per variable.
+
+    The Kalshi page adds this to the hourly-basis forecast to reach the CLI
+    settlement basis. Zero offset when there is no overlapping history (safe
+    degrade to the current hourly behavior)."""
+    dh, dl = [], []
+    for day, (chi, clo) in cli.items():
+        if day not in hourly:
+            continue
+        hhi, hlo = hourly[day]
+        dh.append(chi - hhi)
+        dl.append(clo - hlo)
+    if not dh:
+        return {"high": 0.0, "low": 0.0, "n_days": 0}
+    return {
+        "high": round(sum(dh) / len(dh), 2),
+        "low": round(sum(dl) / len(dl), 2),
+        "n_days": len(dh),
+    }
+
+
 def compute() -> dict:
     end = date.today() - timedelta(days=1)
     start = end - timedelta(days=CALIBRATION_WINDOW_DAYS)
     actual = station_history.fetch_actual(start, end)
+    try:
+        cli_actual = station_history.fetch_actual_cli(start, end)
+    except Exception:
+        cli_actual = {}
     fcst = _forecast_daily_extremes(start, end)
 
     # Error of the *consensus* (model mean), since the model predicts around the
@@ -103,6 +129,7 @@ def compute() -> dict:
         },
         "sigma": sigma,
         "cooling": cooling,
+        "settlement_offset": _settlement_offset(cli_actual, actual),
     }
 
 
