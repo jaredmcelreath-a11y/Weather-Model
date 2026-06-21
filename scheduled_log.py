@@ -19,10 +19,11 @@ import model
 
 def main() -> None:
     calib = calibration.get(refresh=True)
-    snap = model.snapshot(calib)
-    forecast_log.record(snap)
+    forecast_log.record(model.snapshot(calib))                       # hourly basis
+    off = (calib or {}).get("settlement_offset")
+    forecast_log.record(model.snapshot(calib, settle_offset=off), basis="cli")
     n = len(forecast_log.load(forecast_log._PATH))
-    print(f"logged snapshot {snap.get('updated')}; log now holds {n} records")
+    print(f"logged hourly+cli snapshots; log now holds {n} records")
 
 
 if __name__ == "__main__":

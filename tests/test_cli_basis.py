@@ -188,3 +188,22 @@ def test_backtest_cli_uses_cli_truth_and_applies_offset(monkeypatch):
     assert hourly["high"]["mae"] == 0.0     # consensus 90 vs hourly 90
     assert cli_off["high"]["mae"] == 0.0    # consensus 90+1=91 vs cli 91
     assert cli_no["high"]["mae"] == 1.0     # consensus 90 vs cli 91 -> off by 1
+
+
+def test_scheduled_log_records_both_bases(monkeypatch):
+    import scheduled_log
+    import model
+
+    monkeypatch.setattr(calibration, "get",
+                        lambda refresh=True: {"settlement_offset": {"high": 1.0, "low": 0.0}})
+    monkeypatch.setattr(model, "snapshot",
+                        lambda calib, settle_offset=None: {"_off": settle_offset})
+    calls = []
+    monkeypatch.setattr(scheduled_log.forecast_log, "record",
+                        lambda snap, basis="hourly": calls.append((snap.get("_off"), basis)))
+    monkeypatch.setattr(scheduled_log.forecast_log, "load", lambda path=None: [])
+
+    scheduled_log.main()
+
+    assert (None, "hourly") in calls                       # hourly snapshot, no offset
+    assert ({"high": 1.0, "low": 0.0}, "cli") in calls     # offset snapshot, cli basis
