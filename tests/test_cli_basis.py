@@ -25,3 +25,20 @@ def test_parse_daily_skips_missing_rows():
     assert date(2026, 6, 9) not in out   # None max
     assert date(2026, 6, 10) not in out  # M min
     assert len(out) == 2
+
+
+from calibration import _settlement_offset
+
+
+def test_settlement_offset_means_the_cli_minus_hourly_gap():
+    cli = {date(2026, 6, 8): (95.0, 78.0), date(2026, 6, 9): (94.0, 77.0)}
+    hourly = {date(2026, 6, 8): (94.0, 78.0), date(2026, 6, 9): (93.0, 79.0)}
+    off = _settlement_offset(cli, hourly)
+    assert off["high"] == 1.0    # (1 + 1) / 2
+    assert off["low"] == -1.0    # (0 + -2) / 2
+    assert off["n_days"] == 2
+
+
+def test_settlement_offset_zero_when_no_overlap():
+    off = _settlement_offset({date(2026, 6, 8): (95.0, 78.0)}, {})
+    assert off == {"high": 0.0, "low": 0.0, "n_days": 0}
