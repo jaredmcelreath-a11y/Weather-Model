@@ -228,6 +228,8 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
 
         # Live market vs the model (contracts + price→model mapping from the adapter).
         st.markdown(adapter.heading(variable))
+        if adapter.basis_note:
+            st.caption(adapter.basis_note)
         contracts = adapter.fetch(variable, day_iso)
         if not contracts:
             st.caption(adapter.no_market_msg)

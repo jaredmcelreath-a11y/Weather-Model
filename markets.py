@@ -28,6 +28,7 @@ class MarketAdapter:
     settle_footer: str              # page footer caveat
     safe_hold_default: float        # safe-hold slider default (fraction)
     safe_hold_min: float            # safe-hold slider minimum (fraction)
+    basis_note: str | None = None   # caption shown under the market heading
 
 
 @st.cache_data(ttl=30, show_spinner=False)
@@ -75,4 +76,7 @@ KALSHI = MarketAdapter(
         "Not financial advice."),
     safe_hold_default=0.55,
     safe_hold_min=0.50,
+    basis_note=("Values on the NWS CLI settlement basis (continuous ASOS daily "
+                "max/min) — what Kalshi resolves on, ~+0.9°F vs the hourly basis "
+                "on highs."),
 )

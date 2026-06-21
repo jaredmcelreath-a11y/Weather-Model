@@ -40,6 +40,15 @@ def load_snapshot():
     return model.snapshot(calib), calib
 
 
+@st.cache_data(ttl=120, show_spinner="Fetching forecasts and observations…")
+def load_snapshot_kalshi():
+    """Snapshot shifted to the Kalshi/CLI settlement basis via the calibrated
+    settlement_offset (absent offset -> behaves like the hourly snapshot)."""
+    calib = calibration.get(refresh=True)
+    snap = model.snapshot(calib, settle_offset=(calib or {}).get("settlement_offset"))
+    return snap, calib
+
+
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
 def load_accuracy():
     """Backtest (immediate) + live self-scoring (grows as days settle)."""
@@ -57,21 +66,22 @@ def load_accuracy():
     return bt, live
 
 
-def _page(adapter):
-    snap, calib = load_snapshot()
-    try:
-        forecast_log.record(snap)  # forward log for self-scoring; upsert, idempotent
-    except Exception:
-        pass  # logging must never break the dashboard
+def _page(adapter, snapshot_loader, record_log):
+    snap, calib = snapshot_loader()
+    if record_log:
+        try:
+            forecast_log.record(snap)  # hourly forward log; upsert, idempotent
+        except Exception:
+            pass  # logging must never break the dashboard
     market_view.render_page(snap, calib, adapter, load_accuracy)
 
 
 def robinhood_page():
-    _page(ROBINHOOD)
+    _page(ROBINHOOD, load_snapshot, record_log=True)
 
 
 def kalshi_page():
-    _page(KALSHI)
+    _page(KALSHI, load_snapshot_kalshi, record_log=False)
 
 
 st.navigation([
