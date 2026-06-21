@@ -138,3 +138,27 @@ def test_legacy_untagged_record_treated_as_hourly(tmp_path):
              if r["target_date"] == "2026-06-20" and r["variable"] == "high"
              and r["lead_bucket"] == 0 and r.get("basis", "hourly") == "hourly"]
     assert len(match) == 1
+
+
+import scoring
+from sources import station_history
+
+
+def test_score_filters_by_basis_and_uses_matching_truth(monkeypatch):
+    recs = [
+        {"target_date": "2026-06-10", "variable": "high", "lead_bucket": 0,
+         "basis": "hourly", "consensus": 90, "probabilities": {"90": 1.0}},
+        {"target_date": "2026-06-10", "variable": "high", "lead_bucket": 0,
+         "basis": "cli", "consensus": 91, "probabilities": {"91": 1.0}},
+    ]
+    monkeypatch.setattr(scoring.forecast_log, "load", lambda path=None: recs)
+    monkeypatch.setattr(station_history, "fetch_actual",
+                        lambda s, e: {date(2026, 6, 10): (90.0, 70.0)})
+    monkeypatch.setattr(station_history, "fetch_actual_cli",
+                        lambda s, e: {date(2026, 6, 10): (91.0, 70.0)})
+    today = date(2026, 6, 11)
+    h = scoring.score(today=today, basis="hourly")
+    c = scoring.score(today=today, basis="cli")
+    assert h["n_settled"] == 1 and c["n_settled"] == 1
+    assert h["by_variable"]["high"]["brier"] == 0.0
+    assert c["by_variable"]["high"]["brier"] == 0.0
