@@ -110,6 +110,11 @@ still only forbids < 91, so the 91 bin stays possible.
   behavior). Missing `settlement_offset` in a stale `calibration.json` →
   `.get(...)` returns `None` → `predict_variable` no-ops the shift.
 - No new failure modes on the Robinhood path.
+- The Kalshi page must NOT write its offset-shifted snapshot into the shared
+  (hourly) `forecast_log` — that would corrupt the hourly self-scoring. In A,
+  `_page` records the forward log only on the Robinhood/hourly path; per-exchange
+  logging is Part B. (The scheduled Action already writes the hourly log on
+  cloud; this only stops the local Kalshi page from clobbering it.)
 
 ## Testing
 
