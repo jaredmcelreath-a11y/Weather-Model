@@ -162,3 +162,29 @@ def test_score_filters_by_basis_and_uses_matching_truth(monkeypatch):
     assert h["n_settled"] == 1 and c["n_settled"] == 1
     assert h["by_variable"]["high"]["brier"] == 0.0
     assert c["by_variable"]["high"]["brier"] == 0.0
+
+
+import backtest
+import calibration
+from sources import open_meteo_models
+
+
+def test_backtest_cli_uses_cli_truth_and_applies_offset(monkeypatch):
+    day = date(2026, 6, 10)
+    series = {"det_a": _member(day, 90.0)}  # daily high 90, low 75
+    monkeypatch.setattr(open_meteo_models, "fetch_historical", lambda s, e: series)
+    monkeypatch.setattr(station_history, "fetch_actual",
+                        lambda s, e: {day: (90.0, 75.0)})
+    monkeypatch.setattr(station_history, "fetch_actual_cli",
+                        lambda s, e: {day: (91.0, 75.0)})
+    monkeypatch.setattr(calibration, "get", lambda refresh=True: {
+        "bias": {"deterministic": {"high": 0.0, "low": 0.0}},
+        "sigma": {"high": 2.0, "low": 2.0}})
+
+    hourly = backtest.run()
+    cli_off = backtest.run(cli=True, settle_offset={"high": 1.0, "low": 0.0})
+    cli_no = backtest.run(cli=True)
+
+    assert hourly["high"]["mae"] == 0.0     # consensus 90 vs hourly 90
+    assert cli_off["high"]["mae"] == 0.0    # consensus 90+1=91 vs cli 91
+    assert cli_no["high"]["mae"] == 1.0     # consensus 90 vs cli 91 -> off by 1
