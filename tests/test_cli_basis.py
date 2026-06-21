@@ -1,9 +1,14 @@
 """Tests for the Kalshi CLI settlement basis (Part A): CLI truth fetch parsing,
 the calibrated settlement offset, and the model's settle_offset shift."""
 
-from datetime import date
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
+import model
+from config import TIMEZONE
 from sources.station_history import _parse_daily
+
+_TZ = ZoneInfo(TIMEZONE)
 
 SAMPLE_CSV = (
     "station,day,max_temp_f,min_temp_f,precip_in\n"
@@ -42,15 +47,6 @@ def test_settlement_offset_means_the_cli_minus_hourly_gap():
 def test_settlement_offset_zero_when_no_overlap():
     off = _settlement_offset({date(2026, 6, 8): (95.0, 78.0)}, {})
     assert off == {"high": 0.0, "low": 0.0, "n_days": 0}
-
-
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
-
-import model
-from config import TIMEZONE
-
-_TZ = ZoneInfo(TIMEZONE)
 
 
 def _member(day, peak):
@@ -93,3 +89,7 @@ def test_predict_from_threads_offset():
     pf = model._predict_from(_series(day), {"obs": ([], [])}, day, None, None,
                              {"high": 1.0, "low": 0.0})
     assert pf["high"]["consensus"] == 92.0
+    # low offset is 0.0 -> low consensus stays at the unshifted value (peak-15).
+    base_low = model.predict_variable(_series(day), {"obs": ([], [])}, day,
+                                      "low", None, None)
+    assert pf["low"]["consensus"] == base_low["consensus"]
