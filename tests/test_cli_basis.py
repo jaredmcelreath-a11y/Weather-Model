@@ -93,3 +93,48 @@ def test_predict_from_threads_offset():
     base_low = model.predict_variable(_series(day), {"obs": ([], [])}, day,
                                       "low", None, None)
     assert pf["low"]["consensus"] == base_low["consensus"]
+
+
+import json
+
+import forecast_log
+
+
+def _snap():
+    return {
+        "updated": "2026-06-20T15:00:00",
+        "today": {
+            "day": "2026-06-20",
+            "high": {"consensus": 91, "probabilities": {"90": 0.5, "91": 0.5}},
+            "low": {"consensus": 75, "probabilities": {"74": 0.5, "75": 0.5}},
+        },
+        "tomorrow": {
+            "day": "2026-06-21",
+            "high": {"consensus": 93, "probabilities": {"92": 0.5, "93": 0.5}},
+            "low": {"consensus": 77, "probabilities": {"76": 0.5, "77": 0.5}},
+        },
+    }
+
+
+def test_hourly_and_cli_records_coexist(tmp_path):
+    p = str(tmp_path / "log.jsonl")
+    forecast_log.record(_snap(), path=p, basis="hourly")
+    forecast_log.record(_snap(), path=p, basis="cli")
+    rows = forecast_log.load(p)
+    assert {r["basis"] for r in rows} == {"hourly", "cli"}
+    assert len([r for r in rows if r["basis"] == "hourly"]) == 4
+    assert len([r for r in rows if r["basis"] == "cli"]) == 4
+
+
+def test_legacy_untagged_record_treated_as_hourly(tmp_path):
+    p = str(tmp_path / "log.jsonl")
+    legacy = {"target_date": "2026-06-20", "variable": "high", "lead_bucket": 0,
+              "captured_at": "x", "consensus": 91, "probabilities": {"91": 1.0}}
+    with open(p, "w") as fh:
+        fh.write(json.dumps(legacy) + "\n")
+    forecast_log.record(_snap(), path=p, basis="hourly")
+    rows = forecast_log.load(p)
+    match = [r for r in rows
+             if r["target_date"] == "2026-06-20" and r["variable"] == "high"
+             and r["lead_bucket"] == 0 and r.get("basis", "hourly") == "hourly"]
+    assert len(match) == 1
