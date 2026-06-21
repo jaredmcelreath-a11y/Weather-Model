@@ -211,7 +211,8 @@ def _day_ahead_sigma(fullday_samples, calib_sigma):
     return max(_DEFAULT_INFLATION * raw, _MIN_SIGMA) if raw else _DEFAULT_SIGMA
 
 
-def predict_variable(series, obs_series, day, variable, now, calib):
+def predict_variable(series, obs_series, day, variable, now, calib,
+                     settle_offset=None):
     """Return a dict describing the predicted distribution for one variable.
 
     Spread logic: start from the calibrated day-ahead consensus error, then
@@ -250,6 +251,17 @@ def predict_variable(series, obs_series, day, variable, now, calib):
                     and wind < cool["wind_thresh"]):
                 samples = [s - off for s in samples]
                 cooling_applied = True
+
+    # Kalshi settlement basis: shift the forecast distribution to the CLI basis
+    # by a calibrated per-variable offset. Applied to the forecast samples only,
+    # NOT the hard observed bound (the offset is an average gap, not a floor) —
+    # so consensus/bins move but still-possible bins are not zeroed. A constant
+    # shift leaves sigma and locked_ratio unchanged. None => Robinhood, no shift.
+    if settle_offset:
+        off = settle_offset.get(variable, 0.0)
+        if off:
+            samples = [s + off for s in samples]
+            fullday = [s + off for s in fullday]
 
     calib_sigma = (calib or {}).get("sigma", {}).get(variable)
     sigma_day_ahead = _day_ahead_sigma(fullday, calib_sigma)
@@ -347,20 +359,20 @@ def gather_series(forecast_days: int = 2):
 
 
 def predict(day: date, now: datetime | None = None, calib: dict | None = None,
-            forecast_days: int = 2) -> dict:
+            forecast_days: int = 2, settle_offset=None) -> dict:
     """Full prediction (high + low) for `day`. `now` enables the nowcast blend
     when `day` is today; pass None to force a pure forecast."""
     if now is None:
         now = datetime.now(TZ)
     series, obs = gather_series(forecast_days)
-    return _predict_from(series, obs, day, now, calib)
+    return _predict_from(series, obs, day, now, calib, settle_offset)
 
 
-def _predict_from(series, obs, day, now, calib):
+def _predict_from(series, obs, day, now, calib, settle_offset=None):
     return {
         "day": day.isoformat(),
-        "high": predict_variable(series, obs, day, "high", now, calib),
-        "low": predict_variable(series, obs, day, "low", now, calib),
+        "high": predict_variable(series, obs, day, "high", now, calib, settle_offset),
+        "low": predict_variable(series, obs, day, "low", now, calib, settle_offset),
     }
 
 
@@ -376,7 +388,7 @@ def per_source_extremes(series, day):
     return out
 
 
-def snapshot(calib: dict | None = None) -> dict:
+def snapshot(calib: dict | None = None, settle_offset=None) -> dict:
     """Fetch all sources once and return everything the dashboard needs:
     today + tomorrow predictions, the current observation, and per-source
     extremes for both days."""
@@ -393,8 +405,8 @@ def snapshot(calib: dict | None = None) -> dict:
 
     return {
         "updated": now.isoformat(timespec="seconds"),
-        "today": _predict_from(series, obs, today, now, calib),
-        "tomorrow": _predict_from(series, obs, tomorrow, now, calib),
+        "today": _predict_from(series, obs, today, now, calib, settle_offset),
+        "tomorrow": _predict_from(series, obs, tomorrow, now, calib, settle_offset),
         "current": current,
         "sources": {"today": per_source_extremes(series, today),
                     "tomorrow": per_source_extremes(series, tomorrow)},

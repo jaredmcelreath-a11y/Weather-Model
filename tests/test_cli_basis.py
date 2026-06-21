@@ -42,3 +42,54 @@ def test_settlement_offset_means_the_cli_minus_hourly_gap():
 def test_settlement_offset_zero_when_no_overlap():
     off = _settlement_offset({date(2026, 6, 8): (95.0, 78.0)}, {})
     assert off == {"high": 0.0, "low": 0.0, "n_days": 0}
+
+
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+import model
+from config import TIMEZONE
+
+_TZ = ZoneInfo(TIMEZONE)
+
+
+def _member(day, peak):
+    """A synthetic 24-hour member peaking at `peak` at 15:00 local."""
+    base = datetime(day.year, day.month, day.day, tzinfo=_TZ)
+    times = [base + timedelta(hours=h) for h in range(24)]
+    temps = [peak - abs(h - 15) for h in range(24)]  # max=peak, min=peak-15
+    return times, temps
+
+
+def _series(day):
+    return {"det_a": _member(day, 90.0), "det_b": _member(day, 92.0)}
+
+
+def test_settle_offset_shifts_consensus_and_distribution():
+    day = date(2030, 7, 1)
+    series, obs = _series(day), {"obs": ([], [])}
+    base = model.predict_variable(series, obs, day, "high", None, None)
+    plus = model.predict_variable(series, obs, day, "high", None, None,
+                                  {"high": 1.0, "low": 0.0})
+    assert base["consensus"] == 91.0
+    assert plus["consensus"] == 92.0
+    # Constant shift must not change the spread, only the location.
+    assert plus["sigma_used"] == base["sigma_used"]
+    assert (model.prob_at_least(plus["probabilities"], 92)
+            > model.prob_at_least(base["probabilities"], 92))
+
+
+def test_zero_offset_is_identical_to_none_robinhood_guard():
+    day = date(2030, 7, 1)
+    series, obs = _series(day), {"obs": ([], [])}
+    base = model.predict_variable(series, obs, day, "high", None, None)
+    zero = model.predict_variable(series, obs, day, "high", None, None,
+                                  {"high": 0.0, "low": 0.0})
+    assert base == zero
+
+
+def test_predict_from_threads_offset():
+    day = date(2030, 7, 1)
+    pf = model._predict_from(_series(day), {"obs": ([], [])}, day, None, None,
+                             {"high": 1.0, "low": 0.0})
+    assert pf["high"]["consensus"] == 92.0
