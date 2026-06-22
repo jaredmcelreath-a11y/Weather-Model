@@ -79,6 +79,69 @@ def _settlement_offset(cli: dict, hourly: dict) -> dict:
     return {"high": hm, "low": lm, "high_std": hs, "low_std": ls, "n_days": len(dh)}
 
 
+def _var_bucket(gaps_cc, gaps_ot, min_nights, margin, min_sep):
+    """Per-variable bucket means/stds + whether the split is worth keeping.
+
+    Returns (cc_mean, ot_mean, cc_std, ot_std, passed). `passed` is True only
+    when there are >= min_nights clear/calm nights, the two bucket means differ
+    by at least `min_sep` degrees (so a near-identical split is rejected), AND
+    splitting reduces the mean absolute residual vs a single flat mean by at
+    least `margin`. The separation guard is what makes "buckets too similar"
+    fall back to flat — with real within-bucket noise the residual check alone
+    is not enough.
+    """
+    n_cc = len(gaps_cc)
+    all_gaps = gaps_cc + gaps_ot
+    flat = sum(all_gaps) / len(all_gaps)
+    cc_mean, cc_std = _mean_std(gaps_cc) if gaps_cc else (flat, 0.0)
+    ot_mean, ot_std = _mean_std(gaps_ot) if gaps_ot else (flat, 0.0)
+    resid_flat = sum(abs(g - flat) for g in all_gaps) / len(all_gaps)
+    resid_cond = (sum(abs(g - cc_mean) for g in gaps_cc)
+                  + sum(abs(g - ot_mean) for g in gaps_ot)) / len(all_gaps)
+    passed = (n_cc >= min_nights
+              and abs(cc_mean - ot_mean) >= min_sep
+              and resid_cond <= resid_flat - margin)
+    if not passed:
+        return flat, flat, 0.0, 0.0, False
+    return cc_mean, ot_mean, cc_std, ot_std, True
+
+
+def _conditional_settlement_offset(cli, hourly, cond, min_nights=5, margin=0.02,
+                                   min_sep=0.25):
+    """Bucketed (clear_calm/other) CLI-hourly offset, or None to use the flat one.
+
+    Splits the per-day gap by overnight conditions (cloud<CLEAR_CLOUD_MAX and
+    wind<CALM_WIND_MAX). Returns the bucketed dict only if at least one variable's
+    split is worth keeping (see `_var_bucket`); otherwise None so the caller falls
+    back to the flat `_settlement_offset`.
+    """
+    cc = {"high": [], "low": []}
+    ot = {"high": [], "low": []}
+    for day, (chi, clo) in cli.items():
+        if day not in hourly or day not in cond:
+            continue
+        hhi, hlo = hourly[day]
+        cloud, wind = cond[day]
+        bucket = cc if (cloud < CLEAR_CLOUD_MAX and wind < CALM_WIND_MAX) else ot
+        bucket["high"].append(chi - hhi)
+        bucket["low"].append(clo - hlo)
+    if not cc["low"] and not ot["low"]:
+        return None
+    out = {}
+    any_passed = False
+    for var in ("high", "low"):
+        cm, om, cs, os_, passed = _var_bucket(cc[var], ot[var], min_nights,
+                                              margin, min_sep)
+        any_passed = any_passed or passed
+        out[var] = {"clear_calm": cm, "other": om,
+                    "clear_calm_std": cs, "other_std": os_}
+    if not any_passed:
+        return None
+    out["n_days"] = len(cc["high"]) + len(ot["high"])
+    out["n_clear_calm"] = len(cc["high"])
+    return out
+
+
 def compute() -> dict:
     end = date.today() - timedelta(days=1)
     start = end - timedelta(days=CALIBRATION_WINDOW_DAYS)
