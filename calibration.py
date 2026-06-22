@@ -26,7 +26,7 @@ import time
 from datetime import date, datetime, timedelta
 
 from config import CALIBRATION_WINDOW_DAYS, CALM_WIND_MAX, CLEAR_CLOUD_MAX
-from sources import open_meteo_models, station_history
+from sources import open_meteo_ensemble, open_meteo_models, station_history
 from settlement import day_high_low
 
 _PATH = os.path.join(os.path.dirname(__file__), "calibration.json")
@@ -79,6 +79,192 @@ def _settlement_offset(cli: dict, hourly: dict) -> dict:
     return {"high": hm, "low": lm, "high_std": hs, "low_std": ls, "n_days": len(dh)}
 
 
+def _var_bucket(
+    gaps_cc: list[float], gaps_ot: list[float],
+    min_nights: int, margin: float, min_sep: float,
+) -> tuple[float, float, float, float, bool]:
+    """Per-variable bucket means/stds + whether the split is worth keeping.
+
+    Returns (cc_mean, ot_mean, cc_std, ot_std, passed). `passed` is True only
+    when there are >= min_nights clear/calm nights, the two bucket means differ
+    by at least `min_sep` degrees (so a near-identical split is rejected), AND
+    splitting reduces the mean absolute residual vs a single flat mean by at
+    least `margin`. The separation guard is what makes "buckets too similar"
+    fall back to flat — with real within-bucket noise the residual check alone
+    is not enough.
+
+    Requires at least one gap across both buckets; returns a not-passed result
+    for an empty input rather than dividing by zero.
+    """
+    n_cc = len(gaps_cc)
+    all_gaps = gaps_cc + gaps_ot
+    if not all_gaps:
+        return 0.0, 0.0, 0.0, 0.0, False
+    flat = sum(all_gaps) / len(all_gaps)
+    # Gate math uses raw (unrounded) bucket means; _mean_std's rounded values are
+    # used only for the emitted offset (matching _settlement_offset's convention),
+    # so the comparison isn't skewed by mixing rounded and raw quantities.
+    cc_raw = sum(gaps_cc) / len(gaps_cc) if gaps_cc else flat
+    ot_raw = sum(gaps_ot) / len(gaps_ot) if gaps_ot else flat
+    resid_flat = sum(abs(g - flat) for g in all_gaps) / len(all_gaps)
+    resid_cond = (sum(abs(g - cc_raw) for g in gaps_cc)
+                  + sum(abs(g - ot_raw) for g in gaps_ot)) / len(all_gaps)
+    passed = (n_cc >= min_nights
+              and abs(cc_raw - ot_raw) >= min_sep
+              and resid_cond <= resid_flat - margin)
+    if not passed:
+        return flat, flat, 0.0, 0.0, False
+    cc_mean, cc_std = _mean_std(gaps_cc) if gaps_cc else (flat, 0.0)
+    ot_mean, ot_std = _mean_std(gaps_ot) if gaps_ot else (flat, 0.0)
+    return cc_mean, ot_mean, cc_std, ot_std, True
+
+
+def _conditional_settlement_offset(cli: dict, hourly: dict, cond: dict,
+                                   min_nights: int = 5, margin: float = 0.02,
+                                   min_sep: float = 0.25) -> dict | None:
+    """Bucketed (clear_calm/other) CLI-hourly offset, or None to use the flat one.
+
+    Splits the per-day gap by overnight conditions (cloud<CLEAR_CLOUD_MAX and
+    wind<CALM_WIND_MAX). Returns the bucketed dict only if at least one variable's
+    split is worth keeping (see `_var_bucket`); otherwise None so the caller falls
+    back to the flat `_settlement_offset`.
+    """
+    cc = {"high": [], "low": []}
+    ot = {"high": [], "low": []}
+    for day, (chi, clo) in cli.items():
+        if day not in hourly or day not in cond:
+            continue
+        hhi, hlo = hourly[day]
+        cloud, wind = cond[day]
+        bucket = cc if (cloud < CLEAR_CLOUD_MAX and wind < CALM_WIND_MAX) else ot
+        bucket["high"].append(chi - hhi)
+        bucket["low"].append(clo - hlo)
+    if not cc["low"] and not ot["low"]:
+        return None
+    out = {}
+    any_passed = False
+    for var in ("high", "low"):
+        cm, om, cs, os_, passed = _var_bucket(cc[var], ot[var], min_nights,
+                                              margin, min_sep)
+        any_passed = any_passed or passed
+        out[var] = {"clear_calm": cm, "other": om,
+                    "clear_calm_std": cs, "other_std": os_}
+    if not any_passed:
+        return None
+    out["n_days"] = len(cc["high"]) + len(ot["high"])
+    out["n_clear_calm"] = len(cc["high"])
+    return out
+
+
+def _system_extremes(start, end):
+    """{day: {system: {'high':v, 'low':v}}} over [start, end].
+
+    Systems = one combined 'ensemble_mean' (mean of all member extremes) plus
+    each deterministic model by its label. NWS has no archive, so it is absent.
+    Degrades to deterministic-only if the ensemble archive can't be fetched.
+    """
+    det = open_meteo_models.fetch_historical(start, end)
+    try:
+        ens = open_meteo_ensemble.fetch_historical(start, end)
+    except Exception:
+        ens = {}
+    out: dict = {}
+    day = start
+    while day <= end:
+        systems: dict[str, dict] = {}
+        for label, (t, v) in det.items():
+            hi, lo = day_high_low(t, v, day)
+            if hi is not None:
+                systems[label] = {"high": hi, "low": lo}
+        ens_hi, ens_lo = [], []
+        for _label, (t, v) in ens.items():
+            hi, lo = day_high_low(t, v, day)
+            if hi is not None:
+                ens_hi.append(hi)
+                ens_lo.append(lo)
+        if ens_hi:
+            systems["ensemble_mean"] = {"high": sum(ens_hi) / len(ens_hi),
+                                        "low": sum(ens_lo) / len(ens_lo)}
+        if systems:
+            out[day] = systems
+        day += timedelta(days=1)
+    return out
+
+
+def _system_weights(ext, actual, systems, lam=0.25):
+    """{var: {system: weight}} from trailing skill, strongly shrunk to equal.
+
+    For each variable: weight_i proportional to (1-lam)*equal + lam*invMAE_norm_i,
+    where invMAE_norm normalizes inverse per-system MAE to sum 1. lam small =>
+    near equal (conservative). Systems with no data on a day are skipped that day.
+    """
+    weights = {}
+    n = len(systems)
+    equal = 1.0 / n if n else 0.0
+    for var in ("high", "low"):
+        mae = {}
+        for s in systems:
+            errs = [abs(ext[d][s][var] - (actual[d][0] if var == "high" else actual[d][1]))
+                    for d in ext if d in actual and s in ext[d]]
+            mae[s] = (sum(errs) / len(errs)) if errs else None
+        inv = {s: 1.0 / max(mae[s], 0.1) for s in systems if mae[s] is not None}
+        inv_sum = sum(inv.values()) or 1.0
+        inv_norm = {s: inv.get(s, 0.0) / inv_sum for s in systems}
+        raw = {s: (1.0 - lam) * equal + lam * inv_norm[s] for s in systems}
+        total = sum(raw.values()) or 1.0
+        weights[var] = {s: raw[s] / total for s in systems}
+    return weights
+
+
+def _consensus_mae(ext, actual, systems, var, wmap):
+    """Mean abs error of the wmap-weighted consensus over days with data."""
+    errs = []
+    for d in ext:
+        if d not in actual:
+            continue
+        num = den = 0.0
+        for s in systems:
+            if s in ext[d]:
+                w = wmap[s]
+                num += w * ext[d][s][var]
+                den += w
+        if den <= 0:
+            continue
+        cons = num / den
+        act = actual[d][0] if var == "high" else actual[d][1]
+        errs.append(abs(cons - act))
+    return (sum(errs) / len(errs)) if errs else float("inf")
+
+
+def _weights_beat_equal(ext, actual, systems, var, lam=0.25, margin=0.02, train=30):
+    """True iff skill weights beat equal weight OUT-OF-SAMPLE by >= margin.
+
+    Walk-forward: for each test day, weights are learned from the trailing
+    `train` days only (never the test day itself), then both the weighted and
+    the equal-weight consensus are scored on that held-out day. This guards
+    against the in-sample illusion that weighting "always helps" — fitting
+    weights on the same days you score on almost always wins, but may not
+    generalize (e.g. the high benefits from equal-weight error cancellation).
+    """
+    days = sorted(d for d in ext if d in actual)
+    if len(days) <= train:
+        return False
+    equal = {s: 1.0 for s in systems}
+    w_errs, eq_errs = [], []
+    for i in range(train, len(days)):
+        d = days[i]
+        window = days[i - train:i]
+        tr_ext = {x: ext[x] for x in window}
+        tr_act = {x: actual[x] for x in window}
+        cand = _system_weights(tr_ext, tr_act, systems, lam)
+        day_ext, day_act = {d: ext[d]}, {d: actual[d]}
+        w_errs.append(_consensus_mae(day_ext, day_act, systems, var, cand[var]))
+        eq_errs.append(_consensus_mae(day_ext, day_act, systems, var, equal))
+    if not w_errs:
+        return False
+    return (sum(w_errs) / len(w_errs)) <= (sum(eq_errs) / len(eq_errs)) - margin
+
+
 def compute() -> dict:
     end = date.today() - timedelta(days=1)
     start = end - timedelta(days=CALIBRATION_WINDOW_DAYS)
@@ -122,6 +308,38 @@ def compute() -> dict:
 
     cooling = _cooling_offset(start, end, fcst, actual, bias.get("low", 0.0))
 
+    try:
+        cond = open_meteo_models.historical_night_conditions(start, end)
+    except Exception:
+        cond = {}
+    settlement_offset = _conditional_settlement_offset(cli_actual, actual, cond) \
+        or _settlement_offset(cli_actual, actual)
+
+    weights = {"high": {}, "low": {}}
+    try:
+        ext = _system_extremes(start, end)
+        systems = sorted({s for day in ext.values() for s in day})
+        if ext and len(systems) >= 2:
+            cand = _system_weights(ext, actual, systems)
+            # Three regimes per variable:
+            #   gate passes -> skill-weighted systems (cand[var]);
+            #   gate fails   -> uniform *system* weights (the rebalanced neutral);
+            #   no archive / <2 systems / exception -> {} (handled below), which
+            #     the model reads as OFF and falls back to the equal-per-member
+            #     pool (old behavior).
+            # The fail case is uniform-SYSTEM, not {}, on purpose: the group
+            # rebalancing (ensemble counts as one estimator, not ~50 votes) beats
+            # the old member-dominated pool out-of-sample on its own (validated:
+            # low 1.21->1.03, high 0.95->0.92 MAE); the gate only decides the
+            # additional skill tilt on top of that neutral.
+            for var in ("high", "low"):
+                if _weights_beat_equal(ext, actual, systems, var):
+                    weights[var] = cand[var]
+                else:
+                    weights[var] = {s: 1.0 / len(systems) for s in systems}
+    except Exception:
+        weights = {"high": {}, "low": {}}
+
     return {
         "computed": datetime.now().isoformat(timespec="seconds"),
         "window_days": CALIBRATION_WINDOW_DAYS,
@@ -134,8 +352,9 @@ def compute() -> dict:
             "nws": {"high": 0.0, "low": 0.0},
         },
         "sigma": sigma,
+        "weights": weights,
         "cooling": cooling,
-        "settlement_offset": _settlement_offset(cli_actual, actual),
+        "settlement_offset": settlement_offset,
     }
 
 

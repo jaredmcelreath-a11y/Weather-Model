@@ -20,8 +20,8 @@ import math
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from config import (BIN_HIGH, BIN_LOW, LEAD_SIGMA_INFLATION, TIMEZONE,
-                    bin_labels, lead_bucket)
+from config import (BIN_HIGH, BIN_LOW, CALM_WIND_MAX, CLEAR_CLOUD_MAX,
+                    LEAD_SIGMA_INFLATION, TIMEZONE, bin_labels, lead_bucket)
 from settlement import local_day_bounds, observed_so_far
 from sources import (open_meteo_ensemble, open_meteo_models, nws_forecast,
                      nws_observations)
@@ -96,44 +96,70 @@ def _member_extreme(times, temps, day, variable, now, observed, obs_now=None):
         return min(observed if observed is not None else math.inf, fcst)
 
 
-def _collect_samples(series, day, variable, now, observed, bias, obs_now=None):
-    """Sample list of daily extremes for `day`.
+def _sample_weights(series, weights):
+    """Map each member label to its per-sample weight from system weights.
 
-    Historical bias correction applies only to pure forecasts. Once we're
-    anchoring the remaining forecast to a live observation (obs_now set), that
-    live correction supersedes the historical average — and the realized
-    floor/ceiling is ground truth that must not be bias-shifted — so we skip it.
+    The combined ensemble's mass (`weights['ensemble_mean']`) is split evenly
+    across its members so they still shape the distribution; each deterministic
+    model keys by its own label; NWS keys by 'nws'. Missing systems fall back to
+    the average system weight so an unexpected label can't be silently dropped.
+    """
+    avg = (sum(weights.values()) / len(weights)) if weights else 1.0
+    m = sum(1 for label in series if label.startswith("ens_")) or 1
+    w_ens = weights.get("ensemble_mean", avg)
+    out = {}
+    for label in series:
+        if label.startswith("ens_"):
+            out[label] = w_ens / m
+        elif label.startswith("det_"):
+            out[label] = weights.get(label, avg)
+        else:
+            out[label] = weights.get("nws", avg)
+    return out
+
+
+def _collect_samples(series, day, variable, now, observed, bias, obs_now=None,
+                     weights=None):
+    """(values, weights) lists of daily extremes for `day`.
+
+    Bias correction applies only to pure forecasts (skipped while anchoring to a
+    live obs). `weights` is an optional {system: weight} map; when absent every
+    sample weighs 1.0 (identical to the old equal-weight behavior).
     """
     anchoring = obs_now is not None
-    samples = []
+    wmap = _sample_weights(series, weights) if weights else None
+    vals, ws = [], []
     for label, (times, temps) in series.items():
         val = _member_extreme(times, temps, day, variable, now, observed, obs_now)
         if val is None or not math.isfinite(val):
             continue
         if not anchoring:
             val -= bias.get(_group_of(label), {}).get(variable, 0.0)
-        samples.append(val)
-    return samples
+        vals.append(val)
+        ws.append(wmap[label] if wmap else 1.0)
+    return vals, ws
 
 
-def _bin_probabilities(samples, target_sigma):
-    """Gaussian-mixture density over samples -> probability per integer bin.
+def _bin_probabilities(samples, target_sigma, weights=None):
+    """Gaussian-mixture density over weighted samples -> probability per bin.
 
-    The ensemble samples supply the *shape* (skew, multimodality); the total
-    spread is pinned to `target_sigma` by scaling samples about their mean and
-    using a fixed smoothing bandwidth, so total variance == target_sigma^2
-    regardless of how wide or narrow the raw ensemble happens to be.
+    `weights` are per-sample mixture weights (default uniform). The ensemble
+    members supply the shape; the total spread is pinned to `target_sigma` by
+    scaling samples about their weighted mean with a fixed bandwidth, so total
+    variance == target_sigma^2 regardless of the raw spread. Uniform weights
+    reproduce the unweighted result exactly.
     """
-    n = len(samples)
-    mean = sum(samples) / n
-    raw_var = sum((s - mean) ** 2 for s in samples) / n
+    if weights is None:
+        weights = [1.0] * len(samples)
+    W = sum(weights) or 1.0
+    mean = sum(w * s for w, s in zip(weights, samples)) / W
+    raw_var = sum(w * (s - mean) ** 2 for w, s in zip(weights, samples)) / W
     bw = _MIN_BANDWIDTH
     needed = target_sigma ** 2 - bw ** 2
     if needed <= 0 or raw_var < 1e-6:
-        # Target tighter than smoothing floor, or samples collapsed: a single
-        # normal at the mean with the target spread.
         samples = [mean]
-        n = 1
+        weights = [1.0]
+        W = 1.0
         bw = max(target_sigma, _MIN_BANDWIDTH)
     else:
         alpha = math.sqrt(needed / raw_var)
@@ -143,14 +169,15 @@ def _bin_probabilities(samples, target_sigma):
     for label in bin_labels():
         if label.startswith("<="):
             edge = BIN_LOW + 0.5
-            p = sum(_norm_cdf(edge, s, bw) for s in samples) / n
+            p = sum(w * _norm_cdf(edge, s, bw) for w, s in zip(weights, samples)) / W
         elif label.startswith(">="):
             edge = BIN_HIGH - 0.5
-            p = sum(1.0 - _norm_cdf(edge, s, bw) for s in samples) / n
+            p = sum(w * (1.0 - _norm_cdf(edge, s, bw)) for w, s in zip(weights, samples)) / W
         else:
             t = int(label)
             lo, hi = t - 0.5, t + 0.5
-            p = sum(_norm_cdf(hi, s, bw) - _norm_cdf(lo, s, bw) for s in samples) / n
+            p = sum(w * (_norm_cdf(hi, s, bw) - _norm_cdf(lo, s, bw))
+                    for w, s in zip(weights, samples)) / W
         probs[label] = p
     total = sum(probs.values()) or 1.0
     return {k: v / total for k, v in probs.items()}
@@ -211,6 +238,32 @@ def _day_ahead_sigma(fullday_samples, calib_sigma):
     return max(_DEFAULT_INFLATION * raw, _MIN_SIGMA) if raw else _DEFAULT_SIGMA
 
 
+def _offset_bucket(settle_offset, variable, day, calib):
+    """(shift, gap_std) for `variable` from a settlement-offset spec.
+
+    Accepts the flat shape ({var: float, var_std: float}) and the bucketed shape
+    ({var: {"clear_calm": float, "other": float, "clear_calm_std": float,
+    "other_std": float}}). For the bucketed
+    shape, the bucket is chosen from the overnight forecast conditions for `day`,
+    defaulting to 'other' when conditions can't be fetched.
+    """
+    spec = (settle_offset or {}).get(variable)
+    if isinstance(spec, dict):
+        cool = (calib or {}).get("cooling") or {}
+        ct = cool.get("cloud_thresh", CLEAR_CLOUD_MAX)
+        wt = cool.get("wind_thresh", CALM_WIND_MAX)
+        bucket = "other"
+        try:
+            cloud, wind = open_meteo_models.night_conditions(day)
+            if cloud is not None and cloud < ct and wind < wt:
+                bucket = "clear_calm"
+        except Exception:
+            pass
+        return spec.get(bucket, 0.0), spec.get(f"{bucket}_std", 0.0)
+    return ((settle_offset or {}).get(variable, 0.0),
+            (settle_offset or {}).get(f"{variable}_std", 0.0))
+
+
 def predict_variable(series, obs_series, day, variable, now, calib,
                      settle_offset=None):
     """Return a dict describing the predicted distribution for one variable.
@@ -229,8 +282,10 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     bias = (calib or {}).get("bias", {})
     # Full-day extremes (ignoring obs) set the reference spread; nowcast-blended
     # samples carry the realized floor/ceiling and forecast anchored to obs_now.
-    fullday = _collect_samples(series, day, variable, None, None, bias)
-    samples = _collect_samples(series, day, variable, now, observed, bias, obs_now)
+    var_weights = (calib or {}).get("weights", {}).get(variable)
+    fullday, _fw = _collect_samples(series, day, variable, None, None, bias)
+    samples, weights = _collect_samples(series, day, variable, now, observed, bias,
+                                        obs_now, var_weights)
     if not samples or not fullday:
         return None
 
@@ -257,11 +312,10 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     # NOT the hard observed bound (the offset is an average gap, not a floor) —
     # so consensus/bins move but still-possible bins are not zeroed. A constant
     # shift leaves sigma and locked_ratio unchanged. None => Robinhood, no shift.
-    if settle_offset:
-        off = settle_offset.get(variable, 0.0)
-        if off:
-            samples = [s + off for s in samples]
-            fullday = [s + off for s in fullday]
+    settle_shift, settle_gap_std = _offset_bucket(settle_offset, variable, day, calib)
+    if settle_shift:
+        samples = [s + settle_shift for s in samples]
+        fullday = [s + settle_shift for s in fullday]
 
     calib_sigma = (calib or {}).get("sigma", {}).get(variable)
     sigma_day_ahead = _day_ahead_sigma(fullday, calib_sigma)
@@ -284,15 +338,15 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     # The CLI settlement offset is an average; its gap has irreducible spread
     # (std from calibration) we can't observe live, so widen sigma by it in
     # quadrature whenever the offset is applied. Center (consensus) is unchanged.
-    if settle_offset:
-        gap_std = settle_offset.get(f"{variable}_std", 0.0)
-        if gap_std:
-            sigma = math.hypot(sigma, gap_std)
+    if settle_gap_std:
+        sigma = math.hypot(sigma, settle_gap_std)
 
-    probs = _bin_probabilities(samples, sigma)
+    probs = _bin_probabilities(samples, sigma, weights)
     probs = _apply_hard_bound(probs, variable, observed)
 
-    mean = sum(samples) / len(samples)
+    # Reported consensus = the same skill-weighted mean used to center the bins.
+    _w = sum(weights) or 1.0
+    mean = sum(w * s for w, s in zip(weights, samples)) / _w
     return {
         "probabilities": probs,
         "consensus": round(mean, 1),

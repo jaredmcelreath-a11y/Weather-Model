@@ -22,7 +22,8 @@ from datetime import date, timedelta
 
 import calibration
 import model
-from config import BIN_HIGH, BIN_LOW, bin_labels
+from config import (BIN_HIGH, BIN_LOW, CALM_WIND_MAX, CLEAR_CLOUD_MAX,
+                    bin_labels)
 from model import _bin_probabilities, _MIN_SIGMA
 from settlement import bin_for_temp, day_high_low
 from sources import open_meteo_models, station_history
@@ -124,31 +125,51 @@ def run(days: int = 60, cli: bool = False, settle_offset=None) -> dict:
     calib = calibration.get(refresh=True) or {}
     bias = calib.get("bias", {}).get("deterministic", {})
     sigma_cfg = calib.get("sigma", {})
+    weights_cfg = calib.get("weights") or {}
+
+    bucketed = cli and any(isinstance((settle_offset or {}).get(v), dict)
+                           for v in ("high", "low"))
+    cond = {}
+    if bucketed:
+        try:
+            cond = open_meteo_models.historical_night_conditions(start, end)
+        except Exception:
+            cond = {}
+
+    def _offset_for(var, day):
+        spec = (settle_offset or {}).get(var) if cli else 0.0
+        if isinstance(spec, dict):
+            cloud, wind = cond.get(day, (100.0, 100.0))
+            b = "clear_calm" if (cloud < CLEAR_CLOUD_MAX and wind < CALM_WIND_MAX) else "other"
+            return spec.get(b, 0.0), spec.get(f"{b}_std", 0.0)
+        return (spec or 0.0), ((settle_offset or {}).get(f"{var}_std", 0.0) if cli else 0.0)
 
     metrics = {}
     for var in ("high", "low"):
-        sigma = max(sigma_cfg.get(var) or 3.0, _MIN_SIGMA)
-        off = (settle_offset or {}).get(var, 0.0) if cli else 0.0
-        if cli:
-            sigma = math.hypot(sigma, (settle_offset or {}).get(f"{var}_std", 0.0))
+        sigma_base = max(sigma_cfg.get(var) or 3.0, _MIN_SIGMA)
         rec = {"mae": [], "brier": [], "crps": [], "cov50": [], "cov80": [],
                "mae_base": [], "crps_base": []}
         rel_points: list[tuple] = []
         for day, (act_hi, act_lo) in actual.items():
             act = act_hi if var == "high" else act_lo
-            samples = []
-            for _lab, (t, v) in series.items():
+            samples, sweights = [], []
+            vw = weights_cfg.get(var, {})
+            for lab, (t, v) in series.items():
                 hi, lo = day_high_low(t, v, day)
                 if hi is None:
                     continue
                 samples.append(hi if var == "high" else lo)
+                sweights.append(vw.get(lab, 1.0))
             if not samples:
                 continue
             actual_label = bin_for_temp(act)
 
+            off, gap_std = _offset_for(var, day)
+            sigma = math.hypot(sigma_base, gap_std) if gap_std else sigma_base
             corrected = [s - bias.get(var, 0.0) + off for s in samples]
-            probs = _bin_probabilities(corrected, sigma)
-            mu = sum(corrected) / len(corrected)
+            probs = _bin_probabilities(corrected, sigma, sweights)
+            _wsum = sum(sweights) or 1.0
+            mu = sum(w * s for w, s in zip(sweights, corrected)) / _wsum
             rec["mae"].append(abs(mu - act))
             rec["brier"].append(_brier(probs, actual_label))
             rec["crps"].append(_crps(probs, act))
