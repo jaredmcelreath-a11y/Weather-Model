@@ -527,9 +527,8 @@ def render_page(snap, calib, adapter, load_accuracy):
             st.dataframe(sdf.set_index("source"), width="stretch", height=300)
 
     with st.expander("📊 Model accuracy"):
-        if adapter.basis_note:  # Kalshi page -> CLI settlement basis
-            st.caption("📐 Accuracy scored on the NWS CLI settlement basis "
-                       "(what Kalshi resolves on).")
+        if adapter.accuracy_note:
+            st.caption(adapter.accuracy_note)
         _render_accuracy(load_accuracy)
 
     st.caption(adapter.settle_footer)

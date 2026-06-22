@@ -45,3 +45,8 @@ def test_market_view_imports_and_exposes_render():
 def test_basis_note_kalshi_set_robinhood_none():
     assert ROBINHOOD.basis_note is None
     assert KALSHI.basis_note and "CLI" in KALSHI.basis_note
+
+
+def test_accuracy_note_kalshi_set_robinhood_none():
+    assert ROBINHOOD.accuracy_note is None
+    assert KALSHI.accuracy_note and "CLI" in KALSHI.accuracy_note

@@ -29,6 +29,7 @@ class MarketAdapter:
     safe_hold_default: float        # safe-hold slider default (fraction)
     safe_hold_min: float            # safe-hold slider minimum (fraction)
     basis_note: str | None = None   # caption shown under the market heading
+    accuracy_note: str | None = None  # caption shown in the model-accuracy expander
 
 
 @st.cache_data(ttl=30, show_spinner=False)
@@ -79,4 +80,6 @@ KALSHI = MarketAdapter(
     basis_note=("Values on the NWS CLI settlement basis (continuous ASOS daily "
                 "max/min) — what Kalshi resolves on, ~+0.9°F vs the hourly basis "
                 "on highs."),
+    accuracy_note=("📐 Accuracy scored on the NWS CLI settlement basis "
+                   "(what Kalshi resolves on)."),
 )
