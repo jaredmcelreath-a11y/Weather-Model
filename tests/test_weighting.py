@@ -101,3 +101,34 @@ def test_system_weights_equal_when_skill_is_equal():
                   "b": {"high": 89.0, "low": 69.0}}
     w = calibration._system_weights(ext, actual, ["a", "b"], lam=0.25)
     assert abs(w["high"]["a"] - w["high"]["b"]) < 1e-6
+
+
+def test_gate_keeps_weights_only_when_they_beat_equal():
+    from datetime import timedelta
+    d0 = date(2026, 5, 1)
+    ext, actual = {}, {}
+    for i in range(40):
+        d = d0 + timedelta(days=i)
+        actual[d] = (90.0, 70.0)
+        ext[d] = {"good": {"high": 90.0, "low": 70.0},
+                  "bad": {"high": 95.0, "low": 75.0}}
+    systems = ["good", "bad"]
+    w = calibration._system_weights(ext, actual, systems, lam=0.25)
+    # weighting (favoring 'good') should beat equal weight on this data
+    assert calibration._weights_beat_equal(ext, actual, systems, w, "high",
+                                           margin=0.02) is True
+
+
+def test_gate_rejects_when_no_improvement():
+    from datetime import timedelta
+    d0 = date(2026, 5, 1)
+    ext, actual = {}, {}
+    for i in range(40):
+        d = d0 + timedelta(days=i)
+        actual[d] = (90.0, 70.0)
+        ext[d] = {"a": {"high": 91.0, "low": 71.0},
+                  "b": {"high": 89.0, "low": 69.0}}   # symmetric, equal skill
+    systems = ["a", "b"]
+    w = calibration._system_weights(ext, actual, systems, lam=0.25)
+    assert calibration._weights_beat_equal(ext, actual, systems, w, "high",
+                                           margin=0.02) is False

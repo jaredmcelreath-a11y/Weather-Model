@@ -216,6 +216,34 @@ def _system_weights(ext, actual, systems, lam=0.25):
     return weights
 
 
+def _consensus_mae(ext, actual, systems, var, wmap):
+    """Mean abs error of the wmap-weighted consensus over days with data."""
+    errs = []
+    for d in ext:
+        if d not in actual:
+            continue
+        num = den = 0.0
+        for s in systems:
+            if s in ext[d]:
+                w = wmap[s]
+                num += w * ext[d][s][var]
+                den += w
+        if den <= 0:
+            continue
+        cons = num / den
+        act = actual[d][0] if var == "high" else actual[d][1]
+        errs.append(abs(cons - act))
+    return (sum(errs) / len(errs)) if errs else float("inf")
+
+
+def _weights_beat_equal(ext, actual, systems, weights, var, margin=0.02):
+    """True iff the skill-weighted consensus MAE beats equal weight by >= margin."""
+    equal = {s: 1.0 for s in systems}
+    eq_mae = _consensus_mae(ext, actual, systems, var, equal)
+    w_mae = _consensus_mae(ext, actual, systems, var, weights[var])
+    return w_mae <= eq_mae - margin
+
+
 def compute() -> dict:
     end = date.today() - timedelta(days=1)
     start = end - timedelta(days=CALIBRATION_WINDOW_DAYS)
@@ -266,6 +294,20 @@ def compute() -> dict:
     settlement_offset = _conditional_settlement_offset(cli_actual, actual, cond) \
         or _settlement_offset(cli_actual, actual)
 
+    weights = {"high": {}, "low": {}}
+    try:
+        ext = _system_extremes(start, end)
+        systems = sorted({s for day in ext.values() for s in day})
+        if ext and len(systems) >= 2:
+            cand = _system_weights(ext, actual, systems)
+            for var in ("high", "low"):
+                if _weights_beat_equal(ext, actual, systems, cand, var):
+                    weights[var] = cand[var]
+                else:
+                    weights[var] = {s: 1.0 / len(systems) for s in systems}
+    except Exception:
+        weights = {"high": {}, "low": {}}
+
     return {
         "computed": datetime.now().isoformat(timespec="seconds"),
         "window_days": CALIBRATION_WINDOW_DAYS,
@@ -278,6 +320,7 @@ def compute() -> dict:
             "nws": {"high": 0.0, "low": 0.0},
         },
         "sigma": sigma,
+        "weights": weights,
         "cooling": cooling,
         "settlement_offset": settlement_offset,
     }
