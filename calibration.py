@@ -236,12 +236,33 @@ def _consensus_mae(ext, actual, systems, var, wmap):
     return (sum(errs) / len(errs)) if errs else float("inf")
 
 
-def _weights_beat_equal(ext, actual, systems, weights, var, margin=0.02):
-    """True iff the skill-weighted consensus MAE beats equal weight by >= margin."""
+def _weights_beat_equal(ext, actual, systems, var, lam=0.25, margin=0.02, train=30):
+    """True iff skill weights beat equal weight OUT-OF-SAMPLE by >= margin.
+
+    Walk-forward: for each test day, weights are learned from the trailing
+    `train` days only (never the test day itself), then both the weighted and
+    the equal-weight consensus are scored on that held-out day. This guards
+    against the in-sample illusion that weighting "always helps" — fitting
+    weights on the same days you score on almost always wins, but may not
+    generalize (e.g. the high benefits from equal-weight error cancellation).
+    """
+    days = sorted(d for d in ext if d in actual)
+    if len(days) <= train:
+        return False
     equal = {s: 1.0 for s in systems}
-    eq_mae = _consensus_mae(ext, actual, systems, var, equal)
-    w_mae = _consensus_mae(ext, actual, systems, var, weights[var])
-    return w_mae <= eq_mae - margin
+    w_errs, eq_errs = [], []
+    for i in range(train, len(days)):
+        d = days[i]
+        window = days[i - train:i]
+        tr_ext = {x: ext[x] for x in window}
+        tr_act = {x: actual[x] for x in window}
+        cand = _system_weights(tr_ext, tr_act, systems, lam)
+        day_ext, day_act = {d: ext[d]}, {d: actual[d]}
+        w_errs.append(_consensus_mae(day_ext, day_act, systems, var, cand[var]))
+        eq_errs.append(_consensus_mae(day_ext, day_act, systems, var, equal))
+    if not w_errs:
+        return False
+    return (sum(w_errs) / len(w_errs)) <= (sum(eq_errs) / len(eq_errs)) - margin
 
 
 def compute() -> dict:
@@ -301,7 +322,7 @@ def compute() -> dict:
         if ext and len(systems) >= 2:
             cand = _system_weights(ext, actual, systems)
             for var in ("high", "low"):
-                if _weights_beat_equal(ext, actual, systems, cand, var):
+                if _weights_beat_equal(ext, actual, systems, var):
                     weights[var] = cand[var]
                 else:
                     weights[var] = {s: 1.0 / len(systems) for s in systems}
