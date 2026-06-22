@@ -2,10 +2,11 @@
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import backtest
 import calibration
 import model
 from config import TIMEZONE
-from sources import open_meteo_ensemble
+from sources import open_meteo_ensemble, open_meteo_models, station_history
 from sources import common
 
 _TZ = ZoneInfo(TIMEZONE)
@@ -130,10 +131,6 @@ def test_gate_rejects_when_no_improvement():
     systems = ["a", "b"]
     assert calibration._weights_beat_equal(ext, actual, systems, "high",
                                            margin=0.02) is False
-
-
-import backtest
-from sources import open_meteo_models, station_history
 
 
 def test_backtest_uses_system_weights_when_provided(monkeypatch):
