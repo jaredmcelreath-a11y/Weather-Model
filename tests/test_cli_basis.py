@@ -42,11 +42,13 @@ def test_settlement_offset_means_the_cli_minus_hourly_gap():
     assert off["high"] == 1.0    # (1 + 1) / 2
     assert off["low"] == -1.0    # (0 + -2) / 2
     assert off["n_days"] == 2
+    assert off["high_std"] == 0.0   # high gaps [1, 1] -> std 0
+    assert off["low_std"] == 1.0    # low gaps [0, -2] -> std 1.0
 
 
 def test_settlement_offset_zero_when_no_overlap():
     off = _settlement_offset({date(2026, 6, 8): (95.0, 78.0)}, {})
-    assert off == {"high": 0.0, "low": 0.0, "n_days": 0}
+    assert off == {"high": 0.0, "low": 0.0, "high_std": 0.0, "low_std": 0.0, "n_days": 0}
 
 
 def _member(day, peak):
@@ -207,3 +209,44 @@ def test_scheduled_log_records_both_bases(monkeypatch):
 
     assert (None, "hourly") in calls                       # hourly snapshot, no offset
     assert ({"high": 1.0, "low": 0.0}, "cli") in calls     # offset snapshot, cli basis
+
+
+def test_settle_offset_std_widens_sigma_without_moving_center():
+    day = date(2030, 7, 1)
+    series, obs = _series(day), {"obs": ([], [])}
+    base = model.predict_variable(series, obs, day, "high", None, None,
+                                  {"high": 1.0, "low": 0.0})
+    wide = model.predict_variable(series, obs, day, "high", None, None,
+                                  {"high": 1.0, "low": 0.0, "high_std": 2.0, "low_std": 0.0})
+    assert wide["consensus"] == base["consensus"]    # center unchanged
+    assert wide["sigma_used"] > base["sigma_used"]   # gap std widened sigma
+
+
+def test_settle_offset_zero_std_matches_no_std():
+    day = date(2030, 7, 1)
+    series, obs = _series(day), {"obs": ([], [])}
+    a = model.predict_variable(series, obs, day, "high", None, None,
+                               {"high": 1.0, "low": 0.0})
+    b = model.predict_variable(series, obs, day, "high", None, None,
+                               {"high": 1.0, "low": 0.0, "high_std": 0.0, "low_std": 0.0})
+    assert a == b
+
+
+def test_backtest_cli_std_widens_distribution(monkeypatch):
+    day = date(2026, 6, 10)
+    series = {"det_a": _member(day, 90.0)}
+    monkeypatch.setattr(open_meteo_models, "fetch_historical", lambda s, e: series)
+    monkeypatch.setattr(station_history, "fetch_actual",
+                        lambda s, e: {day: (90.0, 75.0)})
+    monkeypatch.setattr(station_history, "fetch_actual_cli",
+                        lambda s, e: {day: (91.0, 75.0)})
+    monkeypatch.setattr(calibration, "get", lambda refresh=True: {
+        "bias": {"deterministic": {"high": 0.0, "low": 0.0}},
+        "sigma": {"high": 2.0, "low": 2.0}})
+
+    narrow = backtest.run(cli=True, settle_offset={"high": 1.0, "low": 0.0})
+    wide = backtest.run(cli=True,
+                        settle_offset={"high": 1.0, "low": 0.0,
+                                       "high_std": 3.0, "low_std": 0.0})
+    # consensus is centered on the actual (91), so a wider sigma -> higher CRPS
+    assert wide["high"]["crps"] > narrow["high"]["crps"]

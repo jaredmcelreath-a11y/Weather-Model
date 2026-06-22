@@ -51,12 +51,20 @@ def _forecast_daily_extremes(start: date, end: date):
     return out
 
 
-def _settlement_offset(cli: dict, hourly: dict) -> dict:
-    """Mean (CLI - hourly) daily-extreme gap, per variable.
+def _mean_std(xs: list[float]) -> tuple[float, float]:
+    """Population mean and std, each rounded to 2 dp."""
+    m = sum(xs) / len(xs)
+    var = sum((x - m) ** 2 for x in xs) / len(xs)
+    return round(m, 2), round(var ** 0.5, 2)
 
-    The Kalshi page adds this to the hourly-basis forecast to reach the CLI
-    settlement basis. Zero offset when there is no overlapping history (safe
-    degrade to the current hourly behavior)."""
+
+def _settlement_offset(cli: dict, hourly: dict) -> dict:
+    """Mean and std of the (CLI - hourly) daily-extreme gap, per variable.
+
+    The Kalshi page adds the mean to the hourly forecast (to reach the CLI
+    settlement basis) and the std in quadrature to its spread (the gap is an
+    unobservable average, not exact). Zeros when there is no overlapping
+    history (safe degrade to current behavior)."""
     dh, dl = [], []
     for day, (chi, clo) in cli.items():
         if day not in hourly:
@@ -65,12 +73,10 @@ def _settlement_offset(cli: dict, hourly: dict) -> dict:
         dh.append(chi - hhi)
         dl.append(clo - hlo)
     if not dh:
-        return {"high": 0.0, "low": 0.0, "n_days": 0}
-    return {
-        "high": round(sum(dh) / len(dh), 2),
-        "low": round(sum(dl) / len(dl), 2),
-        "n_days": len(dh),
-    }
+        return {"high": 0.0, "low": 0.0, "high_std": 0.0, "low_std": 0.0, "n_days": 0}
+    hm, hs = _mean_std(dh)
+    lm, ls = _mean_std(dl)
+    return {"high": hm, "low": lm, "high_std": hs, "low_std": ls, "n_days": len(dh)}
 
 
 def compute() -> dict:

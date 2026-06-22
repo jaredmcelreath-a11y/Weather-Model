@@ -281,6 +281,14 @@ def predict_variable(series, obs_series, day, variable, now, calib,
         sigma_base = sigma_day_ahead * LEAD_SIGMA_INFLATION.get(bucket, 1.0)
     sigma = max(sigma_base * locked_ratio, _SIGMA_FLOOR)
 
+    # The CLI settlement offset is an average; its gap has irreducible spread
+    # (std from calibration) we can't observe live, so widen sigma by it in
+    # quadrature whenever the offset is applied. Center (consensus) is unchanged.
+    if settle_offset:
+        gap_std = settle_offset.get(f"{variable}_std", 0.0)
+        if gap_std:
+            sigma = math.hypot(sigma, gap_std)
+
     probs = _bin_probabilities(samples, sigma)
     probs = _apply_hard_bound(probs, variable, observed)
 
