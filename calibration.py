@@ -199,6 +199,13 @@ def compute() -> dict:
 
     cooling = _cooling_offset(start, end, fcst, actual, bias.get("low", 0.0))
 
+    try:
+        cond = open_meteo_models.historical_night_conditions(start, end)
+    except Exception:
+        cond = {}
+    settlement_offset = _conditional_settlement_offset(cli_actual, actual, cond) \
+        or _settlement_offset(cli_actual, actual)
+
     return {
         "computed": datetime.now().isoformat(timespec="seconds"),
         "window_days": CALIBRATION_WINDOW_DAYS,
@@ -212,7 +219,7 @@ def compute() -> dict:
         },
         "sigma": sigma,
         "cooling": cooling,
-        "settlement_offset": _settlement_offset(cli_actual, actual),
+        "settlement_offset": settlement_offset,
     }
 
 
