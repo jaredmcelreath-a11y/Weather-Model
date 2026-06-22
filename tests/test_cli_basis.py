@@ -209,3 +209,24 @@ def test_scheduled_log_records_both_bases(monkeypatch):
 
     assert (None, "hourly") in calls                       # hourly snapshot, no offset
     assert ({"high": 1.0, "low": 0.0}, "cli") in calls     # offset snapshot, cli basis
+
+
+def test_settle_offset_std_widens_sigma_without_moving_center():
+    day = date(2030, 7, 1)
+    series, obs = _series(day), {"obs": ([], [])}
+    base = model.predict_variable(series, obs, day, "high", None, None,
+                                  {"high": 1.0, "low": 0.0})
+    wide = model.predict_variable(series, obs, day, "high", None, None,
+                                  {"high": 1.0, "low": 0.0, "high_std": 2.0, "low_std": 0.0})
+    assert wide["consensus"] == base["consensus"]    # center unchanged
+    assert wide["sigma_used"] > base["sigma_used"]   # gap std widened sigma
+
+
+def test_settle_offset_zero_std_matches_no_std():
+    day = date(2030, 7, 1)
+    series, obs = _series(day), {"obs": ([], [])}
+    a = model.predict_variable(series, obs, day, "high", None, None,
+                               {"high": 1.0, "low": 0.0})
+    b = model.predict_variable(series, obs, day, "high", None, None,
+                               {"high": 1.0, "low": 0.0, "high_std": 0.0, "low_std": 0.0})
+    assert a == b
