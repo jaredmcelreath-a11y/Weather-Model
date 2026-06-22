@@ -127,7 +127,8 @@ def run(days: int = 60, cli: bool = False, settle_offset=None) -> dict:
     sigma_cfg = calib.get("sigma", {})
     weights_cfg = calib.get("weights") or {}
 
-    bucketed = cli and isinstance((settle_offset or {}).get("high"), dict)
+    bucketed = cli and any(isinstance((settle_offset or {}).get(v), dict)
+                           for v in ("high", "low"))
     cond = {}
     if bucketed:
         try:

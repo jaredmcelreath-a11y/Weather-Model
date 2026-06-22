@@ -13,7 +13,6 @@ _TZ = ZoneInfo(TIMEZONE)
 
 
 def _days(n, start=date(2026, 5, 1)):
-    from datetime import timedelta
     return [start + timedelta(days=i) for i in range(n)]
 
 

@@ -321,6 +321,17 @@ def compute() -> dict:
         systems = sorted({s for day in ext.values() for s in day})
         if ext and len(systems) >= 2:
             cand = _system_weights(ext, actual, systems)
+            # Three regimes per variable:
+            #   gate passes -> skill-weighted systems (cand[var]);
+            #   gate fails   -> uniform *system* weights (the rebalanced neutral);
+            #   no archive / <2 systems / exception -> {} (handled below), which
+            #     the model reads as OFF and falls back to the equal-per-member
+            #     pool (old behavior).
+            # The fail case is uniform-SYSTEM, not {}, on purpose: the group
+            # rebalancing (ensemble counts as one estimator, not ~50 votes) beats
+            # the old member-dominated pool out-of-sample on its own (validated:
+            # low 1.21->1.03, high 0.95->0.92 MAE); the gate only decides the
+            # additional skill tilt on top of that neutral.
             for var in ("high", "low"):
                 if _weights_beat_equal(ext, actual, systems, var):
                     weights[var] = cand[var]
