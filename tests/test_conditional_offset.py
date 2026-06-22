@@ -1,7 +1,12 @@
 """Two-bucket conditional settlement offset helpers — bucket gating and fallback."""
-from datetime import date
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
+import model
 from calibration import _conditional_settlement_offset
+from config import TIMEZONE
+
+_TZ = ZoneInfo(TIMEZONE)
 
 
 def _days(n, start=date(2026, 5, 1)):
@@ -67,15 +72,6 @@ def test_returns_none_when_split_fails_margin_gate():
         cli[d] = (91.0, 70.0 + gap)
         cond[d] = (10.0, 5.0) if clear else (80.0, 20.0)
     assert _conditional_settlement_offset(cli, hourly, cond) is None
-
-
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
-
-import model
-from config import TIMEZONE
-
-_TZ = ZoneInfo(TIMEZONE)
 
 
 def _member(day, peak):

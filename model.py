@@ -215,7 +215,8 @@ def _offset_bucket(settle_offset, variable, day, calib):
     """(shift, gap_std) for `variable` from a settlement-offset spec.
 
     Accepts the flat shape ({var: float, var_std: float}) and the bucketed shape
-    ({var: {clear_calm, other, clear_calm_std, other_std}}). For the bucketed
+    ({var: {"clear_calm": float, "other": float, "clear_calm_std": float,
+    "other_std": float}}). For the bucketed
     shape, the bucket is chosen from the overnight forecast conditions for `day`,
     defaulting to 'other' when conditions can't be fetched.
     """
