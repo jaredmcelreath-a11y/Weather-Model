@@ -118,3 +118,38 @@ def test_model_other_bucket_when_conditions_unavailable(monkeypatch):
     out = model.predict_variable(_series(day), {"obs": ([], [])}, day, "low",
                                  None, {}, _BUCKETED)
     assert out["consensus"] == 75.8                       # falls back to 'other'
+
+
+import backtest
+import calibration
+from sources import open_meteo_models, station_history
+
+
+def test_backtest_applies_bucketed_offset_per_day(monkeypatch):
+    d_clear = date(2026, 6, 10)
+    d_cloud = date(2026, 6, 11)
+    # one series spanning both days
+    base = {}
+    for d in (d_clear, d_cloud):
+        t, v = _member(d, 90.0)
+        base.setdefault("det_a", ([], []))
+        base["det_a"] = (base["det_a"][0] + t, base["det_a"][1] + v)
+    monkeypatch.setattr(open_meteo_models, "fetch_historical", lambda s, e: base)
+    monkeypatch.setattr(open_meteo_models, "historical_night_conditions",
+                        lambda s, e: {d_clear: (10.0, 5.0), d_cloud: (90.0, 25.0)})
+    monkeypatch.setattr(station_history, "fetch_actual",
+                        lambda s, e: {d_clear: (90.0, 75.0), d_cloud: (90.0, 75.0)})
+    # CLI low truth equals the bucketed shift applied to the hourly low (75):
+    #   clear/calm -> 75-0.8=74.2 ; other -> 75-0.2=74.8
+    monkeypatch.setattr(station_history, "fetch_actual_cli",
+                        lambda s, e: {d_clear: (91.0, 74.2), d_cloud: (91.0, 74.8)})
+    monkeypatch.setattr(calibration, "get", lambda refresh=True: {
+        "bias": {"deterministic": {"high": 0.0, "low": 0.0}},
+        "sigma": {"high": 2.0, "low": 2.0}})
+
+    off = {"high": {"clear_calm": 1.0, "other": 1.0,
+                    "clear_calm_std": 0.0, "other_std": 0.0},
+           "low": {"clear_calm": -0.8, "other": -0.2,
+                   "clear_calm_std": 0.0, "other_std": 0.0}}
+    res = backtest.run(cli=True, settle_offset=off)
+    assert res["low"]["mae"] == 0.0          # each day's shift matches its CLI low

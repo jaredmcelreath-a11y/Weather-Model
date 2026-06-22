@@ -125,12 +125,26 @@ def run(days: int = 60, cli: bool = False, settle_offset=None) -> dict:
     bias = calib.get("bias", {}).get("deterministic", {})
     sigma_cfg = calib.get("sigma", {})
 
+    bucketed = cli and isinstance((settle_offset or {}).get("high"), dict)
+    cond = {}
+    if bucketed:
+        try:
+            cond = open_meteo_models.historical_night_conditions(start, end)
+        except Exception:
+            cond = {}
+
+    def _offset_for(var, day):
+        spec = (settle_offset or {}).get(var) if cli else 0.0
+        if isinstance(spec, dict):
+            cloud, wind = cond.get(day, (100.0, 100.0))
+            from config import CLEAR_CLOUD_MAX, CALM_WIND_MAX
+            b = "clear_calm" if (cloud < CLEAR_CLOUD_MAX and wind < CALM_WIND_MAX) else "other"
+            return spec.get(b, 0.0), spec.get(f"{b}_std", 0.0)
+        return (spec or 0.0), ((settle_offset or {}).get(f"{var}_std", 0.0) if cli else 0.0)
+
     metrics = {}
     for var in ("high", "low"):
-        sigma = max(sigma_cfg.get(var) or 3.0, _MIN_SIGMA)
-        off = (settle_offset or {}).get(var, 0.0) if cli else 0.0
-        if cli:
-            sigma = math.hypot(sigma, (settle_offset or {}).get(f"{var}_std", 0.0))
+        sigma_base = max(sigma_cfg.get(var) or 3.0, _MIN_SIGMA)
         rec = {"mae": [], "brier": [], "crps": [], "cov50": [], "cov80": [],
                "mae_base": [], "crps_base": []}
         rel_points: list[tuple] = []
@@ -146,6 +160,8 @@ def run(days: int = 60, cli: bool = False, settle_offset=None) -> dict:
                 continue
             actual_label = bin_for_temp(act)
 
+            off, gap_std = _offset_for(var, day)
+            sigma = math.hypot(sigma_base, gap_std) if gap_std else sigma_base
             corrected = [s - bias.get(var, 0.0) + off for s in samples]
             probs = _bin_probabilities(corrected, sigma)
             mu = sum(corrected) / len(corrected)
