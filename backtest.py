@@ -129,6 +129,8 @@ def run(days: int = 60, cli: bool = False, settle_offset=None) -> dict:
     for var in ("high", "low"):
         sigma = max(sigma_cfg.get(var) or 3.0, _MIN_SIGMA)
         off = (settle_offset or {}).get(var, 0.0) if cli else 0.0
+        if cli:
+            sigma = math.hypot(sigma, (settle_offset or {}).get(f"{var}_std", 0.0))
         rec = {"mae": [], "brier": [], "crps": [], "cov50": [], "cov80": [],
                "mae_base": [], "crps_base": []}
         rel_points: list[tuple] = []

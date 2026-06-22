@@ -230,3 +230,23 @@ def test_settle_offset_zero_std_matches_no_std():
     b = model.predict_variable(series, obs, day, "high", None, None,
                                {"high": 1.0, "low": 0.0, "high_std": 0.0, "low_std": 0.0})
     assert a == b
+
+
+def test_backtest_cli_std_widens_distribution(monkeypatch):
+    day = date(2026, 6, 10)
+    series = {"det_a": _member(day, 90.0)}
+    monkeypatch.setattr(open_meteo_models, "fetch_historical", lambda s, e: series)
+    monkeypatch.setattr(station_history, "fetch_actual",
+                        lambda s, e: {day: (90.0, 75.0)})
+    monkeypatch.setattr(station_history, "fetch_actual_cli",
+                        lambda s, e: {day: (91.0, 75.0)})
+    monkeypatch.setattr(calibration, "get", lambda refresh=True: {
+        "bias": {"deterministic": {"high": 0.0, "low": 0.0}},
+        "sigma": {"high": 2.0, "low": 2.0}})
+
+    narrow = backtest.run(cli=True, settle_offset={"high": 1.0, "low": 0.0})
+    wide = backtest.run(cli=True,
+                        settle_offset={"high": 1.0, "low": 0.0,
+                                       "high_std": 3.0, "low_std": 0.0})
+    # consensus is centered on the actual (91), so a wider sigma -> higher CRPS
+    assert wide["high"]["crps"] > narrow["high"]["crps"]
