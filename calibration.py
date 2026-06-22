@@ -79,7 +79,10 @@ def _settlement_offset(cli: dict, hourly: dict) -> dict:
     return {"high": hm, "low": lm, "high_std": hs, "low_std": ls, "n_days": len(dh)}
 
 
-def _var_bucket(gaps_cc, gaps_ot, min_nights, margin, min_sep):
+def _var_bucket(
+    gaps_cc: list[float], gaps_ot: list[float],
+    min_nights: int, margin: float, min_sep: float,
+) -> tuple[float, float, float, float, bool]:
     """Per-variable bucket means/stds + whether the split is worth keeping.
 
     Returns (cc_mean, ot_mean, cc_std, ot_std, passed). `passed` is True only
@@ -89,9 +92,14 @@ def _var_bucket(gaps_cc, gaps_ot, min_nights, margin, min_sep):
     least `margin`. The separation guard is what makes "buckets too similar"
     fall back to flat — with real within-bucket noise the residual check alone
     is not enough.
+
+    Requires at least one gap across both buckets; returns a not-passed result
+    for an empty input rather than dividing by zero.
     """
     n_cc = len(gaps_cc)
     all_gaps = gaps_cc + gaps_ot
+    if not all_gaps:
+        return 0.0, 0.0, 0.0, 0.0, False
     flat = sum(all_gaps) / len(all_gaps)
     cc_mean, cc_std = _mean_std(gaps_cc) if gaps_cc else (flat, 0.0)
     ot_mean, ot_std = _mean_std(gaps_ot) if gaps_ot else (flat, 0.0)
@@ -106,8 +114,9 @@ def _var_bucket(gaps_cc, gaps_ot, min_nights, margin, min_sep):
     return cc_mean, ot_mean, cc_std, ot_std, True
 
 
-def _conditional_settlement_offset(cli, hourly, cond, min_nights=5, margin=0.02,
-                                   min_sep=0.25):
+def _conditional_settlement_offset(cli: dict, hourly: dict, cond: dict,
+                                   min_nights: int = 5, margin: float = 0.02,
+                                   min_sep: float = 0.25) -> dict | None:
     """Bucketed (clear_calm/other) CLI-hourly offset, or None to use the flat one.
 
     Splits the per-day gap by overnight conditions (cloud<CLEAR_CLOUD_MAX and

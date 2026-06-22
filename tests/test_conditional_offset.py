@@ -1,4 +1,4 @@
-"""Two-bucket (clear-calm vs other) conditional settlement offset + model use."""
+"""Two-bucket conditional settlement offset helpers — bucket gating and fallback."""
 from datetime import date
 
 from calibration import _conditional_settlement_offset
@@ -47,5 +47,23 @@ def test_returns_none_when_buckets_too_similar():
         clear = i < 8
         hourly[d] = (90.0, 70.0)
         cli[d] = (91.0, 70.0 + (-0.45 if clear else -0.40))
+        cond[d] = (10.0, 5.0) if clear else (80.0, 20.0)
+    assert _conditional_settlement_offset(cli, hourly, cond) is None
+
+
+def test_returns_none_when_split_fails_margin_gate():
+    # min_nights and min_sep both pass (8 nights/bucket, means differ by 0.6) but
+    # huge within-bucket noise means splitting barely reduces the residual, so the
+    # MAR-margin gate rejects the split. Low gaps alternate +-10 around the bucket
+    # mean; cc mean +0.3, ot mean -0.3 -> flat 0.0, resid_flat == resid_cond.
+    days = _days(16)
+    cli, hourly, cond = {}, {}, {}
+    cc_gaps = [10.3, -9.7] * 4          # mean +0.3
+    ot_gaps = [9.7, -10.3] * 4          # mean -0.3
+    for i, d in enumerate(days):
+        clear = i < 8
+        gap = cc_gaps[i] if clear else ot_gaps[i - 8]
+        hourly[d] = (90.0, 70.0)
+        cli[d] = (91.0, 70.0 + gap)
         cond[d] = (10.0, 5.0) if clear else (80.0, 20.0)
     assert _conditional_settlement_offset(cli, hourly, cond) is None
