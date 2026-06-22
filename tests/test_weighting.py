@@ -1,9 +1,13 @@
 """Skill-weighted, group-rebalanced consensus."""
-from datetime import date
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import model
+from config import TIMEZONE
 from sources import open_meteo_ensemble
 from sources import common
+
+_TZ = ZoneInfo(TIMEZONE)
 
 
 def test_fetch_historical_parses_members(monkeypatch):
@@ -34,13 +38,6 @@ def test_bin_probabilities_weight_shifts_mass():
     low_heavy = model._bin_probabilities(samples, 2.0, weights=[9.0, 1.0])
     high_heavy = model._bin_probabilities(samples, 2.0, weights=[1.0, 9.0])
     assert model.prob_at_least(low_heavy, 95) < model.prob_at_least(high_heavy, 95)
-
-
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
-from config import TIMEZONE
-
-_TZ = ZoneInfo(TIMEZONE)
 
 
 def _member(day, peak):

@@ -105,8 +105,7 @@ def _sample_weights(series, weights):
     the average system weight so an unexpected label can't be silently dropped.
     """
     avg = (sum(weights.values()) / len(weights)) if weights else 1.0
-    ens_labels = [l for l in series if l.startswith("ens_")]
-    m = len(ens_labels) or 1
+    m = sum(1 for label in series if label.startswith("ens_")) or 1
     w_ens = weights.get("ensemble_mean", avg)
     out = {}
     for label in series:
@@ -345,6 +344,7 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     probs = _bin_probabilities(samples, sigma, weights)
     probs = _apply_hard_bound(probs, variable, observed)
 
+    # Reported consensus = the same skill-weighted mean used to center the bins.
     _w = sum(weights) or 1.0
     mean = sum(w * s for w, s in zip(weights, samples)) / _w
     return {
