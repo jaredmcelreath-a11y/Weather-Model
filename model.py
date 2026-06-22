@@ -116,24 +116,27 @@ def _collect_samples(series, day, variable, now, observed, bias, obs_now=None):
     return samples
 
 
-def _bin_probabilities(samples, target_sigma):
-    """Gaussian-mixture density over samples -> probability per integer bin.
+def _bin_probabilities(samples, target_sigma, weights=None):
+    """Gaussian-mixture density over weighted samples -> probability per bin.
 
-    The ensemble samples supply the *shape* (skew, multimodality); the total
-    spread is pinned to `target_sigma` by scaling samples about their mean and
-    using a fixed smoothing bandwidth, so total variance == target_sigma^2
-    regardless of how wide or narrow the raw ensemble happens to be.
+    `weights` are per-sample mixture weights (default uniform). The ensemble
+    members supply the shape; the total spread is pinned to `target_sigma` by
+    scaling samples about their weighted mean with a fixed bandwidth, so total
+    variance == target_sigma^2 regardless of the raw spread. Uniform weights
+    reproduce the unweighted result exactly.
     """
     n = len(samples)
-    mean = sum(samples) / n
-    raw_var = sum((s - mean) ** 2 for s in samples) / n
+    if weights is None:
+        weights = [1.0] * n
+    W = sum(weights) or 1.0
+    mean = sum(w * s for w, s in zip(weights, samples)) / W
+    raw_var = sum(w * (s - mean) ** 2 for w, s in zip(weights, samples)) / W
     bw = _MIN_BANDWIDTH
     needed = target_sigma ** 2 - bw ** 2
     if needed <= 0 or raw_var < 1e-6:
-        # Target tighter than smoothing floor, or samples collapsed: a single
-        # normal at the mean with the target spread.
         samples = [mean]
-        n = 1
+        weights = [1.0]
+        W = 1.0
         bw = max(target_sigma, _MIN_BANDWIDTH)
     else:
         alpha = math.sqrt(needed / raw_var)
@@ -143,14 +146,15 @@ def _bin_probabilities(samples, target_sigma):
     for label in bin_labels():
         if label.startswith("<="):
             edge = BIN_LOW + 0.5
-            p = sum(_norm_cdf(edge, s, bw) for s in samples) / n
+            p = sum(w * _norm_cdf(edge, s, bw) for w, s in zip(weights, samples)) / W
         elif label.startswith(">="):
             edge = BIN_HIGH - 0.5
-            p = sum(1.0 - _norm_cdf(edge, s, bw) for s in samples) / n
+            p = sum(w * (1.0 - _norm_cdf(edge, s, bw)) for w, s in zip(weights, samples)) / W
         else:
             t = int(label)
             lo, hi = t - 0.5, t + 0.5
-            p = sum(_norm_cdf(hi, s, bw) - _norm_cdf(lo, s, bw) for s in samples) / n
+            p = sum(w * (_norm_cdf(hi, s, bw) - _norm_cdf(lo, s, bw))
+                    for w, s in zip(weights, samples)) / W
         probs[label] = p
     total = sum(probs.values()) or 1.0
     return {k: v / total for k, v in probs.items()}

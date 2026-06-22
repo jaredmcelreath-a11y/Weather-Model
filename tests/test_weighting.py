@@ -19,3 +19,20 @@ def test_fetch_historical_parses_members(monkeypatch):
     assert "ens_control" in out
     times, temps = out["ens_member01_ncep_gefs_seamless"]
     assert len(times) == 2 and temps == [70.0, 71.0]
+
+
+import model
+
+
+def test_bin_probabilities_uniform_weights_match_unweighted():
+    samples = [88.0, 90.0, 92.0]
+    a = model._bin_probabilities(samples, 2.0)
+    b = model._bin_probabilities(samples, 2.0, weights=[1.0, 1.0, 1.0])
+    assert a == b
+
+
+def test_bin_probabilities_weight_shifts_mass():
+    samples = [85.0, 95.0]
+    low_heavy = model._bin_probabilities(samples, 2.0, weights=[9.0, 1.0])
+    high_heavy = model._bin_probabilities(samples, 2.0, weights=[1.0, 9.0])
+    assert model.prob_at_least(low_heavy, 95) < model.prob_at_least(high_heavy, 95)
