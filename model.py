@@ -125,9 +125,8 @@ def _bin_probabilities(samples, target_sigma, weights=None):
     variance == target_sigma^2 regardless of the raw spread. Uniform weights
     reproduce the unweighted result exactly.
     """
-    n = len(samples)
     if weights is None:
-        weights = [1.0] * n
+        weights = [1.0] * len(samples)
     W = sum(weights) or 1.0
     mean = sum(w * s for w, s in zip(weights, samples)) / W
     raw_var = sum(w * (s - mean) ** 2 for w, s in zip(weights, samples)) / W

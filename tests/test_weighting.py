@@ -1,6 +1,7 @@
 """Skill-weighted, group-rebalanced consensus."""
 from datetime import date
 
+import model
 from sources import open_meteo_ensemble
 from sources import common
 
@@ -19,9 +20,6 @@ def test_fetch_historical_parses_members(monkeypatch):
     assert "ens_control" in out
     times, temps = out["ens_member01_ncep_gefs_seamless"]
     assert len(times) == 2 and temps == [70.0, 71.0]
-
-
-import model
 
 
 def test_bin_probabilities_uniform_weights_match_unweighted():
