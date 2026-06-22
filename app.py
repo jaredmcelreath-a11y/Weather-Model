@@ -66,22 +66,40 @@ def load_accuracy():
     return bt, live
 
 
-def _page(adapter, snapshot_loader, record_log):
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def load_accuracy_kalshi():
+    """Backtest + live self-scoring on the Kalshi/CLI settlement basis."""
+    import backtest
+    import scoring
+    calib = calibration.get(refresh=True) or {}
+    off = calib.get("settlement_offset")
+    bt = live = None
+    try:
+        bt = backtest.run(cli=True, settle_offset=off)
+    except Exception:
+        pass
+    try:
+        live = scoring.score(basis="cli")
+    except Exception:
+        pass
+    return bt, live
+
+
+def _page(adapter, snapshot_loader, accuracy_loader, record_basis):
     snap, calib = snapshot_loader()
-    if record_log:
-        try:
-            forecast_log.record(snap)  # hourly forward log; upsert, idempotent
-        except Exception:
-            pass  # logging must never break the dashboard
-    market_view.render_page(snap, calib, adapter, load_accuracy)
+    try:
+        forecast_log.record(snap, basis=record_basis)  # per-basis upsert
+    except Exception:
+        pass  # logging must never break the dashboard
+    market_view.render_page(snap, calib, adapter, accuracy_loader)
 
 
 def robinhood_page():
-    _page(ROBINHOOD, load_snapshot, record_log=True)
+    _page(ROBINHOOD, load_snapshot, load_accuracy, "hourly")
 
 
 def kalshi_page():
-    _page(KALSHI, load_snapshot_kalshi, record_log=False)
+    _page(KALSHI, load_snapshot_kalshi, load_accuracy_kalshi, "cli")
 
 
 st.navigation([

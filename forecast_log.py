@@ -25,7 +25,8 @@ _PATH = os.path.join(os.path.dirname(__file__), "forecast_log.jsonl")
 
 
 def _key(rec: dict) -> tuple:
-    return (rec["target_date"], rec["variable"], rec["lead_bucket"])
+    return (rec["target_date"], rec["variable"], rec["lead_bucket"],
+            rec.get("basis", "hourly"))
 
 
 def _github_cfg() -> dict | None:
@@ -93,7 +94,7 @@ def _write(rows: list[dict], path: str) -> None:
             fh.write(json.dumps(rec) + "\n")
 
 
-def record(snapshot: dict, path: str | None = None) -> None:
+def record(snapshot: dict, path: str | None = None, basis: str = "hourly") -> None:
     """Upsert the snapshot's today+tomorrow predictions into the log.
 
     No-op on the cloud deploy (remote log configured, no explicit path): there
@@ -122,6 +123,7 @@ def record(snapshot: dict, path: str | None = None) -> None:
                 "target_date": pred["day"],
                 "variable": variable,
                 "lead_bucket": bucket,
+                "basis": basis,
                 "captured_at": captured,
                 "consensus": d.get("consensus"),
                 "probabilities": d["probabilities"],

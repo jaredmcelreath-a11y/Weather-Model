@@ -27,25 +27,28 @@ def _settled_records(today: date | None = None) -> list[dict]:
     return [r for r in rows if date.fromisoformat(r["target_date"]) < today]
 
 
-def _actuals_for(records: list[dict]) -> dict[date, tuple[float, float]]:
+def _actuals_for(records: list[dict], basis: str = "hourly") -> dict[date, tuple[float, float]]:
     if not records:
         return {}
     days = [date.fromisoformat(r["target_date"]) for r in records]
-    return station_history.fetch_actual(min(days), max(days))
+    fetch = (station_history.fetch_actual_cli if basis == "cli"
+             else station_history.fetch_actual)
+    return fetch(min(days), max(days))
 
 
-def score(today: date | None = None) -> dict:
+def score(today: date | None = None, basis: str = "hourly") -> dict:
     """Grade all settled logged predictions.
 
     Returns per-variable Brier + reliability curve, and per-(lead, variable)
     signed-error stats. Empty/unsettled log -> zeroed structure (never raises on
     no data; network errors during the actuals fetch propagate to the caller).
     """
-    records = _settled_records(today)
+    records = [r for r in _settled_records(today)
+               if r.get("basis", "hourly") == basis]
     empty = {"n_settled": 0, "by_variable": {}, "by_lead": {}}
     if not records:
         return empty
-    actual = _actuals_for(records)
+    actual = _actuals_for(records, basis)
     if not actual:
         return empty
 
@@ -96,7 +99,7 @@ def per_lead_sigma(min_days: int = MIN_LEAD_DAYS, today: date | None = None) -> 
     the model keeps falling back to the static inflation for those.
     """
     out: dict[int, dict[str, float]] = {}
-    for bucket, vars_ in score(today).get("by_lead", {}).items():
+    for bucket, vars_ in score(today, basis="hourly").get("by_lead", {}).items():
         for var, stats in vars_.items():
             if stats["n"] >= min_days:
                 out.setdefault(int(bucket), {})[var] = stats["sigma"]

@@ -93,3 +93,117 @@ def test_predict_from_threads_offset():
     base_low = model.predict_variable(_series(day), {"obs": ([], [])}, day,
                                       "low", None, None)
     assert pf["low"]["consensus"] == base_low["consensus"]
+
+
+import json
+
+import forecast_log
+
+
+def _snap():
+    return {
+        "updated": "2026-06-20T15:00:00",
+        "today": {
+            "day": "2026-06-20",
+            "high": {"consensus": 91, "probabilities": {"90": 0.5, "91": 0.5}},
+            "low": {"consensus": 75, "probabilities": {"74": 0.5, "75": 0.5}},
+        },
+        "tomorrow": {
+            "day": "2026-06-21",
+            "high": {"consensus": 93, "probabilities": {"92": 0.5, "93": 0.5}},
+            "low": {"consensus": 77, "probabilities": {"76": 0.5, "77": 0.5}},
+        },
+    }
+
+
+def test_hourly_and_cli_records_coexist(tmp_path):
+    p = str(tmp_path / "log.jsonl")
+    forecast_log.record(_snap(), path=p, basis="hourly")
+    forecast_log.record(_snap(), path=p, basis="cli")
+    rows = forecast_log.load(p)
+    assert {r["basis"] for r in rows} == {"hourly", "cli"}
+    assert len([r for r in rows if r["basis"] == "hourly"]) == 4
+    assert len([r for r in rows if r["basis"] == "cli"]) == 4
+
+
+def test_legacy_untagged_record_treated_as_hourly(tmp_path):
+    p = str(tmp_path / "log.jsonl")
+    legacy = {"target_date": "2026-06-20", "variable": "high", "lead_bucket": 0,
+              "captured_at": "x", "consensus": 91, "probabilities": {"91": 1.0}}
+    with open(p, "w") as fh:
+        fh.write(json.dumps(legacy) + "\n")
+    forecast_log.record(_snap(), path=p, basis="hourly")
+    rows = forecast_log.load(p)
+    match = [r for r in rows
+             if r["target_date"] == "2026-06-20" and r["variable"] == "high"
+             and r["lead_bucket"] == 0 and r.get("basis", "hourly") == "hourly"]
+    assert len(match) == 1
+
+
+import scoring
+from sources import station_history
+
+
+def test_score_filters_by_basis_and_uses_matching_truth(monkeypatch):
+    recs = [
+        {"target_date": "2026-06-10", "variable": "high", "lead_bucket": 0,
+         "basis": "hourly", "consensus": 90, "probabilities": {"90": 1.0}},
+        {"target_date": "2026-06-10", "variable": "high", "lead_bucket": 0,
+         "basis": "cli", "consensus": 91, "probabilities": {"91": 1.0}},
+    ]
+    monkeypatch.setattr(scoring.forecast_log, "load", lambda path=None: recs)
+    monkeypatch.setattr(station_history, "fetch_actual",
+                        lambda s, e: {date(2026, 6, 10): (90.0, 70.0)})
+    monkeypatch.setattr(station_history, "fetch_actual_cli",
+                        lambda s, e: {date(2026, 6, 10): (91.0, 70.0)})
+    today = date(2026, 6, 11)
+    h = scoring.score(today=today, basis="hourly")
+    c = scoring.score(today=today, basis="cli")
+    assert h["n_settled"] == 1 and c["n_settled"] == 1
+    assert h["by_variable"]["high"]["brier"] == 0.0
+    assert c["by_variable"]["high"]["brier"] == 0.0
+
+
+import backtest
+import calibration
+from sources import open_meteo_models
+
+
+def test_backtest_cli_uses_cli_truth_and_applies_offset(monkeypatch):
+    day = date(2026, 6, 10)
+    series = {"det_a": _member(day, 90.0)}  # daily high 90, low 75
+    monkeypatch.setattr(open_meteo_models, "fetch_historical", lambda s, e: series)
+    monkeypatch.setattr(station_history, "fetch_actual",
+                        lambda s, e: {day: (90.0, 75.0)})
+    monkeypatch.setattr(station_history, "fetch_actual_cli",
+                        lambda s, e: {day: (91.0, 75.0)})
+    monkeypatch.setattr(calibration, "get", lambda refresh=True: {
+        "bias": {"deterministic": {"high": 0.0, "low": 0.0}},
+        "sigma": {"high": 2.0, "low": 2.0}})
+
+    hourly = backtest.run()
+    cli_off = backtest.run(cli=True, settle_offset={"high": 1.0, "low": 0.0})
+    cli_no = backtest.run(cli=True)
+
+    assert hourly["high"]["mae"] == 0.0     # consensus 90 vs hourly 90
+    assert cli_off["high"]["mae"] == 0.0    # consensus 90+1=91 vs cli 91
+    assert cli_no["high"]["mae"] == 1.0     # consensus 90 vs cli 91 -> off by 1
+
+
+def test_scheduled_log_records_both_bases(monkeypatch):
+    import scheduled_log
+    import model
+
+    monkeypatch.setattr(calibration, "get",
+                        lambda refresh=True: {"settlement_offset": {"high": 1.0, "low": 0.0}})
+    monkeypatch.setattr(model, "snapshot",
+                        lambda calib, settle_offset=None: {"_off": settle_offset})
+    calls = []
+    monkeypatch.setattr(scheduled_log.forecast_log, "record",
+                        lambda snap, basis="hourly": calls.append((snap.get("_off"), basis)))
+    monkeypatch.setattr(scheduled_log.forecast_log, "load", lambda path=None: [])
+
+    scheduled_log.main()
+
+    assert (None, "hourly") in calls                       # hourly snapshot, no offset
+    assert ({"high": 1.0, "low": 0.0}, "cli") in calls     # offset snapshot, cli basis

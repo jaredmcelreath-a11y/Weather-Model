@@ -115,10 +115,11 @@ def _interval_contains(probs: dict, actual_label: str, level: float) -> bool:
     return lo_idx <= actual_idx <= hi_idx
 
 
-def run(days: int = 60) -> dict:
+def run(days: int = 60, cli: bool = False, settle_offset=None) -> dict:
     end = date.today() - timedelta(days=1)
     start = end - timedelta(days=days)
-    actual = station_history.fetch_actual(start, end)
+    actual = (station_history.fetch_actual_cli(start, end) if cli
+              else station_history.fetch_actual(start, end))
     series = open_meteo_models.fetch_historical(start, end)
     calib = calibration.get(refresh=True) or {}
     bias = calib.get("bias", {}).get("deterministic", {})
@@ -127,6 +128,7 @@ def run(days: int = 60) -> dict:
     metrics = {}
     for var in ("high", "low"):
         sigma = max(sigma_cfg.get(var) or 3.0, _MIN_SIGMA)
+        off = (settle_offset or {}).get(var, 0.0) if cli else 0.0
         rec = {"mae": [], "brier": [], "crps": [], "cov50": [], "cov80": [],
                "mae_base": [], "crps_base": []}
         rel_points: list[tuple] = []
@@ -142,7 +144,7 @@ def run(days: int = 60) -> dict:
                 continue
             actual_label = bin_for_temp(act)
 
-            corrected = [s - bias.get(var, 0.0) for s in samples]
+            corrected = [s - bias.get(var, 0.0) + off for s in samples]
             probs = _bin_probabilities(corrected, sigma)
             mu = sum(corrected) / len(corrected)
             rec["mae"].append(abs(mu - act))
