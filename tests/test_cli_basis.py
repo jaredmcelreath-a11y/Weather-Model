@@ -42,11 +42,13 @@ def test_settlement_offset_means_the_cli_minus_hourly_gap():
     assert off["high"] == 1.0    # (1 + 1) / 2
     assert off["low"] == -1.0    # (0 + -2) / 2
     assert off["n_days"] == 2
+    assert off["high_std"] == 0.0   # high gaps [1, 1] -> std 0
+    assert off["low_std"] == 1.0    # low gaps [0, -2] -> std 1.0
 
 
 def test_settlement_offset_zero_when_no_overlap():
     off = _settlement_offset({date(2026, 6, 8): (95.0, 78.0)}, {})
-    assert off == {"high": 0.0, "low": 0.0, "n_days": 0}
+    assert off == {"high": 0.0, "low": 0.0, "high_std": 0.0, "low_std": 0.0, "n_days": 0}
 
 
 def _member(day, peak):
