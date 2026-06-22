@@ -96,24 +96,49 @@ def _member_extreme(times, temps, day, variable, now, observed, obs_now=None):
         return min(observed if observed is not None else math.inf, fcst)
 
 
-def _collect_samples(series, day, variable, now, observed, bias, obs_now=None):
-    """Sample list of daily extremes for `day`.
+def _sample_weights(series, weights):
+    """Map each member label to its per-sample weight from system weights.
 
-    Historical bias correction applies only to pure forecasts. Once we're
-    anchoring the remaining forecast to a live observation (obs_now set), that
-    live correction supersedes the historical average — and the realized
-    floor/ceiling is ground truth that must not be bias-shifted — so we skip it.
+    The combined ensemble's mass (`weights['ensemble_mean']`) is split evenly
+    across its members so they still shape the distribution; each deterministic
+    model keys by its own label; NWS keys by 'nws'. Missing systems fall back to
+    the average system weight so an unexpected label can't be silently dropped.
+    """
+    avg = (sum(weights.values()) / len(weights)) if weights else 1.0
+    ens_labels = [l for l in series if l.startswith("ens_")]
+    m = len(ens_labels) or 1
+    w_ens = weights.get("ensemble_mean", avg)
+    out = {}
+    for label in series:
+        if label.startswith("ens_"):
+            out[label] = w_ens / m
+        elif label.startswith("det_"):
+            out[label] = weights.get(label, avg)
+        else:
+            out[label] = weights.get("nws", avg)
+    return out
+
+
+def _collect_samples(series, day, variable, now, observed, bias, obs_now=None,
+                     weights=None):
+    """(values, weights) lists of daily extremes for `day`.
+
+    Bias correction applies only to pure forecasts (skipped while anchoring to a
+    live obs). `weights` is an optional {system: weight} map; when absent every
+    sample weighs 1.0 (identical to the old equal-weight behavior).
     """
     anchoring = obs_now is not None
-    samples = []
+    wmap = _sample_weights(series, weights) if weights else None
+    vals, ws = [], []
     for label, (times, temps) in series.items():
         val = _member_extreme(times, temps, day, variable, now, observed, obs_now)
         if val is None or not math.isfinite(val):
             continue
         if not anchoring:
             val -= bias.get(_group_of(label), {}).get(variable, 0.0)
-        samples.append(val)
-    return samples
+        vals.append(val)
+        ws.append(wmap[label] if wmap else 1.0)
+    return vals, ws
 
 
 def _bin_probabilities(samples, target_sigma, weights=None):
@@ -258,8 +283,10 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     bias = (calib or {}).get("bias", {})
     # Full-day extremes (ignoring obs) set the reference spread; nowcast-blended
     # samples carry the realized floor/ceiling and forecast anchored to obs_now.
-    fullday = _collect_samples(series, day, variable, None, None, bias)
-    samples = _collect_samples(series, day, variable, now, observed, bias, obs_now)
+    var_weights = (calib or {}).get("weights", {}).get(variable)
+    fullday, _fw = _collect_samples(series, day, variable, None, None, bias)
+    samples, weights = _collect_samples(series, day, variable, now, observed, bias,
+                                        obs_now, var_weights)
     if not samples or not fullday:
         return None
 
@@ -315,10 +342,11 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     if settle_gap_std:
         sigma = math.hypot(sigma, settle_gap_std)
 
-    probs = _bin_probabilities(samples, sigma)
+    probs = _bin_probabilities(samples, sigma, weights)
     probs = _apply_hard_bound(probs, variable, observed)
 
-    mean = sum(samples) / len(samples)
+    _w = sum(weights) or 1.0
+    mean = sum(w * s for w, s in zip(weights, samples)) / _w
     return {
         "probabilities": probs,
         "consensus": round(mean, 1),

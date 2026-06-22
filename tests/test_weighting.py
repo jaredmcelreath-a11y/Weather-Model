@@ -34,3 +34,43 @@ def test_bin_probabilities_weight_shifts_mass():
     low_heavy = model._bin_probabilities(samples, 2.0, weights=[9.0, 1.0])
     high_heavy = model._bin_probabilities(samples, 2.0, weights=[1.0, 9.0])
     assert model.prob_at_least(low_heavy, 95) < model.prob_at_least(high_heavy, 95)
+
+
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+from config import TIMEZONE
+
+_TZ = ZoneInfo(TIMEZONE)
+
+
+def _member(day, peak):
+    base = datetime(day.year, day.month, day.day, tzinfo=_TZ)
+    times = [base + timedelta(hours=h) for h in range(24)]
+    return times, [peak - abs(h - 15) for h in range(24)]
+
+
+def test_sample_weights_split_ensemble_mass_across_members():
+    series = {"ens_a": None, "ens_b": None, "det_gfs_seamless": None, "nws_x": None}
+    w = model._sample_weights(series, {"ensemble_mean": 0.6,
+                                       "det_gfs_seamless": 0.3, "nws": 0.1})
+    assert abs(w["ens_a"] - 0.3) < 1e-9      # 0.6 / 2 members
+    assert abs(w["ens_b"] - 0.3) < 1e-9
+    assert abs(w["det_gfs_seamless"] - 0.3) < 1e-9
+    assert abs(w["nws_x"] - 0.1) < 1e-9
+
+
+def test_consensus_unchanged_without_weights():
+    day = date(2030, 7, 1)
+    series = {"det_a": _member(day, 90.0), "det_b": _member(day, 92.0)}
+    out = model.predict_variable(series, {"obs": ([], [])}, day, "high", None, None)
+    assert out["consensus"] == 91.0          # plain mean of 90 and 92
+
+
+def test_weights_pull_consensus_toward_skilled_model():
+    day = date(2030, 7, 1)
+    series = {"det_gfs_seamless": _member(day, 90.0),
+              "det_gem_seamless": _member(day, 96.0)}
+    calib = {"weights": {"high": {"det_gfs_seamless": 0.9, "det_gem_seamless": 0.1}}}
+    out = model.predict_variable(series, {"obs": ([], [])}, day, "high", None, calib)
+    # weighted mean = 0.9*90 + 0.1*96 = 90.6
+    assert out["consensus"] == 90.6
