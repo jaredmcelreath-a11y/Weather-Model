@@ -71,3 +71,37 @@ def test_weights_pull_consensus_toward_skilled_model():
     out = model.predict_variable(series, {"obs": ([], [])}, day, "high", None, calib)
     # weighted mean = 0.9*90 + 0.1*96 = 90.6
     assert out["consensus"] == 90.6
+
+
+import calibration
+
+
+def test_system_weights_shrink_toward_equal_and_favor_skill():
+    # 'good' system nails the actual; 'bad' is 4 off, every day.
+    from datetime import timedelta
+    d0 = date(2026, 5, 1)
+    ext, actual = {}, {}
+    for i in range(40):
+        d = d0 + timedelta(days=i)
+        actual[d] = (90.0, 70.0)
+        ext[d] = {"good": {"high": 90.0, "low": 70.0},
+                  "bad": {"high": 94.0, "low": 74.0}}
+    w = calibration._system_weights(ext, actual, ["good", "bad"], lam=0.25)
+    # high: good must outweigh bad, but shrinkage keeps both within [0.2, 0.8]
+    assert w["high"]["good"] > w["high"]["bad"]
+    assert 0.2 < w["high"]["good"] < 0.8
+    assert abs(w["high"]["good"] + w["high"]["bad"] - 1.0) < 1e-9
+
+
+def test_system_weights_equal_when_skill_is_equal():
+    from datetime import timedelta
+    d0 = date(2026, 5, 1)
+    ext, actual = {}, {}
+    for i in range(40):
+        d = d0 + timedelta(days=i)
+        actual[d] = (90.0, 70.0)
+        # both systems equally (un)skilled: symmetric errors
+        ext[d] = {"a": {"high": 91.0, "low": 71.0},
+                  "b": {"high": 89.0, "low": 69.0}}
+    w = calibration._system_weights(ext, actual, ["a", "b"], lam=0.25)
+    assert abs(w["high"]["a"] - w["high"]["b"]) < 1e-6

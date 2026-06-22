@@ -26,7 +26,7 @@ import time
 from datetime import date, datetime, timedelta
 
 from config import CALIBRATION_WINDOW_DAYS, CALM_WIND_MAX, CLEAR_CLOUD_MAX
-from sources import open_meteo_models, station_history
+from sources import open_meteo_ensemble, open_meteo_models, station_history
 from settlement import day_high_low
 
 _PATH = os.path.join(os.path.dirname(__file__), "calibration.json")
@@ -154,6 +154,66 @@ def _conditional_settlement_offset(cli: dict, hourly: dict, cond: dict,
     out["n_days"] = len(cc["high"]) + len(ot["high"])
     out["n_clear_calm"] = len(cc["high"])
     return out
+
+
+def _system_extremes(start, end):
+    """{day: {system: {'high':v, 'low':v}}} over [start, end].
+
+    Systems = one combined 'ensemble_mean' (mean of all member extremes) plus
+    each deterministic model by its label. NWS has no archive, so it is absent.
+    Degrades to deterministic-only if the ensemble archive can't be fetched.
+    """
+    det = open_meteo_models.fetch_historical(start, end)
+    try:
+        ens = open_meteo_ensemble.fetch_historical(start, end)
+    except Exception:
+        ens = {}
+    out: dict = {}
+    day = start
+    while day <= end:
+        systems: dict[str, dict] = {}
+        for label, (t, v) in det.items():
+            hi, lo = day_high_low(t, v, day)
+            if hi is not None:
+                systems[label] = {"high": hi, "low": lo}
+        ens_hi, ens_lo = [], []
+        for _label, (t, v) in ens.items():
+            hi, lo = day_high_low(t, v, day)
+            if hi is not None:
+                ens_hi.append(hi)
+                ens_lo.append(lo)
+        if ens_hi:
+            systems["ensemble_mean"] = {"high": sum(ens_hi) / len(ens_hi),
+                                        "low": sum(ens_lo) / len(ens_lo)}
+        if systems:
+            out[day] = systems
+        day += timedelta(days=1)
+    return out
+
+
+def _system_weights(ext, actual, systems, lam=0.25):
+    """{var: {system: weight}} from trailing skill, strongly shrunk to equal.
+
+    For each variable: weight_i proportional to (1-lam)*equal + lam*invMAE_norm_i,
+    where invMAE_norm normalizes inverse per-system MAE to sum 1. lam small =>
+    near equal (conservative). Systems with no data on a day are skipped that day.
+    """
+    weights = {}
+    n = len(systems)
+    equal = 1.0 / n if n else 0.0
+    for var in ("high", "low"):
+        mae = {}
+        for s in systems:
+            errs = [abs(ext[d][s][var] - (actual[d][0] if var == "high" else actual[d][1]))
+                    for d in ext if d in actual and s in ext[d]]
+            mae[s] = (sum(errs) / len(errs)) if errs else None
+        inv = {s: 1.0 / max(mae[s], 0.1) for s in systems if mae[s] is not None}
+        inv_sum = sum(inv.values()) or 1.0
+        inv_norm = {s: inv.get(s, 0.0) / inv_sum for s in systems}
+        raw = {s: (1.0 - lam) * equal + lam * inv_norm[s] for s in systems}
+        total = sum(raw.values()) or 1.0
+        weights[var] = {s: raw[s] / total for s in systems}
+    return weights
 
 
 def compute() -> dict:
