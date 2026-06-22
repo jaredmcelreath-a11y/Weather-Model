@@ -125,6 +125,7 @@ def run(days: int = 60, cli: bool = False, settle_offset=None) -> dict:
     calib = calibration.get(refresh=True) or {}
     bias = calib.get("bias", {}).get("deterministic", {})
     sigma_cfg = calib.get("sigma", {})
+    weights_cfg = calib.get("weights") or {}
 
     bucketed = cli and isinstance((settle_offset or {}).get("high"), dict)
     cond = {}
@@ -150,12 +151,14 @@ def run(days: int = 60, cli: bool = False, settle_offset=None) -> dict:
         rel_points: list[tuple] = []
         for day, (act_hi, act_lo) in actual.items():
             act = act_hi if var == "high" else act_lo
-            samples = []
-            for _lab, (t, v) in series.items():
+            samples, sweights = [], []
+            vw = weights_cfg.get(var, {})
+            for lab, (t, v) in series.items():
                 hi, lo = day_high_low(t, v, day)
                 if hi is None:
                     continue
                 samples.append(hi if var == "high" else lo)
+                sweights.append(vw.get(lab, 1.0))
             if not samples:
                 continue
             actual_label = bin_for_temp(act)
@@ -163,8 +166,9 @@ def run(days: int = 60, cli: bool = False, settle_offset=None) -> dict:
             off, gap_std = _offset_for(var, day)
             sigma = math.hypot(sigma_base, gap_std) if gap_std else sigma_base
             corrected = [s - bias.get(var, 0.0) + off for s in samples]
-            probs = _bin_probabilities(corrected, sigma)
-            mu = sum(corrected) / len(corrected)
+            probs = _bin_probabilities(corrected, sigma, sweights)
+            _wsum = sum(sweights) or 1.0
+            mu = sum(w * s for w, s in zip(sweights, corrected)) / _wsum
             rec["mae"].append(abs(mu - act))
             rec["brier"].append(_brier(probs, actual_label))
             rec["crps"].append(_crps(probs, act))

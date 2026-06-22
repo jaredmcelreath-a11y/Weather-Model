@@ -130,3 +130,25 @@ def test_gate_rejects_when_no_improvement():
     systems = ["a", "b"]
     assert calibration._weights_beat_equal(ext, actual, systems, "high",
                                            margin=0.02) is False
+
+
+import backtest
+from sources import open_meteo_models, station_history
+
+
+def test_backtest_uses_system_weights_when_provided(monkeypatch):
+    day = date(2026, 6, 10)
+    det = {"det_gfs_seamless": _member(day, 90.0),
+           "det_gem_seamless": _member(day, 96.0)}
+    monkeypatch.setattr(open_meteo_models, "fetch_historical", lambda s, e: det)
+    monkeypatch.setattr(open_meteo_ensemble, "fetch_historical", lambda s, e: {})
+    monkeypatch.setattr(station_history, "fetch_actual",
+                        lambda s, e: {day: (90.0, 75.0)})
+    monkeypatch.setattr(calibration, "get", lambda refresh=True: {
+        "bias": {"deterministic": {"high": 0.0, "low": 0.0}},
+        "sigma": {"high": 2.0, "low": 2.0},
+        "weights": {"high": {"det_gfs_seamless": 0.9, "det_gem_seamless": 0.1},
+                    "low": {"det_gfs_seamless": 0.5, "det_gem_seamless": 0.5}}})
+    res = backtest.run()
+    # weighted high consensus = 0.9*90 + 0.1*96 = 90.6 -> MAE vs 90 = 0.6
+    assert res["high"]["mae"] == 0.6
