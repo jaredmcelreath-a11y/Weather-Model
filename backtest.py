@@ -22,7 +22,8 @@ from datetime import date, timedelta
 
 import calibration
 import model
-from config import BIN_HIGH, BIN_LOW, bin_labels
+from config import (BIN_HIGH, BIN_LOW, CALM_WIND_MAX, CLEAR_CLOUD_MAX,
+                    bin_labels)
 from model import _bin_probabilities, _MIN_SIGMA
 from settlement import bin_for_temp, day_high_low
 from sources import open_meteo_models, station_history
@@ -137,7 +138,6 @@ def run(days: int = 60, cli: bool = False, settle_offset=None) -> dict:
         spec = (settle_offset or {}).get(var) if cli else 0.0
         if isinstance(spec, dict):
             cloud, wind = cond.get(day, (100.0, 100.0))
-            from config import CLEAR_CLOUD_MAX, CALM_WIND_MAX
             b = "clear_calm" if (cloud < CLEAR_CLOUD_MAX and wind < CALM_WIND_MAX) else "other"
             return spec.get(b, 0.0), spec.get(f"{b}_std", 0.0)
         return (spec or 0.0), ((settle_offset or {}).get(f"{var}_std", 0.0) if cli else 0.0)

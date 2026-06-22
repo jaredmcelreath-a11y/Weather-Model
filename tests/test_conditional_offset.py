@@ -2,9 +2,12 @@
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import backtest
+import calibration
 import model
 from calibration import _conditional_settlement_offset
 from config import TIMEZONE
+from sources import open_meteo_models, station_history
 
 _TZ = ZoneInfo(TIMEZONE)
 
@@ -118,11 +121,6 @@ def test_model_other_bucket_when_conditions_unavailable(monkeypatch):
     out = model.predict_variable(_series(day), {"obs": ([], [])}, day, "low",
                                  None, {}, _BUCKETED)
     assert out["consensus"] == 75.8                       # falls back to 'other'
-
-
-import backtest
-import calibration
-from sources import open_meteo_models, station_history
 
 
 def test_backtest_applies_bucketed_offset_per_day(monkeypatch):
