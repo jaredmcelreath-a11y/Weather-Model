@@ -2,6 +2,7 @@
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import calibration
 import model
 from config import TIMEZONE
 from sources import open_meteo_ensemble
@@ -73,12 +74,8 @@ def test_weights_pull_consensus_toward_skilled_model():
     assert out["consensus"] == 90.6
 
 
-import calibration
-
-
 def test_system_weights_shrink_toward_equal_and_favor_skill():
     # 'good' system nails the actual; 'bad' is 4 off, every day.
-    from datetime import timedelta
     d0 = date(2026, 5, 1)
     ext, actual = {}, {}
     for i in range(40):
@@ -94,7 +91,6 @@ def test_system_weights_shrink_toward_equal_and_favor_skill():
 
 
 def test_system_weights_equal_when_skill_is_equal():
-    from datetime import timedelta
     d0 = date(2026, 5, 1)
     ext, actual = {}, {}
     for i in range(40):
