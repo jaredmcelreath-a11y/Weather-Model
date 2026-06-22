@@ -67,3 +67,58 @@ def test_returns_none_when_split_fails_margin_gate():
         cli[d] = (91.0, 70.0 + gap)
         cond[d] = (10.0, 5.0) if clear else (80.0, 20.0)
     assert _conditional_settlement_offset(cli, hourly, cond) is None
+
+
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+import model
+from config import TIMEZONE
+
+_TZ = ZoneInfo(TIMEZONE)
+
+
+def _member(day, peak):
+    base = datetime(day.year, day.month, day.day, tzinfo=_TZ)
+    times = [base + timedelta(hours=h) for h in range(24)]
+    temps = [peak - abs(h - 15) for h in range(24)]   # max=peak, min=peak-15
+    return times, temps
+
+
+def _series(day):
+    return {"det_a": _member(day, 90.0), "det_b": _member(day, 92.0)}
+
+
+_BUCKETED = {"high": {"clear_calm": 0.0, "other": 0.0,
+                      "clear_calm_std": 0.0, "other_std": 0.0},
+             "low": {"clear_calm": -0.8, "other": -0.2,
+                     "clear_calm_std": 0.0, "other_std": 0.0}}
+
+
+def test_model_picks_clear_calm_bucket(monkeypatch):
+    day = date(2030, 7, 1)
+    monkeypatch.setattr(model.open_meteo_models, "night_conditions",
+                        lambda d: (10.0, 5.0))           # clear + calm
+    out = model.predict_variable(_series(day), {"obs": ([], [])}, day, "low",
+                                 None, {}, _BUCKETED)
+    # unshifted low consensus is peak-15 -> mean(75,77)=76; clear/calm shift -0.8
+    assert out["consensus"] == 75.2
+
+
+def test_model_picks_other_bucket(monkeypatch):
+    day = date(2030, 7, 1)
+    monkeypatch.setattr(model.open_meteo_models, "night_conditions",
+                        lambda d: (90.0, 25.0))          # cloudy + windy
+    out = model.predict_variable(_series(day), {"obs": ([], [])}, day, "low",
+                                 None, {}, _BUCKETED)
+    assert out["consensus"] == 75.8                       # 76 - 0.2
+
+
+def test_model_other_bucket_when_conditions_unavailable(monkeypatch):
+    day = date(2030, 7, 1)
+    def boom(d):
+        raise RuntimeError("no network")
+    monkeypatch.setattr(model.open_meteo_models, "night_conditions", boom)
+    out = model.predict_variable(_series(day), {"obs": ([], [])}, day, "low",
+                                 None, {}, _BUCKETED)
+    assert out["consensus"] == 75.8                       # falls back to 'other'

@@ -20,8 +20,8 @@ import math
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from config import (BIN_HIGH, BIN_LOW, LEAD_SIGMA_INFLATION, TIMEZONE,
-                    bin_labels, lead_bucket)
+from config import (BIN_HIGH, BIN_LOW, CALM_WIND_MAX, CLEAR_CLOUD_MAX,
+                    LEAD_SIGMA_INFLATION, TIMEZONE, bin_labels, lead_bucket)
 from settlement import local_day_bounds, observed_so_far
 from sources import (open_meteo_ensemble, open_meteo_models, nws_forecast,
                      nws_observations)
@@ -211,6 +211,31 @@ def _day_ahead_sigma(fullday_samples, calib_sigma):
     return max(_DEFAULT_INFLATION * raw, _MIN_SIGMA) if raw else _DEFAULT_SIGMA
 
 
+def _offset_bucket(settle_offset, variable, day, calib):
+    """(shift, gap_std) for `variable` from a settlement-offset spec.
+
+    Accepts the flat shape ({var: float, var_std: float}) and the bucketed shape
+    ({var: {clear_calm, other, clear_calm_std, other_std}}). For the bucketed
+    shape, the bucket is chosen from the overnight forecast conditions for `day`,
+    defaulting to 'other' when conditions can't be fetched.
+    """
+    spec = (settle_offset or {}).get(variable)
+    if isinstance(spec, dict):
+        cool = (calib or {}).get("cooling") or {}
+        ct = cool.get("cloud_thresh", CLEAR_CLOUD_MAX)
+        wt = cool.get("wind_thresh", CALM_WIND_MAX)
+        bucket = "other"
+        try:
+            cloud, wind = open_meteo_models.night_conditions(day)
+            if cloud is not None and cloud < ct and wind < wt:
+                bucket = "clear_calm"
+        except Exception:
+            pass
+        return spec.get(bucket, 0.0), spec.get(f"{bucket}_std", 0.0)
+    return ((settle_offset or {}).get(variable, 0.0),
+            (settle_offset or {}).get(f"{variable}_std", 0.0))
+
+
 def predict_variable(series, obs_series, day, variable, now, calib,
                      settle_offset=None):
     """Return a dict describing the predicted distribution for one variable.
@@ -257,11 +282,10 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     # NOT the hard observed bound (the offset is an average gap, not a floor) —
     # so consensus/bins move but still-possible bins are not zeroed. A constant
     # shift leaves sigma and locked_ratio unchanged. None => Robinhood, no shift.
-    if settle_offset:
-        off = settle_offset.get(variable, 0.0)
-        if off:
-            samples = [s + off for s in samples]
-            fullday = [s + off for s in fullday]
+    settle_shift, settle_gap_std = _offset_bucket(settle_offset, variable, day, calib)
+    if settle_shift:
+        samples = [s + settle_shift for s in samples]
+        fullday = [s + settle_shift for s in fullday]
 
     calib_sigma = (calib or {}).get("sigma", {}).get(variable)
     sigma_day_ahead = _day_ahead_sigma(fullday, calib_sigma)
@@ -284,10 +308,8 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     # The CLI settlement offset is an average; its gap has irreducible spread
     # (std from calibration) we can't observe live, so widen sigma by it in
     # quadrature whenever the offset is applied. Center (consensus) is unchanged.
-    if settle_offset:
-        gap_std = settle_offset.get(f"{variable}_std", 0.0)
-        if gap_std:
-            sigma = math.hypot(sigma, gap_std)
+    if settle_gap_std:
+        sigma = math.hypot(sigma, settle_gap_std)
 
     probs = _bin_probabilities(samples, sigma)
     probs = _apply_hard_bound(probs, variable, observed)
