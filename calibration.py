@@ -101,16 +101,21 @@ def _var_bucket(
     if not all_gaps:
         return 0.0, 0.0, 0.0, 0.0, False
     flat = sum(all_gaps) / len(all_gaps)
-    cc_mean, cc_std = _mean_std(gaps_cc) if gaps_cc else (flat, 0.0)
-    ot_mean, ot_std = _mean_std(gaps_ot) if gaps_ot else (flat, 0.0)
+    # Gate math uses raw (unrounded) bucket means; _mean_std's rounded values are
+    # used only for the emitted offset (matching _settlement_offset's convention),
+    # so the comparison isn't skewed by mixing rounded and raw quantities.
+    cc_raw = sum(gaps_cc) / len(gaps_cc) if gaps_cc else flat
+    ot_raw = sum(gaps_ot) / len(gaps_ot) if gaps_ot else flat
     resid_flat = sum(abs(g - flat) for g in all_gaps) / len(all_gaps)
-    resid_cond = (sum(abs(g - cc_mean) for g in gaps_cc)
-                  + sum(abs(g - ot_mean) for g in gaps_ot)) / len(all_gaps)
+    resid_cond = (sum(abs(g - cc_raw) for g in gaps_cc)
+                  + sum(abs(g - ot_raw) for g in gaps_ot)) / len(all_gaps)
     passed = (n_cc >= min_nights
-              and abs(cc_mean - ot_mean) >= min_sep
+              and abs(cc_raw - ot_raw) >= min_sep
               and resid_cond <= resid_flat - margin)
     if not passed:
         return flat, flat, 0.0, 0.0, False
+    cc_mean, cc_std = _mean_std(gaps_cc) if gaps_cc else (flat, 0.0)
+    ot_mean, ot_std = _mean_std(gaps_ot) if gaps_ot else (flat, 0.0)
     return cc_mean, ot_mean, cc_std, ot_std, True
 
 
