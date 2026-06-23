@@ -313,3 +313,21 @@ def test_per_lead_bias_shrinks_and_gates(monkeypatch):
 def test_per_lead_bias_empty_when_no_data(monkeypatch):
     monkeypatch.setattr(scoring, "score", lambda today=None, basis="hourly": {"by_lead": {}})
     assert scoring.per_lead_bias() == {}
+
+
+def test_per_lead_bias_uses_residual_count(monkeypatch):
+    # Hit-count n is inflated (20) but only 9 records had a consensus residual.
+    # The gate must use n_resid (9 < MIN_LEAD_DAYS=10) and drop the bucket.
+    fake = {"by_lead": {24: {"high": {"n": 20, "n_resid": 9, "bias": 1.5, "sigma": 1.0}}}}
+    monkeypatch.setattr(scoring, "score", lambda today=None, basis="hourly": fake)
+    assert scoring.per_lead_bias() == {}
+
+
+def test_per_lead_bias_forwards_basis_and_today(monkeypatch):
+    seen = {}
+    def fake_score(today=None, basis="hourly"):
+        seen["today"], seen["basis"] = today, basis
+        return {"by_lead": {}}
+    monkeypatch.setattr(scoring, "score", fake_score)
+    scoring.per_lead_bias(today=date(2026, 6, 20), basis="cli")
+    assert seen == {"today": date(2026, 6, 20), "basis": "cli"}

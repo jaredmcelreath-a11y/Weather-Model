@@ -123,6 +123,7 @@ def score(today: date | None = None, basis: str = "hourly") -> dict:
             b = sum(errs) / len(errs)
             entry["bias"] = round(b, 2)
             entry["sigma"] = round(math.sqrt(sum((e - b) ** 2 for e in errs) / len(errs)), 2)
+            entry["n_resid"] = len(errs)
         by_lead.setdefault(bucket, {})[var] = entry
 
     return {"n_settled": n_settled, "by_variable": by_variable, "by_lead": by_lead}
@@ -193,7 +194,7 @@ def per_lead_sigma(min_days: int = MIN_LEAD_DAYS, today: date | None = None) -> 
 
 
 def per_lead_bias(min_days: int = MIN_LEAD_DAYS, today: date | None = None,
-                  basis: str = "hourly") -> dict:
+                  basis: str = "hourly") -> dict[int, dict[str, float]]:
     """{lead_bucket: {variable: correction}} signed bias to SUBTRACT from the
     consensus, for buckets the data can speak to.
 
@@ -207,12 +208,12 @@ def per_lead_bias(min_days: int = MIN_LEAD_DAYS, today: date | None = None,
     out: dict[int, dict[str, float]] = {}
     for bucket, vars_ in score(today, basis=basis).get("by_lead", {}).items():
         for var, stats in vars_.items():
-            n = stats.get("n", 0)
+            n = stats.get("n_resid", stats.get("n", 0))
             bias = stats.get("bias")
             sigma = stats.get("sigma")
             if n < min_days or bias is None or sigma is None:
                 continue
-            stderr = sigma / math.sqrt(n) if n else float("inf")
+            stderr = sigma / math.sqrt(n)
             if abs(bias) <= SIG_Z * stderr:
                 continue  # statistically indistinguishable from zero
             out.setdefault(int(bucket), {})[var] = round(bias * n / (n + SHRINK_K), 2)
