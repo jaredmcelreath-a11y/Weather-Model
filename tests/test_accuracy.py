@@ -290,3 +290,90 @@ def test_cooling_offset_applied_on_clear_calm(monkeypatch):
 
     assert cool["cooling_applied"] and not warm["cooling_applied"]
     assert round(warm["consensus"] - cool["consensus"], 1) == 3.0
+
+
+# --- self-correction: lead-time bias ---
+
+def test_per_lead_bias_shrinks_and_gates(monkeypatch):
+    fake = {"by_lead": {
+        24: {"high": {"n": 10, "bias": 1.5, "sigma": 1.0},   # strong + significant
+             "low":  {"n": 10, "bias": 0.1, "sigma": 2.0}},   # tiny -> insignificant
+        0:  {"high": {"n": 5,  "bias": 2.0, "sigma": 0.5}},   # below min_days -> dropped
+    }}
+    monkeypatch.setattr(scoring, "score", lambda today=None, basis="hourly": fake)
+    out = scoring.per_lead_bias()
+    # high@24: shrink 1.5 * 10/(10+8) = 0.833 -> 0.83
+    assert out[24]["high"] == 0.83
+    # low@24: |0.1| <= Z*sigma/sqrt(n) = 1.0*2/sqrt(10) = 0.632 -> not significant
+    assert "low" not in out.get(24, {})
+    # bucket 0 has only 5 days (< MIN_LEAD_DAYS) -> absent entirely
+    assert 0 not in out
+
+
+def test_per_lead_bias_empty_when_no_data(monkeypatch):
+    monkeypatch.setattr(scoring, "score", lambda today=None, basis="hourly": {"by_lead": {}})
+    assert scoring.per_lead_bias() == {}
+
+
+def test_per_lead_bias_uses_residual_count(monkeypatch):
+    # Hit-count n is inflated (20) but only 9 records had a consensus residual.
+    # The gate must use n_resid (9 < MIN_LEAD_DAYS=10) and drop the bucket.
+    fake = {"by_lead": {24: {"high": {"n": 20, "n_resid": 9, "bias": 1.5, "sigma": 1.0}}}}
+    monkeypatch.setattr(scoring, "score", lambda today=None, basis="hourly": fake)
+    assert scoring.per_lead_bias() == {}
+
+
+def test_per_lead_bias_forwards_basis_and_today(monkeypatch):
+    seen = {}
+    def fake_score(today=None, basis="hourly"):
+        seen["today"], seen["basis"] = today, basis
+        return {"by_lead": {}}
+    monkeypatch.setattr(scoring, "score", fake_score)
+    scoring.per_lead_bias(today=date(2026, 6, 20), basis="cli")
+    assert seen == {"today": date(2026, 6, 20), "basis": "cli"}
+
+
+def test_bias_correction_block_wraps_scoring(monkeypatch):
+    import calibration
+    monkeypatch.setattr(scoring, "per_lead_bias", lambda: {24: {"high": -1.1}})
+    assert calibration._bias_correction() == {"by_lead": {24: {"high": -1.1}}}
+    # scoring failure must degrade to an empty (no-op) block, never raise
+    def boom():
+        raise RuntimeError("scoring down")
+    monkeypatch.setattr(scoring, "per_lead_bias", boom)
+    assert calibration._bias_correction() == {"by_lead": {}}
+
+
+def test_lead_bias_correction_shifts_consensus():
+    s, obs = _diurnal_series(), {"obs": ([], [])}
+    now = datetime(TODAY.year, TODAY.month, TODAY.day, 22, tzinfo=TZ)
+    tom = TODAY + timedelta(days=1)          # bucket 24, pure forecast (no obs)
+    base = model.predict_variable(s, obs, tom, "high", now, {})
+    calib = {"bias_correction": {"by_lead": {"24": {"high": 1.5}}}}
+    corr = model.predict_variable(s, obs, tom, "high", now, calib)
+    # forecast measured 1.5 warm at day-ahead -> consensus drops by 1.5
+    assert round(base["consensus"] - corr["consensus"], 1) == 1.5
+
+
+def test_lead_bias_skipped_when_observed():
+    day = TODAY
+    now = datetime(TODAY.year, TODAY.month, TODAY.day, 16, tzinfo=TZ)
+    ot, ov = _intraday_obs(day, peak_hour=14, peak=95, now_hour=16, drop_after=0.5)
+    s = _diurnal_series()
+    calib = {"bias_correction": {"by_lead": {"0": {"high": 2.0}}}}
+    out = model.predict_variable(s, {"obs": (ot, ov)}, day, "high", now, calib)
+    out0 = model.predict_variable(s, {"obs": (ot, ov)}, day, "high", now, {})
+    # obs are anchoring the day -> forecast de-bias must NOT apply
+    assert out["consensus"] == out0["consensus"]
+
+
+def test_active_corrections_lists_live_knobs():
+    import calibration
+    calib = {"bias_correction": {"by_lead": {"24": {"high": -1.2}}},
+             "sigma": {"by_lead": {"24": {"low": 1.8}}}}
+    out = calibration.active_corrections(calib)
+    assert "day-ahead high -1.2°F bias" in out
+    assert "day-ahead low σ=1.8" in out
+    # nothing live -> empty list (dormant)
+    assert calibration.active_corrections(None) == []
+    assert calibration.active_corrections({}) == []

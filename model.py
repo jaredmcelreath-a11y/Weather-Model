@@ -398,6 +398,16 @@ def predict_variable(series, obs_series, day, variable, now, calib,
         sigma_base = sigma_day_ahead * LEAD_SIGMA_INFLATION.get(bucket, 1.0)
     sigma = max(sigma_base * locked_ratio, _SIGMA_FLOOR)
 
+    # Lead-time residual de-bias (self-correction layer): the forward log measures
+    # a persistent signed error for this (lead, variable). Subtract it from the
+    # forecast samples so both the consensus and the bin mass shift together.
+    # Pure-forecast path only (obs_now None) — once obs anchor the day the realized
+    # extreme supersedes a forecast bias, exactly like the cooling offset.
+    bias_corr = (calib or {}).get("bias_correction", {}).get("by_lead", {})
+    bc = (bias_corr.get(str(bucket)) or bias_corr.get(bucket) or {}).get(variable)
+    if bc and obs_now is None:
+        samples = [s - bc for s in samples]
+
     # The CLI settlement offset is an average; its gap has irreducible spread
     # (std from calibration) we can't observe live, so widen sigma by it in
     # quadrature whenever the offset is applied. Center (consensus) is unchanged.

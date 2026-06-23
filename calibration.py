@@ -394,6 +394,39 @@ def _weights_beat_equal(ext, actual, systems, var, lam=0.25, margin=0.02, train=
     return (sum(w_errs) / len(w_errs)) <= (sum(eq_errs) / len(eq_errs)) - margin
 
 
+def _bias_correction() -> dict:
+    """The lead-time bias-correction knob for calibration.json, behind the same
+    lazy scoring import as per-lead sigma. Best-effort: any failure yields an
+    empty (no-op) block so recalibration never breaks. Loops 2-4 from the design
+    (live group re-weighting, reliability sharpening, market blend) slot in here
+    as sibling knobs once their data matures — same gated pattern, no new wiring.
+    """
+    try:
+        import scoring
+        return {"by_lead": scoring.per_lead_bias()}
+    except Exception:
+        return {"by_lead": {}}
+
+
+def active_corrections(calib: dict | None) -> list[str]:
+    """Human-readable list of self-correction knobs currently live in `calib`,
+    for the dashboard's 'Active self-corrections' line. Empty when nothing has
+    cleared its data gate yet. Handles both int and JSON-string bucket keys."""
+    names = {"0": "same-day", "24": "day-ahead", "36": "2-day"}
+    out: list[str] = []
+    bc = ((calib or {}).get("bias_correction") or {}).get("by_lead") or {}
+    for bucket in sorted(bc, key=lambda b: int(b)):
+        label = names.get(str(bucket), f"{bucket}h")
+        for var, v in bc[bucket].items():
+            out.append(f"{label} {var} {v:+.1f}°F bias")
+    sl = ((calib or {}).get("sigma") or {}).get("by_lead") or {}
+    for bucket in sorted(sl, key=lambda b: int(b)):
+        label = names.get(str(bucket), f"{bucket}h")
+        for var, v in sl[bucket].items():
+            out.append(f"{label} {var} σ={v:.1f}")
+    return out
+
+
 def compute() -> dict:
     end = date.today() - timedelta(days=1)
     start = end - timedelta(days=CALIBRATION_WINDOW_DAYS)
@@ -514,6 +547,7 @@ def compute() -> dict:
         "weights": weights,
         "cooling": cooling,
         "settlement_offset": settlement_offset,
+        "bias_correction": _bias_correction(),
     }
 
 
