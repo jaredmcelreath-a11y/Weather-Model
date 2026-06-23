@@ -18,15 +18,19 @@ spread on top, so live sharpness is at least as good as shown here.
 from __future__ import annotations
 
 import math
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import calibration
 import model
 from config import (BIN_HIGH, BIN_LOW, CALM_WIND_MAX, CLEAR_CLOUD_MAX,
-                    bin_labels)
+                    TIMEZONE, bin_labels)
 from model import _bin_probabilities, _MIN_SIGMA
 from settlement import bin_for_temp, day_high_low
 from sources import open_meteo_models, station_history
+from sources.common import to_hourly
+
+_TZ = ZoneInfo(TIMEZONE)
 
 LABELS = bin_labels()
 
@@ -148,7 +152,8 @@ def run(days: int = 60, cli: bool = False, settle_offset=None) -> dict:
     for var in ("high", "low"):
         sigma_base = max(sigma_cfg.get(var) or 3.0, _MIN_SIGMA)
         rec = {"mae": [], "brier": [], "crps": [], "cov50": [], "cov80": [],
-               "mae_base": [], "crps_base": []}
+               "mae_base": [], "crps_base": [],
+               "exact_peak": [], "exact_consensus": [], "within1": []}
         rel_points: list[tuple] = []
         for day, (act_hi, act_lo) in actual.items():
             act = act_hi if var == "high" else act_lo
@@ -177,6 +182,15 @@ def run(days: int = 60, cli: bool = False, settle_offset=None) -> dict:
             rec["cov80"].append(_interval_contains(probs, actual_label, 0.80))
             rel_points.extend(contract_points(probs, act, var))
 
+            # Exact 1°F-bin hit rate — the trader-facing accuracy target. The
+            # peak bin is argmax(probs); the consensus bin is round(mu). within1
+            # forgives a one-bin (±1°F) miss off the peak.
+            peak_label = max(probs, key=probs.get)
+            rec["exact_peak"].append(peak_label == actual_label)
+            rec["exact_consensus"].append(bin_for_temp(mu) == actual_label)
+            rec["within1"].append(
+                abs(LABELS.index(peak_label) - LABELS.index(actual_label)) <= 1)
+
             # Baseline: no bias correction, fixed wide sigma.
             base = _bin_probabilities(samples, 3.0)
             mu0 = sum(samples) / len(samples)
@@ -191,6 +205,9 @@ def run(days: int = 60, cli: bool = False, settle_offset=None) -> dict:
             "crps": round(sum(rec["crps"]) / n, 3),
             "coverage_50": round(100 * sum(rec["cov50"]) / n, 0),
             "coverage_80": round(100 * sum(rec["cov80"]) / n, 0),
+            "exact_peak": round(100 * sum(rec["exact_peak"]) / n, 0),
+            "exact_consensus": round(100 * sum(rec["exact_consensus"]) / n, 0),
+            "within1": round(100 * sum(rec["within1"]) / n, 0),
             "mae_baseline": round(sum(rec["mae_base"]) / n, 2),
             "crps_baseline": round(sum(rec["crps_base"]) / n, 3),
             "reliability": reliability_bins(rel_points),
@@ -198,9 +215,65 @@ def run(days: int = 60, cli: bool = False, settle_offset=None) -> dict:
     return metrics
 
 
+def run_intraday(days: int = 30, hours=(10, 13, 16, 19), calib=None) -> dict:
+    """Same-day exact-bin accuracy by simulated time-of-day, via observation replay.
+
+    The deterministic backtest above is blind to the nowcast: it never feeds live
+    observations, so it can't see how same-day accuracy improves as the day plays
+    out. This harness fixes that. For each past day it replays the real hourly
+    observations through the *actual* same-day path (`model.predict_variable` with
+    `now` set), stepping a simulated clock across `hours` and scoring the exact
+    (peak) bin against the settlement at each step.
+
+    Limitation (documented): it uses archived *deterministic* forecasts as the
+    member set — per-member ensemble history isn't archived — so the pre-anchor
+    spread is approximate. That's acceptable here: once observations anchor the
+    day the spread collapses toward observation noise (the `locked_ratio`
+    mechanism), so the ensemble's contribution to a late-day exact bin is small.
+    Returns {hour: {variable: exact_peak_pct}}; an A/B harness for tuning the
+    anchoring path, not an absolute live number.
+    """
+    end = date.today() - timedelta(days=1)
+    start = end - timedelta(days=days)
+    actual = station_history.fetch_actual(start, end)
+    series = open_meteo_models.fetch_historical(start, end)
+    obs_times, obs_temps = to_hourly(*station_history._fetch_series(start, end))
+    obs = {"obs": (obs_times, obs_temps)}
+    calib = calib if calib is not None else (calibration.get(refresh=True) or {})
+
+    hits = {h: {"high": [], "low": []} for h in hours}
+    for day, (act_hi, act_lo) in actual.items():
+        for h in hours:
+            now = datetime(day.year, day.month, day.day, h, tzinfo=_TZ)
+            for var, act in (("high", act_hi), ("low", act_lo)):
+                out = model.predict_variable(series, obs, day, var, now, calib)
+                if not out:
+                    continue
+                peak = max(out["probabilities"], key=out["probabilities"].get)
+                hits[h][var].append(peak == bin_for_temp(act))
+
+    metrics = {}
+    for h in hours:
+        metrics[h] = {
+            var: (round(100 * sum(v) / len(v), 0) if v else None)
+            for var, v in hits[h].items()
+        }
+        metrics[h]["n"] = max(len(hits[h]["high"]), len(hits[h]["low"]))
+    return metrics
+
+
+def _report_intraday(metrics: dict):
+    print("\n=== SAME-DAY exact-bin by hour (obs replay) ===")
+    for h in sorted(metrics):
+        m = metrics[h]
+        print(f"  {h:02d}:00 local (n={m['n']:2d})  high={m['high']}%  low={m['low']}%")
+
+
 def _report(metrics: dict):
     for var, m in metrics.items():
         print(f"\n=== {var.upper()} ({m['n_days']} days) ===")
+        print(f"  exact-bin (peak): {m['exact_peak']:.0f}%   "
+              f"(consensus {m['exact_consensus']:.0f}%, within±1 {m['within1']:.0f}%)")
         print(f"  consensus MAE   : {m['mae']}°F   (baseline {m['mae_baseline']}°F)")
         print(f"  Brier           : {m['brier']}")
         print(f"  CRPS            : {m['crps']}   (baseline {m['crps_baseline']})")
@@ -210,3 +283,4 @@ def _report(metrics: dict):
 
 if __name__ == "__main__":
     _report(run())
+    _report_intraday(run_intraday())

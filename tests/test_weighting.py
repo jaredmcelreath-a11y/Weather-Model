@@ -133,6 +133,74 @@ def test_gate_rejects_when_no_improvement():
                                            margin=0.02) is False
 
 
+def _ens_ext(n, ens_off, det_off):
+    """n days where ensemble_mean is `ens_off` from actual and the det models are
+    `det_off` from actual (actual fixed at high 90 / low 70)."""
+    d0 = date(2026, 5, 1)
+    ext, actual = {}, {}
+    for i in range(n):
+        d = d0 + timedelta(days=i)
+        actual[d] = (90.0, 70.0)
+        ext[d] = {
+            "ensemble_mean": {"high": 90.0 + ens_off, "low": 70.0 + ens_off},
+            "det_gfs_seamless": {"high": 90.0 + det_off, "low": 70.0 + det_off},
+            "det_ecmwf_ifs025": {"high": 90.0 + det_off, "low": 70.0 + det_off},
+        }
+    return ext, actual
+
+
+def test_ens_bias_gate_fires_when_ensemble_bias_differs():
+    # Ensemble runs +3 hot, deterministic +0.5: the ensemble's own bias de-centers
+    # it far better than the copied deterministic bias, out-of-sample.
+    ext, actual = _ens_ext(40, ens_off=3.0, det_off=0.5)
+    assert calibration._ens_bias_beats_copied(ext, actual, "high") is True
+    assert round(calibration._system_bias(ext, actual, "ensemble_mean", "high"), 2) == 3.0
+
+
+def test_ens_bias_gate_rejects_when_biases_match():
+    # Ensemble and deterministic share the same bias -> copying is already optimal,
+    # so the gate must NOT fire (no OOS win).
+    ext, actual = _ens_ext(40, ens_off=1.0, det_off=1.0)
+    assert calibration._ens_bias_beats_copied(ext, actual, "high") is False
+
+
+def test_ens_bias_gate_rejects_on_thin_archive():
+    # Mirrors the live constraint: too few ensemble days to clear the OOS bar.
+    ext, actual = _ens_ext(5, ens_off=3.0, det_off=0.5)
+    assert calibration._ens_bias_beats_copied(ext, actual, "high") is False
+
+
+def test_exact_bin_sigma_tightens_when_concentrated():
+    # Models nail the actual every day -> the exact bin is hit at any sigma, so the
+    # gate tightens to the model floor (1.0) rather than the wide residual (2.0).
+    d0 = date(2026, 5, 1)
+    fcst, actual = {}, {}
+    for i in range(40):
+        d = d0 + timedelta(days=i)
+        a = 90 + (i % 5)
+        actual[d] = (a, a - 20)
+        fcst[d] = {"high": [a, a, a], "low": [a - 20, a - 20, a - 20]}
+    out = calibration._exact_bin_sigma(fcst, actual, 0.0, "high", residual_sigma=2.0)
+    assert out is not None and out < 2.0
+    assert out == 1.0   # _MIN_SIGMA floor
+
+
+def test_exact_bin_sigma_falls_back_on_thin_data():
+    d0 = date(2026, 5, 1)
+    fcst, actual = {}, {}
+    for i in range(10):                       # < 20 -> not enough to validate
+        d = d0 + timedelta(days=i)
+        actual[d] = (90, 70)
+        fcst[d] = {"high": [90], "low": [70]}
+    assert calibration._exact_bin_sigma(fcst, actual, 0.0, "high",
+                                        residual_sigma=2.0) == 2.0
+
+
+def test_exact_bin_sigma_noop_when_residual_at_floor():
+    # Residual already <= _MIN_SIGMA: nothing to tighten, return unchanged.
+    assert calibration._exact_bin_sigma({}, {}, 0.0, "high", residual_sigma=0.9) == 0.9
+
+
 def test_backtest_uses_system_weights_when_provided(monkeypatch):
     day = date(2026, 6, 10)
     det = {"det_gfs_seamless": _member(day, 90.0),

@@ -51,6 +51,72 @@ def _forecast_daily_extremes(start: date, end: date):
     return out
 
 
+def _score_sigma(data, sigma):
+    """(exact_peak_rate, cov80_rate) for a candidate base sigma over `data` =
+    [(samples, actual), ...]. Peak = the argmax bin equals the settled bin."""
+    import model
+    from settlement import bin_for_temp
+    from backtest import _interval_contains
+    peak = cov = n = 0
+    for samples, act in data:
+        probs = model._bin_probabilities(samples, sigma)
+        lab = bin_for_temp(act)
+        n += 1
+        if max(probs, key=probs.get) == lab:
+            peak += 1
+        if _interval_contains(probs, lab, 0.80):
+            cov += 1
+    return (peak / n, cov / n) if n else (0.0, 0.0)
+
+
+def _exact_bin_sigma(fcst, actual, bias_var, var, residual_sigma,
+                     cov_min=0.80, margin=0.0):
+    """Pick the day-ahead base sigma that maximizes exact-bin hit rate, gated.
+
+    The residual-std sigma (current default) is honest about *spread* but tends
+    to sit a touch wider than the value that maximizes how often the peak bin is
+    the settled degree. We search a grid in [_MIN_SIGMA, residual_sigma] (only
+    TIGHTENING, and only to values the live model will actually honor given its
+    _MIN_SIGMA floor), and accept a tighter sigma only if, on a held-out tail of
+    the window, it (a) keeps 80% coverage >= cov_min and (b) beats the residual
+    sigma's exact-bin by >= margin. Otherwise fall back to residual_sigma. This
+    is the established gate idiom: never ship a change that doesn't generalize.
+    """
+    from model import _MIN_SIGMA
+    if residual_sigma is None or residual_sigma <= _MIN_SIGMA:
+        return residual_sigma
+    days = sorted(d for d in fcst if d in actual)
+    data = [([s - bias_var for s in fcst[d][var]],
+             actual[d][0] if var == "high" else actual[d][1]) for d in days]
+    if len(data) < 20:
+        return residual_sigma
+    grid = []
+    s = _MIN_SIGMA
+    while s <= residual_sigma + 1e-9:
+        grid.append(round(s, 2))
+        s += 0.1
+    cut = int(len(data) * 0.6)
+    train, test = data[:cut], data[cut:]
+    base_ep, _ = _score_sigma(test, residual_sigma)
+
+    def _best(subset):
+        best = None
+        for sig in grid:
+            ep, cov = _score_sigma(subset, sig)
+            if cov >= cov_min and (best is None or ep > best[1]):
+                best = (sig, ep)
+        return best
+
+    cand = _best(train)
+    if cand is None or cand[0] >= residual_sigma:
+        return residual_sigma
+    ep_test, cov_test = _score_sigma(test, cand[0])
+    if cov_test >= cov_min and ep_test >= base_ep + margin:
+        full = _best(data)        # stable final pick over the whole window
+        return round(full[0], 2) if full else residual_sigma
+    return residual_sigma
+
+
 def _mean_std(xs: list[float]) -> tuple[float, float]:
     """Population mean and std, each rounded to 2 dp."""
     m = sum(xs) / len(xs)
@@ -236,6 +302,69 @@ def _consensus_mae(ext, actual, systems, var, wmap):
     return (sum(errs) / len(errs)) if errs else float("inf")
 
 
+def _actual_var(actual, d, var):
+    return actual[d][0] if var == "high" else actual[d][1]
+
+
+def _system_bias(ext, actual, system, var, days=None):
+    """Mean signed error of one system's daily extreme over `days` (default all)."""
+    days = days if days is not None else [d for d in ext if d in actual]
+    errs = [ext[d][system][var] - _actual_var(actual, d, var)
+            for d in days if d in actual and d in ext and system in ext[d]]
+    return (sum(errs) / len(errs)) if errs else None
+
+
+def _det_mean(ext, d, var):
+    """The deterministic-only consensus (excludes the combined ensemble) for a day."""
+    vals = [ext[d][s][var] for s in ext[d] if s != "ensemble_mean"]
+    return (sum(vals) / len(vals)) if vals else None
+
+
+def _det_consensus_bias(ext, actual, var, days):
+    """Mean signed error of the deterministic consensus — the bias currently
+    copied onto the ensemble. The gate's baseline."""
+    errs = []
+    for d in days:
+        dm = _det_mean(ext, d, var)
+        if dm is not None and d in actual:
+            errs.append(dm - _actual_var(actual, d, var))
+    return (sum(errs) / len(errs)) if errs else None
+
+
+def _ens_bias_beats_copied(ext, actual, var, margin=0.05, train=30):
+    """True iff the ensemble's OWN bias de-centers the ensemble mean better than
+    the copied deterministic-consensus bias, OUT-OF-SAMPLE.
+
+    Walk-forward, mirroring `_weights_beat_equal`: for each held-out day, both
+    biases are learned from the trailing `train` days only, applied to that day's
+    ensemble mean, and scored by absolute error. We gate on MAE (not exact-bin)
+    because this is a sub-degree *centering* decision — MAE is the direct, low-
+    noise signal, while exact-bin is a coarse function of it (cf. the project's
+    'trust the MAE deltas over the win-rate' rule). Falls back to the copied bias
+    unless the ensemble's own bias wins by >= margin, so a thin/noisy ensemble
+    archive can never ship a worse center than today's behavior.
+    """
+    days = sorted(d for d in ext if d in actual and "ensemble_mean" in ext[d]
+                  and _det_mean(ext, d, var) is not None)
+    if len(days) <= train:
+        return False
+    own_errs, copied_errs = [], []
+    for i in range(train, len(days)):
+        d = days[i]
+        window = days[i - train:i]
+        act = _actual_var(actual, d, var)
+        ens_val = ext[d]["ensemble_mean"][var]
+        eb = _system_bias(ext, actual, "ensemble_mean", var, window)
+        db = _det_consensus_bias(ext, actual, var, window)
+        if eb is None or db is None:
+            continue
+        own_errs.append(abs(ens_val - eb - act))
+        copied_errs.append(abs(ens_val - db - act))
+    if not own_errs:
+        return False
+    return (sum(own_errs) / len(own_errs)) <= (sum(copied_errs) / len(copied_errs)) - margin
+
+
 def _weights_beat_equal(ext, actual, systems, var, lam=0.25, margin=0.02, train=30):
     """True iff skill weights beat equal weight OUT-OF-SAMPLE by >= margin.
 
@@ -294,7 +423,37 @@ def compute() -> dict:
         b = sum(e) / len(e)
         resid_var = sum((x - b) ** 2 for x in e) / len(e)
         bias[var] = round(b, 2)
-        sigma[var] = round(math.sqrt(resid_var), 2)
+        resid_sigma = round(math.sqrt(resid_var), 2)
+        # Sharpen toward the exact-bin optimum, gated + coverage-guarded; falls
+        # back to the residual std when tightening doesn't generalize.
+        try:
+            sigma[var] = _exact_bin_sigma(fcst, actual, bias[var], var, resid_sigma)
+        except Exception:
+            sigma[var] = resid_sigma
+
+    # Per-system archived extremes (deterministic models + combined ensemble mean),
+    # fetched once and reused for both the ensemble bias and the skill weights.
+    try:
+        sysext = _system_extremes(start, end)
+    except Exception:
+        sysext = {}
+
+    # Ensemble bias: the ensemble is the distribution's backbone, but it was
+    # de-biased with the *deterministic* consensus bias. Give it its own, gated to
+    # fall back to the copied value unless it wins out-of-sample.
+    #   NOTE: the Open-Meteo ensemble *historical* archive only retains ~5 days
+    #   (deep per-member history isn't free — see backtest.py module docstring),
+    #   so this gate is effectively DORMANT today: it can't reach the >30-day OOS
+    #   bar and safely keeps the copied bias. The deterministic bias is a fair
+    #   proxy meanwhile (the EPS systems share the GFS/ECMWF/ICON cores). The real
+    #   ensemble bias arrives once the forward log (which records per-source
+    #   extremes — see forecast_log) accumulates; wiring that in is the follow-up.
+    ens_bias = dict(bias)
+    for var in ("high", "low"):
+        if sysext and _ens_bias_beats_copied(sysext, actual, var):
+            b = _system_bias(sysext, actual, "ensemble_mean", var)
+            if b is not None:
+                ens_bias[var] = round(b, 2)
 
     # Empirical per-lead spread from the forward prediction log, once enough days
     # have settled (lazy import avoids a cycle: scoring -> backtest -> calibration).
@@ -317,7 +476,7 @@ def compute() -> dict:
 
     weights = {"high": {}, "low": {}}
     try:
-        ext = _system_extremes(start, end)
+        ext = sysext
         systems = sorted({s for day in ext.values() for s in day})
         if ext and len(systems) >= 2:
             cand = _system_weights(ext, actual, systems)
@@ -344,11 +503,11 @@ def compute() -> dict:
         "computed": datetime.now().isoformat(timespec="seconds"),
         "window_days": CALIBRATION_WINDOW_DAYS,
         "n_days": len(set(fcst) & set(actual)),
-        # deterministic bias reused as the ensemble bias (see module note); NWS
-        # has no free archive, so it is left uncorrected.
+        # Ensemble gets its own (gated) bias; falls back to the deterministic
+        # value when the gate doesn't fire. NWS has no free archive -> uncorrected.
         "bias": {
             "deterministic": bias,
-            "ensemble": bias,
+            "ensemble": ens_bias,
             "nws": {"high": 0.0, "low": 0.0},
         },
         "sigma": sigma,

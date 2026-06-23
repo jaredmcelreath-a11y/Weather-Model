@@ -420,11 +420,17 @@ def _render_accuracy(load_accuracy):
         for var, m in bt.items():
             mrows.append({
                 "variable": var, "days": m["n_days"],
+                "exact bin": f"{m['exact_peak']:.0f}%", "within ±1°F": f"{m['within1']:.0f}%",
                 "Brier": m["brier"], "CRPS": m["crps"],
                 "MAE °F": m["mae"], "MAE base": m["mae_baseline"],
                 "50% cov": f"{m['coverage_50']:.0f}%", "80% cov": f"{m['coverage_80']:.0f}%",
             })
         st.dataframe(pd.DataFrame(mrows).set_index("variable"), width="stretch")
+        st.caption("**exact bin** = how often the model's top (peak) bin is the exact "
+                   "settled degree; **within ±1°F** forgives a one-degree miss. These come "
+                   "from the deterministic backtest with a flat spread and no same-day "
+                   "anchoring, so treat them as a *relative* A/B harness (config vs config "
+                   "on the same days), not the live hit rate — see live self-scoring below.")
         st.markdown(
             "**How to read this table** — each row scores the model's high (or low) "
             "predictions over the last *days* settled days:\n"
@@ -456,11 +462,34 @@ def _render_accuracy(load_accuracy):
 
     if live and live.get("n_settled"):
         st.markdown(f"**Live self-scoring** — {live['n_settled']} settled predictions "
-                    "logged from this dashboard (grows daily).")
-        lrows = [{"variable": var, "days": m["n"], "Brier": m["brier"]}
+                    "logged from this dashboard (grows daily). This is the *honest* "
+                    "exact-bin hit rate: the full live pipeline, graded against settlement.")
+
+        def _pct(v):
+            return f"{v:.0f}%" if v is not None else "—"
+
+        lrows = [{"variable": var, "days": m["n"],
+                  "exact bin": _pct(m.get("exact_peak")),
+                  "within ±1°F": _pct(m.get("within1")), "Brier": m["brier"]}
                  for var, m in live.get("by_variable", {}).items()]
         if lrows:
             st.dataframe(pd.DataFrame(lrows).set_index("variable"), width="stretch")
+
+        # Per-lead breakout: same-day (anchored) vs day-ahead exact-bin accuracy.
+        lead_names = {0: "same-day", 24: "day-ahead", 36: "2-day"}
+        leadrows = []
+        for bucket, vars_ in sorted(live.get("by_lead", {}).items(), key=lambda kv: int(kv[0])):
+            for var, m in vars_.items():
+                leadrows.append({
+                    "lead": lead_names.get(int(bucket), f"{bucket}h"), "variable": var,
+                    "days": m["n"], "exact bin": _pct(m.get("exact_peak")),
+                    "within ±1°F": _pct(m.get("within1")),
+                })
+        if leadrows:
+            st.caption("Exact-bin accuracy by lead time — same-day is anchored to live "
+                       "observations, so it should beat day-ahead.")
+            st.dataframe(pd.DataFrame(leadrows).set_index(["lead", "variable"]),
+                         width="stretch")
     else:
         st.caption("Live self-scoring will appear here once logged predictions "
                    "start settling (one day's lead).")

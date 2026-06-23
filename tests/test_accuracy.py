@@ -57,6 +57,31 @@ def test_forecast_log_upsert(tmp_path):
 
 # --- live scoring ---
 
+def test_forecast_log_persists_per_source_means(tmp_path):
+    p = str(tmp_path / "log.jsonl")
+    now = datetime(2026, 6, 16, 22, tzinfo=TZ)
+    snap = _snapshot(now)
+    # Attach a per-source extremes block like model.snapshot() produces.
+    snap["sources"] = {
+        "today": {
+            "ensemble": {"ens_a": (96.0, 77.0), "ens_b": (94.0, 75.0)},
+            "deterministic": {"det_x": (95.0, 76.0)},
+            "nws": {"nws_ndfd": (97.0, 78.0)},
+        },
+        "tomorrow": {},
+    }
+    forecast_log.record(snap, path=p)
+    rows = {(r["target_date"], r["variable"]): r for r in forecast_log.load(p)}
+    hi = rows[(TODAY.isoformat(), "high")]["sources"]
+    assert hi["ensemble"] == 95.0          # mean(96, 94)
+    assert hi["deterministic"] == 95.0
+    assert hi["nws"] == 97.0
+    lo = rows[(TODAY.isoformat(), "low")]["sources"]
+    assert lo["ensemble"] == 76.0          # mean(77, 75)
+    # tomorrow had no source block -> record omits the key (back-compatible)
+    assert "sources" not in rows[((TODAY + timedelta(days=1)).isoformat(), "high")]
+
+
 def test_score_against_actuals(tmp_path, monkeypatch):
     p = str(tmp_path / "log.jsonl")
     # Capture on 6/16 -> today/tomorrow buckets 0/24; both settle before 6/18.
@@ -78,6 +103,30 @@ def test_score_against_actuals(tmp_path, monkeypatch):
 def test_score_empty_log_is_graceful(tmp_path, monkeypatch):
     monkeypatch.setattr(forecast_log, "_PATH", str(tmp_path / "none.jsonl"))
     assert scoring.score(today=TODAY) == {"n_settled": 0, "by_variable": {}, "by_lead": {}}
+
+
+def test_score_exact_bin_metrics(tmp_path, monkeypatch):
+    p = str(tmp_path / "log.jsonl")
+    captured = datetime(2026, 6, 16, 22, tzinfo=TZ)
+    forecast_log.record(_snapshot(captured), path=p)
+    monkeypatch.setattr(forecast_log, "_PATH", p)
+    # Today high peak bin is a tie {95,96}; max() picks "95". Settle high=96 so the
+    # peak misses but is within ±1; low peak "77" settles exactly. Tomorrow high
+    # peak "96" settles 96 (hit); low peak "78" settles 78 (hit).
+    monkeypatch.setattr(station_history, "fetch_actual",
+                        lambda s, e: {TODAY: (96, 77),
+                                      TODAY + timedelta(days=1): (96, 78)})
+    res = scoring.score(today=date(2026, 6, 18))
+    hi, lo = res["by_variable"]["high"], res["by_variable"]["low"]
+    # high: 1/2 exact peak (tomorrow hits, today's 95 misses 96), both within ±1
+    assert hi["exact_peak"] == 50 and hi["within1"] == 100
+    # low: both exact
+    assert lo["exact_peak"] == 100 and lo["within1"] == 100
+    # consensus: today high consensus 95 misses 96; tomorrow 96 hits -> 50%
+    assert hi["exact_consensus"] == 50
+    # broken out by lead, same-day (0) and day-ahead (24) both present
+    assert res["by_lead"][0]["high"]["exact_peak"] == 0      # today high 95 vs 96
+    assert res["by_lead"][24]["high"]["exact_peak"] == 100   # tomorrow high 96 vs 96
 
 
 # --- reliability binning ---
@@ -104,6 +153,36 @@ def _diurnal_series():
                  for h in range(48)]
         out[f"ens_m{i}"] = (times, temps)
     return out
+
+
+def test_run_intraday_anchors_to_observations(monkeypatch):
+    # A clean diurnal day peaking at 95 / troughing at 75; obs equal the forecast.
+    # By a late hour the whole day is observed, so the peak bin must be the exact
+    # settled degree (95) — the harness proves anchoring sharpens same-day.
+    days = [date(2026, 6, 14), date(2026, 6, 15)]
+    base0 = datetime(2026, 6, 14, tzinfo=TZ)
+    end_dt = datetime(2026, 6, 16, tzinfo=TZ)
+    times, temps = [], []
+    t = base0
+    while t < end_dt:
+        # peak 95 at 15:00, trough 75 at 03:00
+        temps.append(85 - 10 * math.cos((t.hour - 3) / 24 * 2 * math.pi))
+        times.append(t)
+        t += timedelta(hours=1)
+    det = {"det_gfs_seamless": (times, temps)}
+
+    monkeypatch.setattr(backtest, "_TZ", TZ)
+    monkeypatch.setattr(station_history, "fetch_actual",
+                        lambda s, e: {d: (95.0, 75.0) for d in days})
+    monkeypatch.setattr(open_meteo_models, "fetch_historical", lambda s, e: det)
+    monkeypatch.setattr(station_history, "_fetch_series", lambda s, e: (times, temps))
+    monkeypatch.setattr(backtest, "to_hourly", lambda ti, te: (ti, te))
+    monkeypatch.setattr(backtest.calibration, "get", lambda refresh=True: {})
+
+    m = backtest.run_intraday(days=2, hours=(10, 19))
+    # late in the day the high is fully observed -> exact bin every day
+    assert m[19]["high"] == 100.0
+    assert m[19]["n"] == 2
 
 
 def test_cooling_offset_applied_on_clear_calm(monkeypatch):

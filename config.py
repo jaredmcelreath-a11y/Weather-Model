@@ -50,7 +50,8 @@ ENSEMBLE_MODELS = [
     "gfs_seamless",      # GEFS, ~31 members
     "icon_seamless",     # ICON-EPS, ~40 members
     "ecmwf_ifs025",      # ECMWF-EPS, ~50 members
-    "gem_seamless",      # GEPS, ~21 members
+    "gem_global_ensemble",  # GEPS, ~20 members (gem_seamless returns only the
+                            # control series — this id delivers the real members)
 ]
 
 # --- Lead-time buckets for bias / spread calibration ---

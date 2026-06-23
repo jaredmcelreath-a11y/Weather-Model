@@ -94,6 +94,19 @@ def _write(rows: list[dict], path: str) -> None:
             fh.write(json.dumps(rec) + "\n")
 
 
+def _source_means(per_source: dict, variable: str) -> dict:
+    """Collapse {group: {label: (high, low)}} to {group: mean extreme} for one
+    variable — the per-source predicted value we later difference against the
+    settlement to learn each group's (ensemble/deterministic/nws) own bias."""
+    idx = 0 if variable == "high" else 1
+    out = {}
+    for group, labels in (per_source or {}).items():
+        vals = [v[idx] for v in labels.values() if v and v[idx] is not None]
+        if vals:
+            out[group] = round(sum(vals) / len(vals), 2)
+    return out
+
+
 def record(snapshot: dict, path: str | None = None, basis: str = "hourly") -> None:
     """Upsert the snapshot's today+tomorrow predictions into the log.
 
@@ -108,6 +121,7 @@ def record(snapshot: dict, path: str | None = None, basis: str = "hourly") -> No
     if now.tzinfo is None:
         now = now.replace(tzinfo=TZ)
 
+    sources = snapshot.get("sources", {})
     new_recs = []
     for which in ("today", "tomorrow"):
         pred = snapshot.get(which)
@@ -119,7 +133,7 @@ def record(snapshot: dict, path: str | None = None, basis: str = "hourly") -> No
             d = pred.get(variable)
             if not d or not d.get("probabilities"):
                 continue
-            new_recs.append({
+            rec = {
                 "target_date": pred["day"],
                 "variable": variable,
                 "lead_bucket": bucket,
@@ -127,7 +141,13 @@ def record(snapshot: dict, path: str | None = None, basis: str = "hourly") -> No
                 "captured_at": captured,
                 "consensus": d.get("consensus"),
                 "probabilities": d["probabilities"],
-            })
+            }
+            # Per-source predicted extremes — present once the snapshot carries
+            # them; lets scoring later learn ensemble/NWS bias from the live log.
+            src = _source_means(sources.get(which, {}), variable)
+            if src:
+                rec["sources"] = src
+            new_recs.append(rec)
 
     target_path = path or _PATH
     rows = load(target_path)

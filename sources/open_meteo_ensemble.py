@@ -28,6 +28,23 @@ def _parse(data: dict) -> dict[str, tuple[list[datetime], list[float]]]:
     return out
 
 
+# Each system should expand into many members; a count of 1 means the API gave
+# us only the control series (e.g. the gem_seamless trap) and the system's spread
+# is silently missing. We warn rather than raise so a single degraded system can't
+# take down the whole forecast.
+_MIN_MEMBERS = 5
+
+
+def _warn_if_thin(parsed: dict) -> dict:
+    if 0 < len(parsed) < _MIN_MEMBERS:
+        import warnings
+        warnings.warn(
+            f"ensemble fetch returned only {len(parsed)} member series for "
+            f"{ENSEMBLE_MODELS} — a system may be delivering just its control "
+            "series (check model ids).", stacklevel=2)
+    return parsed
+
+
 def fetch(forecast_days: int = 2) -> dict[str, tuple[list[datetime], list[float]]]:
     """Return {member_label: (times, temps_f)} across all ensemble systems."""
     data = get_json(URL, {
@@ -39,7 +56,7 @@ def fetch(forecast_days: int = 2) -> dict[str, tuple[list[datetime], list[float]
         "timezone": TIMEZONE,
         "forecast_days": forecast_days,
     })
-    return _parse(data)
+    return _warn_if_thin(_parse(data))
 
 
 def fetch_historical(start: date, end: date,
