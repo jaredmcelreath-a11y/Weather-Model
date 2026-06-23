@@ -122,6 +122,7 @@ def record(snapshot: dict, path: str | None = None, basis: str = "hourly") -> No
         now = now.replace(tzinfo=TZ)
 
     sources = snapshot.get("sources", {})
+    market = snapshot.get("market", {})
     new_recs = []
     for which in ("today", "tomorrow"):
         pred = snapshot.get(which)
@@ -147,6 +148,11 @@ def record(snapshot: dict, path: str | None = None, basis: str = "hourly") -> No
             src = _source_means(sources.get(which, {}), variable)
             if src:
                 rec["sources"] = src
+            # The live market's own implied forecast at log time, so we can later
+            # score market-vs-model against settlement (CLI snapshots only).
+            mkt = market.get(which, {}).get(variable)
+            if mkt:
+                rec["market"] = mkt
             new_recs.append(rec)
 
     target_path = path or _PATH

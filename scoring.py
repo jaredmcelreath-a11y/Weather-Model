@@ -123,6 +123,55 @@ def score(today: date | None = None, basis: str = "hourly") -> dict:
     return {"n_settled": n_settled, "by_variable": by_variable, "by_lead": by_lead}
 
 
+def market_accuracy(today: date | None = None) -> dict:
+    """Compare the logged Kalshi market forecast to the model, vs CLI settlement.
+
+    For every settled CLI record that carries a logged `market` block, score the
+    market's implied expected temperature and the model's consensus as point
+    forecasts against the actual settlement. Returns per-variable MAE for each
+    plus how often the market was the closer of the two — the empirical answer to
+    'how much should the market influence us'. Empty until market-tagged records
+    settle (one day's lead after the logging ships).
+    """
+    records = [r for r in _settled_records(today)
+               if r.get("basis") == "cli" and r.get("market")
+               and r.get("consensus") is not None]
+    out = {"n": 0, "by_variable": {}}
+    if not records:
+        return out
+    actual = _actuals_for(records, "cli")
+    if not actual:
+        return out
+
+    agg: dict[str, dict] = {}
+    for r in records:
+        d = date.fromisoformat(r["target_date"])
+        if d not in actual:
+            continue
+        var = r["variable"]
+        act = actual[d][0] if var == "high" else actual[d][1]
+        ev = r["market"].get("ev")
+        if ev is None:
+            continue
+        a = agg.setdefault(var, {"m_err": [], "k_err": [], "k_win": []})
+        m_err = abs(r["consensus"] - act)
+        k_err = abs(ev - act)
+        a["m_err"].append(m_err)
+        a["k_err"].append(k_err)
+        a["k_win"].append(k_err < m_err)
+        out["n"] += 1
+
+    for var, a in agg.items():
+        n = len(a["m_err"])
+        out["by_variable"][var] = {
+            "n": n,
+            "model_mae": round(sum(a["m_err"]) / n, 2),
+            "market_mae": round(sum(a["k_err"]) / n, 2),
+            "market_closer_pct": round(100 * sum(a["k_win"]) / n, 0),
+        }
+    return out
+
+
 def per_lead_sigma(min_days: int = MIN_LEAD_DAYS, today: date | None = None) -> dict:
     """{lead_bucket: {variable: sigma}} for buckets with enough settled days.
 

@@ -82,11 +82,29 @@ def load_accuracy_kalshi():
         live = scoring.score(basis="cli")
     except Exception:
         pass
+    try:
+        market = scoring.market_accuracy()
+        if market and market.get("n"):
+            live = dict(live or {})
+            live["market"] = market
+    except Exception:
+        pass
     return bt, live
 
 
 def _page(adapter, snapshot_loader, accuracy_loader, record_basis):
     snap, calib = snapshot_loader()
+    if record_basis == "cli":
+        # Attach the live market's implied forecast so the CLI log can later score
+        # market-vs-model (the scheduled Action does the same 24/7).
+        try:
+            from datetime import date
+            from sources import kalshi
+            snap["market"] = kalshi.implied_block(
+                date.fromisoformat(snap["today"]["day"]),
+                date.fromisoformat(snap["tomorrow"]["day"]))
+        except Exception:
+            pass
     try:
         forecast_log.record(snap, basis=record_basis)  # per-basis upsert
     except Exception:

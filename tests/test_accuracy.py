@@ -82,6 +82,37 @@ def test_forecast_log_persists_per_source_means(tmp_path):
     assert "sources" not in rows[((TODAY + timedelta(days=1)).isoformat(), "high")]
 
 
+def test_forecast_log_persists_market_block(tmp_path):
+    p = str(tmp_path / "log.jsonl")
+    now = datetime(2026, 6, 16, 22, tzinfo=TZ)
+    snap = _snapshot(now)
+    snap["market"] = {"today": {"high": {"ev": 95.5, "buckets": [[94, 96, 1.0]],
+                                         "volume": 30.0}}}
+    forecast_log.record(snap, path=p, basis="cli")
+    rows = {(r["target_date"], r["variable"]): r for r in forecast_log.load(p)}
+    assert rows[(TODAY.isoformat(), "high")]["market"]["ev"] == 95.5
+    # variables/days without a market block omit the key (back-compatible)
+    assert "market" not in rows[(TODAY.isoformat(), "low")]
+
+
+def test_market_accuracy_compares_to_model(tmp_path, monkeypatch):
+    p = str(tmp_path / "log.jsonl")
+    captured = datetime(2026, 6, 16, 22, tzinfo=TZ)
+    snap = _snapshot(captured)
+    # Model high consensus is 95 (from _snapshot); give the market a sharper 96.
+    snap["market"] = {"today": {"high": {"ev": 96.0, "buckets": [], "volume": 5}}}
+    forecast_log.record(snap, path=p, basis="cli")
+    monkeypatch.setattr(forecast_log, "_PATH", p)
+    # CLI settlement high = 96 -> market (96) nails it, model (95) is 1 off.
+    monkeypatch.setattr(station_history, "fetch_actual_cli",
+                        lambda s, e: {TODAY: (96, 77),
+                                      TODAY + timedelta(days=1): (96, 78)})
+    res = scoring.market_accuracy(today=date(2026, 6, 18))
+    hi = res["by_variable"]["high"]
+    assert hi["market_mae"] == 0.0 and hi["model_mae"] == 1.0
+    assert hi["market_closer_pct"] == 100
+
+
 def test_score_against_actuals(tmp_path, monkeypatch):
     p = str(tmp_path / "log.jsonl")
     # Capture on 6/16 -> today/tomorrow buckets 0/24; both settle before 6/18.

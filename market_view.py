@@ -490,6 +490,22 @@ def _render_accuracy(load_accuracy):
                        "observations, so it should beat day-ahead.")
             st.dataframe(pd.DataFrame(leadrows).set_index(["lead", "variable"]),
                          width="stretch")
+
+        mkt = live.get("market")
+        if mkt and mkt.get("n"):
+            st.markdown(f"**Market vs model** — {mkt['n']} settled days where the live "
+                        "Kalshi price was logged. Point-forecast error (°F) of the "
+                        "market's implied temperature vs the model's consensus, against "
+                        "CLI settlement. Lower is better.")
+            mrows = [{"variable": var, "days": m["n"],
+                      "model MAE": m["model_mae"], "market MAE": m["market_mae"],
+                      "market closer": f"{m['market_closer_pct']:.0f}%"}
+                     for var, m in mkt.get("by_variable", {}).items()]
+            if mrows:
+                st.dataframe(pd.DataFrame(mrows).set_index("variable"), width="stretch")
+            st.caption("If *market MAE* beats *model MAE* (and 'market closer' > 50%), the "
+                       "market is the sharper forecast and deserves weight; if not, the "
+                       "model's independence is the edge. Builds as days settle.")
     else:
         st.caption("Live self-scoring will appear here once logged predictions "
                    "start settling (one day's lead).")

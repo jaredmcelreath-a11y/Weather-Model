@@ -68,3 +68,66 @@ def fetch_contracts(variable: str, day: date) -> list[dict]:
 
     out.sort(key=sort_key)
     return out
+
+
+def _bucket_mid(c) -> float | None:
+    """A representative temperature for a contract's range, for an implied EV.
+
+    Open-ended tails ('less'/'greater') have no true midpoint, so use a point
+    half a degree inside the strike as a stand-in (good enough for a point
+    estimate; the tails rarely carry much probability mass)."""
+    f, cap, kind = c.get("floor"), c.get("cap"), c.get("strike_type")
+    if kind == "between" and f is not None and cap is not None:
+        return (f + cap) / 2.0
+    if kind == "less" and cap is not None:
+        return cap - 0.5
+    if kind == "greater" and f is not None:
+        return f + 0.5
+    return None
+
+
+def implied_forecast(variable: str, day: date) -> dict | None:
+    """The market's own forecast, distilled from the live contract ladder.
+
+    Each bucket's mid YES price ≈ its implied probability; we normalize across
+    buckets (removing the bid/ask overround) into a PMF, then report the implied
+    expected temperature `ev` plus the bucket PMF and traded volume. This is what
+    we log next to the model so we can later score the *market* against settlement
+    the same way we score the model. None when no priced contracts are live.
+    """
+    rows = []
+    for c in fetch_contracts(variable, day):
+        mid = _bucket_mid(c)
+        if mid is None:
+            continue
+        quotes = [p for p in (c.get("yes_bid"), c.get("yes_ask")) if p is not None]
+        if not quotes:
+            continue
+        rows.append((c.get("floor"), c.get("cap"), mid,
+                     sum(quotes) / len(quotes), c.get("volume") or 0.0))
+    tot = sum(p for *_, p, _ in rows)
+    if not rows or tot <= 0:
+        return None
+    return {
+        "ev": round(sum(mid * p for _, _, mid, p, _ in rows) / tot, 2),
+        "buckets": [[f, cap, round(p / tot, 4)] for f, cap, _, p, _ in rows],
+        "volume": round(sum(v for *_, v in rows), 1),
+    }
+
+
+def implied_block(today: date, tomorrow: date) -> dict:
+    """{which: {variable: implied_forecast}} for today/tomorrow — the market half
+    of a logged snapshot. Empty branches are omitted (no live market)."""
+    out: dict = {}
+    for which, day in (("today", today), ("tomorrow", tomorrow)):
+        day_block = {}
+        for var in ("high", "low"):
+            try:
+                f = implied_forecast(var, day)
+            except Exception:
+                f = None
+            if f:
+                day_block[var] = f
+        if day_block:
+            out[which] = day_block
+    return out
