@@ -365,3 +365,15 @@ def test_lead_bias_skipped_when_observed():
     out0 = model.predict_variable(s, {"obs": (ot, ov)}, day, "high", now, {})
     # obs are anchoring the day -> forecast de-bias must NOT apply
     assert out["consensus"] == out0["consensus"]
+
+
+def test_active_corrections_lists_live_knobs():
+    import calibration
+    calib = {"bias_correction": {"by_lead": {"24": {"high": -1.2}}},
+             "sigma": {"by_lead": {"24": {"low": 1.8}}}}
+    out = calibration.active_corrections(calib)
+    assert "day-ahead high -1.2°F bias" in out
+    assert "day-ahead low σ=1.8" in out
+    # nothing live -> empty list (dormant)
+    assert calibration.active_corrections(None) == []
+    assert calibration.active_corrections({}) == []

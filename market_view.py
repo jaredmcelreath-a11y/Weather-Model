@@ -13,6 +13,7 @@ import pandas as pd
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
+import calibration
 import model
 from config import STATION_ID
 
@@ -417,10 +418,15 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                        "hold available (the market isn't underpricing a safe side).")
 
 
-def _render_accuracy(load_accuracy):
+def _render_accuracy(load_accuracy, calib=None):
     """The '📊 Model accuracy' expander body — backtest table + reliability charts
     + live self-scoring. `load_accuracy` is the cached () -> (bt, live) callable."""
     bt, live = load_accuracy()
+    corr = calibration.active_corrections(calib)
+    if corr:
+        st.markdown("**Active self-corrections** — adjustments the model has "
+                    "learned from its own settled forecasts and is applying now: "
+                    + "; ".join(corr) + ".")
     if not bt:
         st.caption("Backtest unavailable (archive fetch failed).")
     else:
@@ -584,6 +590,6 @@ def render_page(snap, calib, adapter, load_accuracy):
     with st.expander("📊 Model accuracy"):
         if adapter.accuracy_note:
             st.caption(adapter.accuracy_note)
-        _render_accuracy(load_accuracy)
+        _render_accuracy(load_accuracy, calib)
 
     st.caption(adapter.settle_footer)

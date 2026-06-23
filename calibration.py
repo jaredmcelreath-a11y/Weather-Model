@@ -408,6 +408,25 @@ def _bias_correction() -> dict:
         return {"by_lead": {}}
 
 
+def active_corrections(calib: dict | None) -> list[str]:
+    """Human-readable list of self-correction knobs currently live in `calib`,
+    for the dashboard's 'Active self-corrections' line. Empty when nothing has
+    cleared its data gate yet. Handles both int and JSON-string bucket keys."""
+    names = {"0": "same-day", "24": "day-ahead", "36": "2-day"}
+    out: list[str] = []
+    bc = ((calib or {}).get("bias_correction") or {}).get("by_lead") or {}
+    for bucket in sorted(bc, key=lambda b: int(b)):
+        label = names.get(str(bucket), f"{bucket}h")
+        for var, v in bc[bucket].items():
+            out.append(f"{label} {var} {v:+.1f}°F bias")
+    sl = ((calib or {}).get("sigma") or {}).get("by_lead") or {}
+    for bucket in sorted(sl, key=lambda b: int(b)):
+        label = names.get(str(bucket), f"{bucket}h")
+        for var, v in sl[bucket].items():
+            out.append(f"{label} {var} σ={v:.1f}")
+    return out
+
+
 def compute() -> dict:
     end = date.today() - timedelta(days=1)
     start = end - timedelta(days=CALIBRATION_WINDOW_DAYS)
