@@ -9,6 +9,8 @@ plans, Top-3 flip/hold, Safest-hold) is identical across exchanges.
 
 from __future__ import annotations
 
+from datetime import date, datetime
+
 import pandas as pd
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
@@ -23,6 +25,51 @@ from config import STATION_ID
 SAFE_HOLD_MAX_ASK = 0.92
 
 
+@st.cache_data(ttl=30, show_spinner=False)
+def _kalshi_implied(day_iso):
+    """Kalshi's market-implied expected high/low for `day_iso`, distilled from
+    the live contract ladder — shown next to Current temp on both pages. None per
+    variable when no priced contracts are live."""
+    from sources import kalshi
+    out = {}
+    for var in ("high", "low"):
+        try:
+            f = kalshi.implied_forecast(var, date.fromisoformat(day_iso))
+        except Exception:
+            f = None
+        out[var] = f["ev"] if f else None
+    return out
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _consensus_history():
+    """Cached intraday consensus samples (the whole file; filtered per chart)."""
+    import consensus_log
+    try:
+        return consensus_log.load()
+    except Exception:
+        return []
+
+
+def consensus_history_df(rows, day_iso, variable, basis, include_temp):
+    """Time-indexed df of consensus (+ live temp on today) for one series, for
+    st.line_chart. None when fewer than two points exist yet."""
+    pts = [r for r in rows
+           if r.get("target_date") == day_iso and r.get("variable") == variable
+           and r.get("basis", "hourly") == basis]
+    if len(pts) < 2:
+        return None
+    pts.sort(key=lambda r: r["captured_at"])
+    data = []
+    for r in pts:
+        row = {"time": datetime.fromisoformat(r["captured_at"]),
+               "consensus": r.get("consensus")}
+        if include_temp and r.get("current_temp") is not None:
+            row["current temp"] = r["current_temp"]
+        data.append(row)
+    return pd.DataFrame(data).set_index("time")
+
+
 def reliability_df(bins):
     """Reliability bins -> df for st.line_chart: observed vs the ideal diagonal."""
     if not bins:
@@ -34,10 +81,6 @@ def reliability_df(bins):
 
 def cents(x):
     return "—" if x is None else f"{round(x * 100)}¢"
-
-
-def pct(x):
-    return "—" if x is None else f"{x * 100:.0f}%"
 
 
 def spread_c(ask, bid):
@@ -65,31 +108,6 @@ def exit_plan(ask, bid):
     if sp is None or sp > 0.2 * ask:
         return "hold to settle"
     return f"flip @ {cents(target)}"
-
-
-def flip_prob(ask, bid):
-    """Rough chance the price swings up enough to sell for a +20% flip before
-    settlement.
-
-    Models the traded price as a fair value wandering on [0,1] (a martingale);
-    the probability it *touches* an upper level L before settling is mid / L. The
-    flip needs the bid to reach ask*1.2, so (holding the spread constant) the mid
-    must reach L = ask*1.2 + spread/2 — wider spreads raise L and lower the odds.
-    Returns None when there's no bid or the +20% target exceeds $1 (can't flip).
-
-    Speculative: it's a theoretical touch probability assuming fair two-sided
-    volatility. Thin longshots often just decay to zero, so treat it as an
-    optimistic upper estimate — and you still have to be watching to catch it.
-    """
-    if ask is None or bid is None:
-        return None
-    target_bid = ask * 1.2
-    if target_bid >= 1.0:
-        return None
-    L = target_bid + (ask - bid) / 2
-    if L <= 0:
-        return None
-    return max(0.0, min(1.0, ((ask + bid) / 2) / L))
 
 
 def _flag_hold_only(df, exit_col):
@@ -197,7 +215,7 @@ def lock_status(d, variable):
 
 
 def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
-                    safe_min=None):
+                    safe_min=None, today_iso=None):
     if safe_min is None:
         safe_min = adapter.safe_hold_default
     with col:
@@ -228,6 +246,25 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
 
         level, headline, detail = lock_status(d, variable)
         getattr(st, level)(f"**{headline}** — {detail}")
+
+        # Consensus through the day: how the model's consensus has drifted (one
+        # point per ~30 min), with today's live temperature overlaid so you can
+        # watch the reading climb/fall toward the predicted peak/trough.
+        st.markdown("**Consensus through the day**")
+        hist = consensus_history_df(_consensus_history(), day_iso, variable,
+                                    adapter.basis, include_temp=(day_iso == today_iso))
+        if hist is not None:
+            line_color = "#ff6b6b" if variable == "high" else "#4dabf7"
+            colors = [line_color if c == "consensus" else "#adb5bd"
+                      for c in hist.columns]
+            st.line_chart(hist, height=200, color=colors)
+            st.caption("Model consensus (°F) sampled every ~30 min" +
+                       (", with the live temperature overlaid — watch it converge "
+                        "on the predicted peak/trough." if "current temp" in hist.columns
+                        else "."))
+        else:
+            st.caption("Consensus history builds through the day — a point every "
+                       "~30 minutes. Check back as it accumulates.")
 
         probs = d["probabilities"]
         df = prob_table(probs, variable)
@@ -303,60 +340,23 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                    "A contract shown in 🔴 red is too wide-spread to flip — hold it to "
                    f"settlement. Prices in ¢, live from {adapter.name} (refreshes ~30s).")
 
-        # Top 3 FLIP trades: buys you intend to sell for a +20% gain before
-        # settlement, so only contracts tight-spread enough to actually reach that
-        # target (exit plan == 'flip @ X') qualify. Ranked by P(flip) × edge — the
-        # touch-probability of the +20% level weighted by how underpriced the
-        # contract is, so the list favors flips that are both likely AND profitable.
-        st.markdown(f"**🔁 Top 3 {variable} flip trades** — buy to sell for +20% "
-                    "before settling")
-        flips = []
-        for lbl, side, mp, price, edge, bid in picks:
-            ask = max(price, 0.01)               # guard div-by-zero on a 0¢ ask
-            fp = flip_prob(ask, bid)
-            if fp is None or not exit_plan(ask, bid).startswith("flip"):
-                continue                          # not tight-spread enough to flip
-            flips.append((fp * edge, lbl, side, mp, ask, edge, fp, bid))
-        if flips:
-            flips.sort(key=lambda x: x[0], reverse=True)
-            ftop = [{
-                "contract": lbl,
-                "side": side,
-                "model %": f"{mp*100:.0f}%",
-                "ask": cents(ask),
-                "spread": cents(spread_c(ask, bid)),
-                "edge (pp)": f"+{edge*100:.0f}",
-                "flip @": cents(ask * 1.2),
-                "P(flip)": pct(fp),
-            } for _, lbl, side, mp, ask, edge, fp, bid in flips[:3]]
-            st.dataframe(pd.DataFrame(ftop), width="stretch", height=140,
-                         hide_index=True)
-            st.caption("Ranked by P(flip) × edge — the contracts most likely to "
-                       "swing up to a profitable exit before settling. "
-                       "flip @ = the price you'd sell into for +20% on cost. "
-                       "P(flip) = rough chance the price touches that target before "
-                       "settling (mid ÷ target-level); wider spreads lower it. It's "
-                       "an optimistic estimate — thin longshots often just decay, and "
-                       "you must be watching to catch the tick. Only positive-edge "
-                       "(>3pp) contracts tight-spread enough to flip are shown.")
-        else:
-            st.caption("No contract is both underpriced (>3pp edge) and tight-spread "
-                       "enough to flip right now — see the hold-to-settlement picks "
-                       "below.")
-
         # Top 3 HOLD-TO-SETTLEMENT trades: the model's best value picks to carry to
         # $1. Scored by edge × return-on-cost EV (geometric mean, edge / sqrt(ask)):
         # rewards real mispricing while lifting cheaper contracts, without letting
         # penny longshots dominate. Held to settlement, so the spread is irrelevant.
+        # Gated at ≥60% model win-probability so only genuinely confident bets show.
+        TOP3_MIN_CONF = 0.60
         st.markdown(f"**🎯 Top 3 {variable} hold-to-settlement trades** — best value "
                     "held to $1")
-        if picks:
-            scored = []
-            for lbl, side, mp, price, edge, bid in picks:
-                ask = max(price, 0.01)           # guard div-by-zero on a 0¢ ask
-                ev = edge / ask                  # expected return on capital risked
-                score = edge / (ask ** 0.5)      # geometric mean of edge and EV
-                scored.append((score, lbl, side, mp, ask, edge, ev, bid))
+        scored = []
+        for lbl, side, mp, price, edge, bid in picks:
+            if mp < TOP3_MIN_CONF:               # confidence gate
+                continue
+            ask = max(price, 0.01)               # guard div-by-zero on a 0¢ ask
+            ev = edge / ask                      # expected return on capital risked
+            score = edge / (ask ** 0.5)          # geometric mean of edge and EV
+            scored.append((score, lbl, side, mp, ask, edge, ev, bid))
+        if scored:
             scored.sort(key=lambda x: x[0], reverse=True)
             top = [{
                 "contract": lbl,
@@ -378,10 +378,12 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                        "EV %/cost = expected return per dollar risked (edge ÷ ask). "
                        "spread / exit = liquidity cue if you change your mind: a wide "
                        "spread (🔴) means flipping early isn't viable. Only contracts "
-                       "clearing the 3pp edge threshold are shown.")
+                       "clearing both the 3pp edge threshold and "
+                       f"{TOP3_MIN_CONF*100:.0f}% model confidence are shown.")
         else:
-            st.caption("No contracts clear the 3pp edge threshold right now — "
-                       "model and market agree, so there's no clear buy.")
+            st.caption(f"No contract clears both the 3pp edge and "
+                       f"{TOP3_MIN_CONF*100:.0f}% model-confidence bar right now — "
+                       "no high-confidence value buy.")
 
         # Safest hold-to-$1 pick: the highest risk-adjusted-return bet among the
         # high-confidence, positively-priced contracts. Held to settlement, so the
@@ -536,15 +538,24 @@ def render_page(snap, calib, adapter, load_accuracy):
     st.title(f"🌡️  {STATION_ID} Daily High / Low — {adapter.name} ({adapter.exchange})")
 
     cur = snap.get("current")
-    top = st.columns(4)
+    ki = _kalshi_implied(snap["today"]["day"])      # Kalshi market-implied hi/lo (today)
+    top = st.columns(6)
     if cur:
         top[0].metric("Current temp", f"{cur['temp']}°F", help=f"as of {cur['time']}")
-    top[1].metric("Updated", snap["updated"].split("T")[1])
+    top[1].metric("Kalshi high (mkt)",
+                  f"{ki['high']:.1f}°F" if ki.get("high") is not None else "—",
+                  help="Today's market-implied expected high, from Kalshi's live "
+                       "contract ladder (shown on both pages for reference).")
+    top[2].metric("Kalshi low (mkt)",
+                  f"{ki['low']:.1f}°F" if ki.get("low") is not None else "—",
+                  help="Today's market-implied expected low, from Kalshi's live "
+                       "contract ladder (shown on both pages for reference).")
+    top[3].metric("Updated", snap["updated"].split("T")[1])
     if calib:
-        top[2].metric("Calib bias (hi/lo)",
+        top[4].metric("Calib bias (hi/lo)",
                       f"{calib['bias']['deterministic']['high']:+.1f}/"
                       f"{calib['bias']['deterministic']['low']:+.1f}°F")
-        top[3].metric("Day-ahead σ (hi/lo)",
+        top[5].metric("Day-ahead σ (hi/lo)",
                       f"{calib['sigma']['high']:.1f}/{calib['sigma']['low']:.1f}°F")
 
     day = st.sidebar.radio("Day", ["Today", "Tomorrow"], index=0,
@@ -570,10 +581,11 @@ def render_page(snap, calib, adapter, load_accuracy):
     # Feature the low on Tomorrow (the user's primary before-bed bet).
     feature_low = (key == "tomorrow")
     cols = st.columns(2)
+    today_iso = snap["today"]["day"]
     render_variable(cols[0], "High", pred["high"], "high", pred["day"], adapter,
-                    featured=not feature_low, safe_min=safe_min)
+                    featured=not feature_low, safe_min=safe_min, today_iso=today_iso)
     render_variable(cols[1], "Low", pred["low"], "low", pred["day"], adapter,
-                    featured=feature_low, safe_min=safe_min)
+                    featured=feature_low, safe_min=safe_min, today_iso=today_iso)
 
     with st.expander("Per-source breakdown"):
         src = snap["sources"][key]

@@ -3,6 +3,7 @@
 .streamlit/secrets.toml
 calibration.json
 forecast_log.jsonl
+consensus_history.jsonl
 __pycache__/
 *.pyc
 .DS_Store

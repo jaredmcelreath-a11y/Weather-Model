@@ -110,6 +110,11 @@ def _page(adapter, snapshot_loader, accuracy_loader, record_basis):
         forecast_log.record(snap, basis=record_basis)  # per-basis upsert
     except Exception:
         pass  # logging must never break the dashboard
+    try:
+        import consensus_log
+        consensus_log.record(snap, basis=record_basis)  # intraday time series
+    except Exception:
+        pass
     market_view.render_page(snap, calib, adapter, accuracy_loader)
 
 

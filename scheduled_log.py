@@ -15,6 +15,7 @@ from __future__ import annotations
 from datetime import date
 
 import calibration
+import consensus_log
 import forecast_log
 import model
 from sources import kalshi
@@ -22,7 +23,9 @@ from sources import kalshi
 
 def main() -> None:
     calib = calibration.get(refresh=True)
-    forecast_log.record(model.snapshot(calib))                       # hourly basis
+    hourly_snap = model.snapshot(calib)                              # hourly basis
+    forecast_log.record(hourly_snap)
+    consensus_log.record(hourly_snap)
     off = (calib or {}).get("settlement_offset")
     cli_snap = model.snapshot(calib, settle_offset=off, continuous_obs=True)
     # Attach the live Kalshi market's implied forecast to the CLI snapshot, so the
@@ -35,6 +38,7 @@ def main() -> None:
     except Exception as e:
         print(f"market block skipped: {e}")
     forecast_log.record(cli_snap, basis="cli")
+    consensus_log.record(cli_snap, basis="cli")
     n = len(forecast_log.load(forecast_log._PATH))
     print(f"logged hourly+cli snapshots; log now holds {n} records")
 
