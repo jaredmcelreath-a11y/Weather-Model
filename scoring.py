@@ -19,6 +19,11 @@ from sources import station_history
 
 # Minimum settled days for a (lead, variable) before we trust its empirical sigma.
 MIN_LEAD_DAYS = 10
+# Self-correction tuning. Shrink a measured bias toward zero by n/(n+SHRINK_K)
+# so a noisy short sample is damped and a persistent bias strengthens with data;
+# only correct when the bias clears SIG_Z standard errors (distinguishable from 0).
+SHRINK_K = 8
+SIG_Z = 1.0
 
 
 def _settled_records(today: date | None = None) -> list[dict]:
@@ -184,4 +189,31 @@ def per_lead_sigma(min_days: int = MIN_LEAD_DAYS, today: date | None = None) -> 
         for var, stats in vars_.items():
             if stats["n"] >= min_days and stats.get("sigma") is not None:
                 out.setdefault(int(bucket), {})[var] = stats["sigma"]
+    return out
+
+
+def per_lead_bias(min_days: int = MIN_LEAD_DAYS, today: date | None = None,
+                  basis: str = "hourly") -> dict:
+    """{lead_bucket: {variable: correction}} signed bias to SUBTRACT from the
+    consensus, for buckets the data can speak to.
+
+    Built from score()'s by_lead bias (= mean(consensus - actual); positive =
+    forecast ran warm). Two guards keep auto-correction safe on small samples: a
+    >= min_days gate, plus shrinkage toward zero by n/(n+SHRINK_K) combined with a
+    significance test (|bias| must exceed SIG_Z * sigma/sqrt(n)). A noisy bias is
+    shrunk away; a persistent one survives and grows as days accumulate. Omitted
+    buckets => the model applies no correction there.
+    """
+    out: dict[int, dict[str, float]] = {}
+    for bucket, vars_ in score(today, basis=basis).get("by_lead", {}).items():
+        for var, stats in vars_.items():
+            n = stats.get("n", 0)
+            bias = stats.get("bias")
+            sigma = stats.get("sigma")
+            if n < min_days or bias is None or sigma is None:
+                continue
+            stderr = sigma / math.sqrt(n) if n else float("inf")
+            if abs(bias) <= SIG_Z * stderr:
+                continue  # statistically indistinguishable from zero
+            out.setdefault(int(bucket), {})[var] = round(bias * n / (n + SHRINK_K), 2)
     return out

@@ -290,3 +290,26 @@ def test_cooling_offset_applied_on_clear_calm(monkeypatch):
 
     assert cool["cooling_applied"] and not warm["cooling_applied"]
     assert round(warm["consensus"] - cool["consensus"], 1) == 3.0
+
+
+# --- self-correction: lead-time bias ---
+
+def test_per_lead_bias_shrinks_and_gates(monkeypatch):
+    fake = {"by_lead": {
+        24: {"high": {"n": 10, "bias": 1.5, "sigma": 1.0},   # strong + significant
+             "low":  {"n": 10, "bias": 0.1, "sigma": 2.0}},   # tiny -> insignificant
+        0:  {"high": {"n": 5,  "bias": 2.0, "sigma": 0.5}},   # below min_days -> dropped
+    }}
+    monkeypatch.setattr(scoring, "score", lambda today=None, basis="hourly": fake)
+    out = scoring.per_lead_bias()
+    # high@24: shrink 1.5 * 10/(10+8) = 0.833 -> 0.83
+    assert out[24]["high"] == 0.83
+    # low@24: |0.1| <= Z*sigma/sqrt(n) = 1.0*2/sqrt(10) = 0.632 -> not significant
+    assert "low" not in out.get(24, {})
+    # bucket 0 has only 5 days (< MIN_LEAD_DAYS) -> absent entirely
+    assert 0 not in out
+
+
+def test_per_lead_bias_empty_when_no_data(monkeypatch):
+    monkeypatch.setattr(scoring, "score", lambda today=None, basis="hourly": {"by_lead": {}})
+    assert scoring.per_lead_bias() == {}
