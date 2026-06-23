@@ -342,3 +342,26 @@ def test_bias_correction_block_wraps_scoring(monkeypatch):
         raise RuntimeError("scoring down")
     monkeypatch.setattr(scoring, "per_lead_bias", boom)
     assert calibration._bias_correction() == {"by_lead": {}}
+
+
+def test_lead_bias_correction_shifts_consensus():
+    s, obs = _diurnal_series(), {"obs": ([], [])}
+    now = datetime(TODAY.year, TODAY.month, TODAY.day, 22, tzinfo=TZ)
+    tom = TODAY + timedelta(days=1)          # bucket 24, pure forecast (no obs)
+    base = model.predict_variable(s, obs, tom, "high", now, {})
+    calib = {"bias_correction": {"by_lead": {"24": {"high": 1.5}}}}
+    corr = model.predict_variable(s, obs, tom, "high", now, calib)
+    # forecast measured 1.5 warm at day-ahead -> consensus drops by 1.5
+    assert round(base["consensus"] - corr["consensus"], 1) == 1.5
+
+
+def test_lead_bias_skipped_when_observed():
+    day = TODAY
+    now = datetime(TODAY.year, TODAY.month, TODAY.day, 16, tzinfo=TZ)
+    ot, ov = _intraday_obs(day, peak_hour=14, peak=95, now_hour=16, drop_after=0.5)
+    s = _diurnal_series()
+    calib = {"bias_correction": {"by_lead": {"0": {"high": 2.0}}}}
+    out = model.predict_variable(s, {"obs": (ot, ov)}, day, "high", now, calib)
+    out0 = model.predict_variable(s, {"obs": (ot, ov)}, day, "high", now, {})
+    # obs are anchoring the day -> forecast de-bias must NOT apply
+    assert out["consensus"] == out0["consensus"]
