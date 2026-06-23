@@ -331,3 +331,14 @@ def test_per_lead_bias_forwards_basis_and_today(monkeypatch):
     monkeypatch.setattr(scoring, "score", fake_score)
     scoring.per_lead_bias(today=date(2026, 6, 20), basis="cli")
     assert seen == {"today": date(2026, 6, 20), "basis": "cli"}
+
+
+def test_bias_correction_block_wraps_scoring(monkeypatch):
+    import calibration
+    monkeypatch.setattr(scoring, "per_lead_bias", lambda: {24: {"high": -1.1}})
+    assert calibration._bias_correction() == {"by_lead": {24: {"high": -1.1}}}
+    # scoring failure must degrade to an empty (no-op) block, never raise
+    def boom():
+        raise RuntimeError("scoring down")
+    monkeypatch.setattr(scoring, "per_lead_bias", boom)
+    assert calibration._bias_correction() == {"by_lead": {}}
