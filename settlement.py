@@ -66,6 +66,34 @@ def day_high_low(times: list[datetime], temps: list[float],
     return round_half_up(max(vals)), round_half_up(min(vals))
 
 
+# Local-hour windows in which each daily extreme actually occurs. A source must
+# have at least one in-window point to legitimately define that extreme; a
+# now-forward forecast (NWS / LAMP / NBM) that starts after the window has
+# already passed only sees the tail of the day and would otherwise report a
+# spurious extreme (e.g. an afternoon minimum as the "low").
+_LOW_WINDOW = (0, 9)    # overnight / sunrise
+_HIGH_WINDOW = (12, 18)  # mid-afternoon peak
+
+
+def covers_extreme(times: list[datetime], temps: list[float], day: date,
+                   variable: str) -> bool:
+    """Whether `times` covers the window in which `day`'s high/low occurs.
+
+    True only if at least one non-null sample falls inside the variable's
+    occurrence window for `day`. Lets a now-forward source abstain from an
+    extreme it never observed instead of reporting the wrong tail value.
+    """
+    lo_h, hi_h = _HIGH_WINDOW if variable == "high" else _LOW_WINDOW
+    start, end = local_day_bounds(day)
+    for t, v in zip(times, temps):
+        if v is None:
+            continue
+        t = t.astimezone(TZ)
+        if start <= t < end and lo_h <= t.hour <= hi_h:
+            return True
+    return False
+
+
 def observed_so_far(times: list[datetime], temps: list[float], day: date,
                     now: datetime) -> tuple[float | None, float | None]:
     """Max/min actually observed so far today (unrounded — these are hard

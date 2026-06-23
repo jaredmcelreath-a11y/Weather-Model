@@ -35,6 +35,28 @@ def test_emits_buckets_when_low_gap_differs_and_enough_nights():
     assert off["high"]["clear_calm"] == off["high"]["other"] == 1.0
 
 
+def test_unsplit_variable_keeps_flat_gap_std():
+    # Low splits by condition (so the bucketed offset is emitted), but the high
+    # gap has real spread that does NOT correlate with the bucket, so the high
+    # split fails. The unsplit high must still carry the flat std of its gap —
+    # zeroing it would make the model overconfident on the CLI high basis.
+    days = _days(16)
+    cli, hourly, cond = {}, {}, {}
+    for i, d in enumerate(days):
+        clear = i < 8
+        low_gap = -0.8 if clear else -0.2
+        high_gap = 0.5 if i % 2 == 0 else 1.5   # mean 1.0 in both buckets, std 0.5
+        hourly[d] = (90.0, 70.0)
+        cli[d] = (90.0 + high_gap, 70.0 + low_gap)
+        cond[d] = (10.0, 5.0) if clear else (80.0, 20.0)
+    off = _conditional_settlement_offset(cli, hourly, cond)
+    assert off is not None
+    assert off["high"]["clear_calm"] == off["high"]["other"] == 1.0
+    # the genuine spread of the high gap (std 0.5) survives in both buckets
+    assert off["high"]["clear_calm_std"] == 0.5
+    assert off["high"]["other_std"] == 0.5
+
+
 def test_returns_none_when_too_few_clear_calm_nights():
     days = _days(10)
     cli, hourly, cond = {}, {}, {}

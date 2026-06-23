@@ -23,9 +23,9 @@ from zoneinfo import ZoneInfo
 from config import (BIN_HIGH, BIN_LOW, CALM_WIND_MAX, CLEAR_CLOUD_MAX,
                     LEAD_SIGMA_INFLATION, PEAK_LOCK_DROP, TIMEZONE,
                     bin_labels, lead_bucket)
-from settlement import local_day_bounds, observed_so_far
+from settlement import covers_extreme, local_day_bounds, observed_so_far
 from sources import (open_meteo_ensemble, open_meteo_models, nws_forecast,
-                     nws_observations)
+                     nws_observations, iem_mos)
 
 TZ = ZoneInfo(TIMEZONE)
 
@@ -49,6 +49,8 @@ def _group_of(label: str) -> str:
         return "deterministic"
     if label.startswith("nws"):
         return "nws"
+    if label.startswith("mos_"):
+        return "guidance"
     return "other"
 
 
@@ -116,6 +118,11 @@ def _member_extreme(times, temps, day, variable, now, observed, obs_now=None,
 
     is_today = now is not None and start <= now < end
     if not is_today:
+        # Pure / full-day reference: a source that never saw this extreme's
+        # occurrence window (a now-forward feed on the current day) abstains
+        # rather than reporting the wrong tail of the day.
+        if not covers_extreme(times, temps, day, variable):
+            return None
         return max(day_vals) if variable == "high" else min(day_vals)
 
     # Extreme already passed: the realized value is the answer; ignore the
@@ -494,6 +501,7 @@ def gather_series(forecast_days: int = 2, continuous_obs: bool = False):
     series.update(open_meteo_ensemble.fetch(forecast_days))
     series.update(open_meteo_models.fetch(forecast_days))
     series.update(nws_forecast.fetch())
+    series.update(iem_mos.fetch(forecast_days))
     obs = nws_observations.fetch(continuous=continuous_obs)
     return series, obs
 
@@ -522,7 +530,13 @@ def per_source_extremes(series, day):
     out: dict[str, dict[str, tuple]] = {}
     for label, (times, temps) in series.items():
         hi, lo = day_high_low(times, temps, day)
-        if hi is None:
+        # Null an extreme the source never observed (now-forward feed on the
+        # current day), so the panel doesn't show a spurious evening 'low'.
+        if not covers_extreme(times, temps, day, "high"):
+            hi = None
+        if not covers_extreme(times, temps, day, "low"):
+            lo = None
+        if hi is None and lo is None:
             continue
         out.setdefault(_group_of(label), {})[label] = (hi, lo)
     return out

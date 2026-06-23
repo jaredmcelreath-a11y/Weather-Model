@@ -179,7 +179,11 @@ def _var_bucket(
               and abs(cc_raw - ot_raw) >= min_sep
               and resid_cond <= resid_flat - margin)
     if not passed:
-        return flat, flat, 0.0, 0.0, False
+        # No useful split: fall back to a single flat offset for this variable,
+        # but keep the gap's real spread (std of all gaps) in both buckets. Zeroing
+        # it would drop the CLI-basis uncertainty and make the model overconfident.
+        _, flat_std = _mean_std(all_gaps)
+        return flat, flat, flat_std, flat_std, False
     cc_mean, cc_std = _mean_std(gaps_cc) if gaps_cc else (flat, 0.0)
     ot_mean, ot_std = _mean_std(gaps_ot) if gaps_ot else (flat, 0.0)
     return cc_mean, ot_mean, cc_std, ot_std, True
