@@ -24,7 +24,7 @@ def main() -> None:
     calib = calibration.get(refresh=True)
     forecast_log.record(model.snapshot(calib))                       # hourly basis
     off = (calib or {}).get("settlement_offset")
-    cli_snap = model.snapshot(calib, settle_offset=off)
+    cli_snap = model.snapshot(calib, settle_offset=off, continuous_obs=True)
     # Attach the live Kalshi market's implied forecast to the CLI snapshot, so the
     # log can later score market-vs-model against settlement. Best-effort: a market
     # outage just omits the block and the model logging is unaffected.

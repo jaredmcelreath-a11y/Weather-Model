@@ -88,6 +88,15 @@ LEAD_SIGMA_INFLATION = {0: 1.0, 24: 1.5, 36: 1.8}
 # How many recent days to use when estimating bias / spread inflation.
 CALIBRATION_WINDOW_DAYS = 45
 
+# --- Same-day "extreme locked" detector ---
+# Once today's observed temperature has retreated this many °F from the running
+# max (high) or risen this much above the running min (low), treat the day's
+# extreme as already set: the realized extreme is the answer and the forecast's
+# projected further rise/fall is noise, so collapse the samples to observed.
+# Conservative by design (a clear descent), so a brief dip before a higher peak
+# won't false-lock. ~2°F clears observation/quantization noise comfortably.
+PEAK_LOCK_DROP = 2.0
+
 # --- Radiational-cooling predictor (overnight low) ---
 # On clear, calm nights the surface radiates heat away efficiently and the low
 # undershoots what the models say. We flag a night as clear+calm when the mean

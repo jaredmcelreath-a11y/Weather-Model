@@ -199,7 +199,8 @@ def test_scheduled_log_records_both_bases(monkeypatch):
     monkeypatch.setattr(calibration, "get",
                         lambda refresh=True: {"settlement_offset": {"high": 1.0, "low": 0.0}})
     monkeypatch.setattr(model, "snapshot",
-                        lambda calib, settle_offset=None: {"_off": settle_offset})
+                        lambda calib, settle_offset=None, continuous_obs=False:
+                        {"_off": settle_offset})
     calls = []
     monkeypatch.setattr(scheduled_log.forecast_log, "record",
                         lambda snap, basis="hourly": calls.append((snap.get("_off"), basis)))

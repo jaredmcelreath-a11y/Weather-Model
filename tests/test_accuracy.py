@@ -216,6 +216,65 @@ def test_run_intraday_anchors_to_observations(monkeypatch):
     assert m[19]["n"] == 2
 
 
+def _intraday_obs(day, peak_hour, peak, now_hour, drop_after=0.0):
+    """Hourly obs rising to `peak` at `peak_hour`, then falling `drop_after` per
+    hour, up to `now_hour`."""
+    base = datetime(day.year, day.month, day.day, tzinfo=TZ)
+    times, temps = [], []
+    for h in range(0, now_hour + 1):
+        if h <= peak_hour:
+            temps.append(peak - (peak_hour - h))           # rise 1°/hr to peak
+        else:
+            temps.append(peak - drop_after * (h - peak_hour))
+        times.append(base + timedelta(hours=h))
+    return times, temps
+
+
+def test_extreme_locked_detects_descent():
+    day = date(2026, 6, 16)
+    # high peaked at 14:00=95, now 16:00 fallen to 92 (-3): locked.
+    t, v = _intraday_obs(day, peak_hour=14, peak=95, now_hour=16, drop_after=1.5)
+    now = datetime(2026, 6, 16, 16, tzinfo=TZ)
+    assert model._extreme_locked(t, v, day, "high", now, drop=2.0) is True
+    # still sitting at the peak (no descent) -> not locked.
+    t2, v2 = _intraday_obs(day, peak_hour=14, peak=95, now_hour=16, drop_after=0.0)
+    assert model._extreme_locked(t2, v2, day, "high", now, drop=2.0) is False
+
+
+def test_lock_collapses_high_to_observed(monkeypatch):
+    day = date(2026, 6, 16)
+    now = datetime(2026, 6, 16, 16, tzinfo=TZ)
+    # Forecast members that (wrongly) project a further rise to 97.
+    base = datetime(day.year, day.month, day.day, tzinfo=TZ)
+    ftimes = [base + timedelta(hours=h) for h in range(24)]
+    fc = {"det_a": (ftimes, [97 - abs(h - 18) for h in range(24)])}  # forecast peak 97 @18h
+    # Obs: real peak 95 at 14:00, now fallen to 92 -> peak locked.
+    ot, ov = _intraday_obs(day, peak_hour=14, peak=95, now_hour=16, drop_after=1.5)
+    out = model.predict_variable(fc, {"obs": (ot, ov)}, day, "high", now, None)
+    assert out["peak_locked"] is True
+    assert out["consensus"] == 95.0          # locked to realized max, not the 97 forecast
+
+
+def test_continuous_bound_captures_spike():
+    day = date(2026, 6, 16)
+    now = datetime(2026, 6, 16, 16, tzinfo=TZ)
+    base = datetime(day.year, day.month, day.day, tzinfo=TZ)
+    ftimes = [base + timedelta(hours=h) for h in range(24)]
+    fc = {"det_a": (ftimes, [88 - abs(h - 15) for h in range(24)])}   # forecast high ~88
+    # Hourly obs top out at 88; a 5-minute spike hit 91 (clears the 0.9°F haircut).
+    ot = [base + timedelta(hours=h) for h in range(17)]
+    ov = [88 - abs(h - 14) for h in range(17)]
+    spike_t = ot + [base + timedelta(hours=14, minutes=20)]
+    spike_v = ov + [91.0]
+    obs = {"obs": (ot, ov), "obs_continuous": (spike_t, spike_v)}
+    out = model.predict_variable(fc, obs, day, "high", now, None)
+    # The continuous spike (91 - 0.9 = 90.1) floors the distribution: no mass below 90.
+    assert model.prob_at_most(out["probabilities"], 89) < 1e-9
+    # Without the continuous feed, the 88 hourly bound leaves mass at 88-89.
+    out0 = model.predict_variable(fc, {"obs": (ot, ov)}, day, "high", now, None)
+    assert model.prob_at_most(out0["probabilities"], 89) > 0.1
+
+
 def test_cooling_offset_applied_on_clear_calm(monkeypatch):
     s, obs = _diurnal_series(), {"obs": ([], [])}
     now = datetime(TODAY.year, TODAY.month, TODAY.day, 22, tzinfo=TZ)

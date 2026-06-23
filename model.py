@@ -21,7 +21,8 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from config import (BIN_HIGH, BIN_LOW, CALM_WIND_MAX, CLEAR_CLOUD_MAX,
-                    LEAD_SIGMA_INFLATION, TIMEZONE, bin_labels, lead_bucket)
+                    LEAD_SIGMA_INFLATION, PEAK_LOCK_DROP, TIMEZONE,
+                    bin_labels, lead_bucket)
 from settlement import local_day_bounds, observed_so_far
 from sources import (open_meteo_ensemble, open_meteo_models, nws_forecast,
                      nws_observations)
@@ -51,7 +52,37 @@ def _group_of(label: str) -> str:
     return "other"
 
 
-def _member_extreme(times, temps, day, variable, now, observed, obs_now=None):
+def _extreme_locked(times, temps, day, variable, now, drop=PEAK_LOCK_DROP) -> bool:
+    """True once today's extreme has clearly passed.
+
+    The high (or low) is treated as set when the latest observation has retreated
+    `drop` °F from the running max (high) or risen `drop` above the running min
+    (low). At that point the realized extreme is the answer and the forecast's
+    projected further rise/fall is just noise — `_member_extreme` then collapses
+    each member to the observed extreme. The drop has to clear observation +
+    rounding noise, so a brief dip before a higher peak won't false-lock.
+    Only meaningful intraday (now within the day); otherwise False.
+    """
+    if now is None or drop is None:
+        return False
+    start, end = local_day_bounds(day)
+    if not (start <= now < end):
+        return False
+    vals = []
+    for t, v in zip(times, temps):
+        if v is None:
+            continue
+        t = t.astimezone(TZ)
+        if start <= t <= now and t < end:
+            vals.append(v)
+    if len(vals) < 3:
+        return False
+    cur = vals[-1]
+    return (max(vals) - cur) >= drop if variable == "high" else (cur - min(vals)) >= drop
+
+
+def _member_extreme(times, temps, day, variable, now, observed, obs_now=None,
+                    locked=False):
     """One member's contribution to the high/low sample for `day`.
 
     For today, blends the realized extreme with the member's forecast over the
@@ -60,6 +91,10 @@ def _member_extreme(times, temps, day, variable, now, observed, obs_now=None):
     remaining hours are shifted by that error before taking the extreme — so once
     the peak has passed and temps are falling, the model follows reality down
     instead of trusting a stale, too-warm forecast. Future days: full-day extreme.
+
+    When `locked` (the extreme has demonstrably passed — see `_extreme_locked`),
+    the realized extreme supersedes the forecast entirely: return `observed`, so
+    a forecast still projecting more rise/fall can't push past what already happened.
     """
     start, end = local_day_bounds(day)
     day_vals, remaining = [], []
@@ -82,6 +117,11 @@ def _member_extreme(times, temps, day, variable, now, observed, obs_now=None):
     is_today = now is not None and start <= now < end
     if not is_today:
         return max(day_vals) if variable == "high" else min(day_vals)
+
+    # Extreme already passed: the realized value is the answer; ignore the
+    # forecast's projected further rise/fall.
+    if locked and observed is not None:
+        return observed
 
     # Anchor the remaining forecast to the current observation.
     offset = (obs_now - fc_now) if (obs_now is not None and fc_now is not None) else 0.0
@@ -119,18 +159,21 @@ def _sample_weights(series, weights):
 
 
 def _collect_samples(series, day, variable, now, observed, bias, obs_now=None,
-                     weights=None):
+                     weights=None, locked=False):
     """(values, weights) lists of daily extremes for `day`.
 
     Bias correction applies only to pure forecasts (skipped while anchoring to a
     live obs). `weights` is an optional {system: weight} map; when absent every
-    sample weighs 1.0 (identical to the old equal-weight behavior).
+    sample weighs 1.0 (identical to the old equal-weight behavior). `locked`
+    collapses each member to the realized extreme once the day's peak/trough has
+    passed (see `_extreme_locked`).
     """
     anchoring = obs_now is not None
     wmap = _sample_weights(series, weights) if weights else None
     vals, ws = [], []
     for label, (times, temps) in series.items():
-        val = _member_extreme(times, temps, day, variable, now, observed, obs_now)
+        val = _member_extreme(times, temps, day, variable, now, observed, obs_now,
+                              locked=locked)
         if val is None or not math.isfinite(val):
             continue
         if not anchoring:
@@ -279,13 +322,33 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     observed = obs_max if variable == "high" else obs_min
     obs_now = _latest_obs(obs_times, obs_temps, day, now) if now is not None else None
 
+    # Once the day's extreme has clearly passed, lock to what was realized.
+    locked = _extreme_locked(obs_times, obs_temps, day, variable, now) \
+        if now is not None else False
+
+    # Continuous (sub-hourly) observed extreme for the hard bound only: the live
+    # 5-minute feed can catch a brief spike the routine :53 reading missed. Reads
+    # are whole-°C, so haircut by half a °C (0.9°F) — the bound only tightens past
+    # the hourly observed on a genuine spike, never on quantization noise. Fed to
+    # the hard bound (not the sample floor) so it can't double-count the CLI offset.
+    observed_bound = observed
+    cont_times, cont_temps = obs_series.get("obs_continuous", (None, None))
+    if cont_times and now is not None:
+        c_max, c_min = observed_so_far(cont_times, cont_temps, day, now)
+        if variable == "high" and c_max is not None:
+            cand = c_max - 0.9
+            observed_bound = cand if observed is None else max(observed, cand)
+        elif variable == "low" and c_min is not None:
+            cand = c_min + 0.9
+            observed_bound = cand if observed is None else min(observed, cand)
+
     bias = (calib or {}).get("bias", {})
     # Full-day extremes (ignoring obs) set the reference spread; nowcast-blended
     # samples carry the realized floor/ceiling and forecast anchored to obs_now.
     var_weights = (calib or {}).get("weights", {}).get(variable)
     fullday, _fw = _collect_samples(series, day, variable, None, None, bias)
     samples, weights = _collect_samples(series, day, variable, now, observed, bias,
-                                        obs_now, var_weights)
+                                        obs_now, var_weights, locked=locked)
     if not samples or not fullday:
         return None
 
@@ -342,7 +405,7 @@ def predict_variable(series, obs_series, day, variable, now, calib,
         sigma = math.hypot(sigma, settle_gap_std)
 
     probs = _bin_probabilities(samples, sigma, weights)
-    probs = _apply_hard_bound(probs, variable, observed)
+    probs = _apply_hard_bound(probs, variable, observed_bound)
 
     # Reported consensus = the same skill-weighted mean used to center the bins.
     _w = sum(weights) or 1.0
@@ -356,6 +419,7 @@ def predict_variable(series, obs_series, day, variable, now, calib,
         "n_samples": len(samples),
         "observed_so_far": observed,
         "cooling_applied": cooling_applied,
+        "peak_locked": locked,
     }
 
 
@@ -410,13 +474,17 @@ def prob_for_strike(probs: dict, strike_type: str, floor, cap) -> float:
     return prob_at_most(probs, cap) - prob_at_most(probs, floor - 1)
 
 
-def gather_series(forecast_days: int = 2):
-    """All forecast series merged into one dict, plus the obs series."""
+def gather_series(forecast_days: int = 2, continuous_obs: bool = False):
+    """All forecast series merged into one dict, plus the obs series.
+
+    `continuous_obs` adds the sub-hourly observation feed (for the CLI basis's
+    spike-aware hard bound); the default hourly obs is always present.
+    """
     series = {}
     series.update(open_meteo_ensemble.fetch(forecast_days))
     series.update(open_meteo_models.fetch(forecast_days))
     series.update(nws_forecast.fetch())
-    obs = nws_observations.fetch()
+    obs = nws_observations.fetch(continuous=continuous_obs)
     return series, obs
 
 
@@ -450,14 +518,16 @@ def per_source_extremes(series, day):
     return out
 
 
-def snapshot(calib: dict | None = None, settle_offset=None) -> dict:
+def snapshot(calib: dict | None = None, settle_offset=None,
+             continuous_obs: bool = False) -> dict:
     """Fetch all sources once and return everything the dashboard needs:
     today + tomorrow predictions, the current observation, and per-source
-    extremes for both days."""
+    extremes for both days. `continuous_obs` enables the CLI basis's sub-hourly
+    spike-aware hard bound (passed by the Kalshi page)."""
     now = datetime.now(TZ)
     today = now.date()
     tomorrow = today + timedelta(days=1)
-    series, obs = gather_series(forecast_days=2)
+    series, obs = gather_series(forecast_days=2, continuous_obs=continuous_obs)
 
     obs_times, obs_temps = obs.get("obs", ([], []))
     current = None

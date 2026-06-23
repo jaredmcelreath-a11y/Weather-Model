@@ -45,7 +45,8 @@ def load_snapshot_kalshi():
     """Snapshot shifted to the Kalshi/CLI settlement basis via the calibrated
     settlement_offset (absent offset -> behaves like the hourly snapshot)."""
     calib = calibration.get(refresh=True)
-    snap = model.snapshot(calib, settle_offset=(calib or {}).get("settlement_offset"))
+    snap = model.snapshot(calib, settle_offset=(calib or {}).get("settlement_offset"),
+                          continuous_obs=True)
     return snap, calib
 
 

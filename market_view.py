@@ -158,6 +158,11 @@ def lock_status(d, variable):
                 f"{window}; σ floors near {floor:.1f}°F once it does.")
 
     if variable == "high":
+        if d.get("peak_locked"):
+            return ("success", "🔒 Locked — peak has passed",
+                    f"High is in at {obs:.1f}°F — temperature has fallen back from "
+                    f"the peak, so it's observationally settled (σ ≈ "
+                    f"{d['sigma_used']:.1f}°F). Prime buy window.")
         if consensus > obs + 1.0:
             return ("info", "⏳ Open — peak not reached",
                     f"High still climbing toward ~{consensus:.0f}°F (only "
@@ -171,6 +176,11 @@ def lock_status(d, variable):
                 "Close to the prime window.")
 
     # variable == "low"
+    if d.get("peak_locked"):
+        return ("success", "🔒 Locked — dawn trough is in",
+                f"Low is in at {obs:.1f}°F — temperature has climbed back from the "
+                f"trough, so it's observationally settled (σ ≈ "
+                f"{d['sigma_used']:.1f}°F). Prime buy window.")
     if consensus < obs - 1.0:
         return ("warning", "⚠️ Front risk — colder reading expected later",
                 f"Coldest so far is {obs:.1f}°F but the model sees ~{consensus:.0f}°F "
