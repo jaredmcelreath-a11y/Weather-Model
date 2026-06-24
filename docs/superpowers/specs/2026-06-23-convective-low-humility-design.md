@@ -115,6 +115,15 @@ on a day whose forecast sigma is already wider than `CONVECTIVE_SIGMA` (early,
 unlocked), it changes nothing. No change to consensus/mean — only spread — so the
 reported point low is untouched; only confidence loosens.
 
+**Live-only gate (not replay).** The trigger reads *live* POP/CAPE and *live*
+NWS alerts, which are meaningful only for the genuine current day — applying
+them to a historical replay would be both a spurious network call and
+semantically wrong (today's warnings don't apply to a past date). So the gate is
+threaded behind an explicit `live` flag: `snapshot()` and `predict()` (the
+live dashboard paths) pass `live=True`; `backtest.run_intraday`, which calls
+`predict_variable` directly while replaying past days, leaves it `False`, so
+convective widening never fires in backtests. `live` defaults to `False`.
+
 ## Component 3 — config knobs (config.py)
 
 - `CONVECTIVE_SIGMA` — convective low spread floor, ~**2.5–3.0°F** (start 3.0).
