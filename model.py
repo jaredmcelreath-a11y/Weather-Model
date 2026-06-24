@@ -65,6 +65,14 @@ def _extreme_locked(times, temps, day, variable, now, drop=PEAK_LOCK_DROP) -> bo
     each member to the observed extreme. The drop has to clear observation +
     rounding noise, so a brief dip before a higher peak won't false-lock.
     Only meaningful intraday (now within the day); otherwise False.
+
+    For the high, the running max must also postdate the running min so far
+    (temps rose to a peak and came back down). On a warm summer night the
+    calendar day's max is leftover heat just after midnight that *precedes* the
+    morning minimum — the real daytime peak hasn't started — so retreat from it
+    must not lock. The low needs no such guard: its minimum genuinely sits near
+    dawn, after the warm start of the calendar day, with no midnight-boundary
+    artifact to mistake for it.
     """
     if now is None or drop is None:
         return False
@@ -81,7 +89,13 @@ def _extreme_locked(times, temps, day, variable, now, drop=PEAK_LOCK_DROP) -> bo
     if len(vals) < 3:
         return False
     cur = vals[-1]
-    return (max(vals) - cur) >= drop if variable == "high" else (cur - min(vals)) >= drop
+    if variable == "high":
+        if (max(vals) - cur) < drop:
+            return False
+        # The peak must postdate the trough; an earlier max is just overnight
+        # heat ahead of the morning minimum, not a passed daytime peak.
+        return vals.index(max(vals)) > vals.index(min(vals))
+    return (cur - min(vals)) >= drop
 
 
 def _member_extreme(times, temps, day, variable, now, observed, obs_now=None,

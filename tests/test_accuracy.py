@@ -241,6 +241,42 @@ def test_extreme_locked_detects_descent():
     assert model._extreme_locked(t2, v2, day, "high", now, drop=2.0) is False
 
 
+def test_warm_overnight_does_not_false_lock_high():
+    day = date(2026, 6, 24)
+    # Warm summer night: temp still 84 just after midnight, cooling to the
+    # pre-dawn minimum of 79 by 07:00. The real diurnal peak (96) is hours away.
+    base = datetime(day.year, day.month, day.day, tzinfo=TZ)
+    hours = list(range(0, 8))
+    temps = [84, 83, 82, 81, 80, 79.5, 79, 79]   # running max 84 @00:00, min 79 @06:00
+    t = [base + timedelta(hours=h) for h in hours]
+    now = datetime(2026, 6, 24, 7, 30, tzinfo=TZ)
+    # Retreat from the overnight max is 5°F (>= 2.0 drop), but that max is an
+    # overnight value preceding the morning minimum -> the high has NOT peaked.
+    assert model._extreme_locked(t, temps, day, "high", now, drop=2.0) is False
+
+
+def test_warm_overnight_high_follows_forecast(monkeypatch):
+    day = date(2026, 6, 24)
+    now = datetime(2026, 6, 24, 7, 30, tzinfo=TZ)
+    base = datetime(day.year, day.month, day.day, tzinfo=TZ)
+    ftimes = [base + timedelta(hours=h) for h in range(24)]
+    # Realistic diurnal forecast: cool morning (~79 at 07:00) rising to a 96 peak
+    # at 16:00, then easing off through the evening.
+    def fday(h):
+        if h <= 6:
+            return 81 - (6 - h) * 0.3       # mild overnight cooling toward dawn
+        if h <= 16:
+            return 79 + (h - 7) * (96 - 79) / 9.0   # 79 @07:00 -> 96 @16:00
+        return 96 - (h - 16) * 1.5
+    fc = {"det_a": (ftimes, [fday(h) for h in range(24)])}
+    # Obs: warm overnight 84, cooled to 79 by 07:00 (no real peak yet).
+    ot = [base + timedelta(hours=h) for h in range(8)]
+    ov = [84, 83, 82, 81, 80, 79.5, 79, 79]
+    out = model.predict_variable(fc, {"obs": (ot, ov)}, day, "high", now, None)
+    assert out["peak_locked"] is False
+    assert out["consensus"] >= 94            # follows the forecast peak, not the overnight 84
+
+
 def test_lock_collapses_high_to_observed(monkeypatch):
     day = date(2026, 6, 16)
     now = datetime(2026, 6, 16, 16, tzinfo=TZ)
