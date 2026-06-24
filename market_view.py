@@ -80,8 +80,8 @@ def consensus_chart(hist, variable):
     Built by hand (rather than st.line_chart) so we can: label the x-axis with
     clock times (not dates) at 30-minute ticks; hold a readable 50–100°F y-window
     that only expands when the data runs outside it (lows in the 70s shouldn't be
-    squashed against a 0–100 axis); and show one combined, swatch-free hover
-    readout of the time plus each series.
+    squashed against a 0–100 axis); mark every sample with a visible dot; and show
+    one combined, swatch-free readout only while hovering a dot (nothing off it).
     """
     df = hist.reset_index()
     value_cols = [c for c in df.columns if c != "time"]
@@ -101,9 +101,14 @@ def consensus_chart(hist, variable):
     ticks = pd.date_range(t.min().floor("30min"), t.max().ceil("30min"),
                           freq="30min").to_pydatetime().tolist()
 
+    # Long form for the marks; merge every series' value back onto each row so a
+    # single dot's tooltip can show the whole combined readout (time + both
+    # series) rather than just its own value.
     long = df.melt("time", value_vars=value_cols,
                    var_name="series", value_name="degF").dropna()
-    lines = alt.Chart(long).mark_line(strokeWidth=2.5).encode(
+    long = long.merge(df, on="time", how="left")
+
+    base = alt.Chart(long).encode(
         x=alt.X("time:T", title=None,
                 axis=alt.Axis(format="%-I:%M %p", values=ticks,
                               labelOverlap=True, labelAngle=-40)),
@@ -111,21 +116,15 @@ def consensus_chart(hist, variable):
         color=alt.Color("series:N", scale=color_scale,
                         legend=alt.Legend(title=None, orient="top")),
     )
-
-    nearest = alt.selection_point(nearest=True, on="pointerover",
-                                  fields=["time"], empty=False)
-    selectors = alt.Chart(df).mark_point().encode(
-        x="time:T", opacity=alt.value(0)).add_params(nearest)
-    rule = alt.Chart(df).mark_rule(color="#868e96").encode(
-        x="time:T",
-        opacity=alt.condition(nearest, alt.value(0.4), alt.value(0)),
+    lines = base.mark_line(strokeWidth=2.5)
+    # Visible dot at every sample — an easy hover target. The tooltip lives only
+    # on the dots, so the readout appears solely when you're on a point and
+    # nothing shows when the cursor is off the line.
+    dots = base.mark_point(filled=True, size=55, opacity=1).encode(
         tooltip=[alt.Tooltip("time:T", title="time", format="%-I:%M %p")] +
-                [alt.Tooltip(f"{c}:Q", title=c, format=".1f") for c in value_cols],
-    )
-    points = lines.mark_point(filled=True).encode(
-        opacity=alt.condition(nearest, alt.value(1), alt.value(0)))
+                [alt.Tooltip(f"{c}:Q", title=c, format=".1f") for c in value_cols])
 
-    return (lines + selectors + points + rule).properties(height=220)
+    return (lines + dots).properties(height=220)
 
 
 def reliability_df(bins):
