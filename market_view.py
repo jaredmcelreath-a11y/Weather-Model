@@ -320,7 +320,14 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                   help="How much of the day's uncertainty is already settled by "
                        "observations. 100% ≈ the extreme has happened.")
         if d["observed_so_far"] is not None:
-            st.caption(f"Observed so far: {d['observed_so_far']:.1f}°F (hard bound)")
+            obs_line = f"Observed so far: {d['observed_so_far']:.1f}°F (hourly, hard bound)"
+            # Kalshi settles on the continuous (sub-hourly) CLI extreme, which can
+            # run a touch hotter/colder than the routine hourly reading. Show it
+            # alongside on the Kalshi page so the caption matches Kalshi's screen.
+            cont = d.get("observed_continuous")
+            if adapter.basis == "cli" and cont is not None:
+                obs_line += f"  ·  {cont:.1f}°F (continuous, Kalshi basis)"
+            st.caption(obs_line)
         if d.get("cooling_applied"):
             st.caption("🌙 Clear/calm night — extra radiational-cooling offset "
                        "applied to the low.")

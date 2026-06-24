@@ -354,13 +354,16 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     # the hourly observed on a genuine spike, never on quantization noise. Fed to
     # the hard bound (not the sample floor) so it can't double-count the CLI offset.
     observed_bound = observed
+    observed_cont = None  # raw sub-hourly extreme (CLI/Kalshi basis), for display
     cont_times, cont_temps = obs_series.get("obs_continuous", (None, None))
     if cont_times and now is not None:
         c_max, c_min = observed_so_far(cont_times, cont_temps, day, now)
         if variable == "high" and c_max is not None:
+            observed_cont = c_max
             cand = c_max - 0.9
             observed_bound = cand if observed is None else max(observed, cand)
         elif variable == "low" and c_min is not None:
+            observed_cont = c_min
             cand = c_min + 0.9
             observed_bound = cand if observed is None else min(observed, cand)
 
@@ -468,6 +471,7 @@ def predict_variable(series, obs_series, day, variable, now, calib,
         "locked_ratio": round(locked_ratio, 2),
         "n_samples": len(samples),
         "observed_so_far": observed,
+        "observed_continuous": observed_cont,
         "cooling_applied": cooling_applied,
         "peak_locked": locked,
         "convective_widened": convective_widened,
