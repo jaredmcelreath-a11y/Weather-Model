@@ -39,3 +39,20 @@ def test_window_max_empty_window_is_none():
     now = datetime(DAY.year, DAY.month, DAY.day, 18, tzinfo=TZ)
     mp, mc = _window_max(times, [1.0] * 5, [1.0] * 5, DAY, now)
     assert mp is None and mc is None
+
+
+def test_fetch_active_returns_data_on_success(monkeypatch):
+    from sources import nws_alerts, common
+    payload = {"features": [{"properties": {"event": "Heat Advisory"}}]}
+    monkeypatch.setattr(common, "get_json", lambda *a, **k: payload)
+    assert nws_alerts.fetch_active() == payload
+
+
+def test_fetch_active_returns_empty_on_error(monkeypatch):
+    from sources import nws_alerts, common
+
+    def boom(*a, **k):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(common, "get_json", boom)
+    assert nws_alerts.fetch_active() == {"features": []}
