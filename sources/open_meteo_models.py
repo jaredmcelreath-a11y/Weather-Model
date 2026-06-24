@@ -126,3 +126,39 @@ def historical_night_conditions(start: date, end: date,
             out[day] = (c, w)
         day += timedelta(days=1)
     return out
+
+
+# Remaining-hours convective fields for the daily-low humility trigger.
+CONVECTIVE_VARS = "precipitation_probability,cape"
+
+
+def _window_max(times, pop, cape, day: date, now: datetime):
+    """(max_pop, max_cape) over the remaining window [now, midnight) for `day`.
+
+    These are the hours that could still set a new daily low via a storm
+    downdraft. (None, None) for whichever field has no points in window."""
+    start, end = local_day_bounds(day)
+    ps, cs = [], []
+    for t, p, c in zip(times, pop, cape):
+        t = t.astimezone(start.tzinfo)
+        if now <= t < end:
+            if p is not None:
+                ps.append(p)
+            if c is not None:
+                cs.append(c)
+    return (max(ps) if ps else None, max(cs) if cs else None)
+
+
+def convective_window(day: date, now: datetime, forecast_days: int = 2):
+    """Forecast (max_pop_pct, max_cape) over [now, midnight) for `day` at KDFW."""
+    data = get_json(FORECAST_URL, {
+        "latitude": LAT,
+        "longitude": LON,
+        "hourly": CONVECTIVE_VARS,
+        "timezone": TIMEZONE,
+        "forecast_days": forecast_days,
+    })
+    hourly = data["hourly"]
+    times = parse_local_times(hourly["time"])
+    return _window_max(times, hourly["precipitation_probability"],
+                       hourly["cape"], day, now)
