@@ -121,3 +121,68 @@ def test_convective_risk_ors_signals_and_is_best_effort(monkeypatch):
     monkeypatch.setattr(open_meteo_models, "convective_window", boom)
     monkeypatch.setattr(nws_alerts, "fetch_active", boom)
     assert convective.convective_risk(DAY, now) is False
+
+
+def _locked_low_inputs():
+    """Obs V-shape: low 79 at 05:00, risen to 90 by 16:00 (low locked), plus
+    three full-day forecast members with mins straddling 79."""
+    base = datetime(DAY.year, DAY.month, DAY.day, tzinfo=TZ)
+    ot = [base + timedelta(hours=h) for h in range(17)]
+    ov = [79 + abs(h - 5) for h in range(17)]          # 84..79..90
+    ftimes = [base + timedelta(hours=h) for h in range(24)]
+    fc = {f"det_{i}": (ftimes, [79 + m + abs(h - 5) for h in range(24)])
+          for i, m in enumerate((-1, 0, 1))}
+    return fc, {"obs": (ot, ov)}, base
+
+
+def test_convective_widens_locked_low(monkeypatch):
+    import model
+    fc, obs, base = _locked_low_inputs()
+    now = datetime(DAY.year, DAY.month, DAY.day, 16, tzinfo=TZ)
+
+    monkeypatch.setattr(model, "convective_risk", lambda day, now: False)
+    off = model.predict_variable(fc, obs, DAY, "low", now, None, live=True)
+    monkeypatch.setattr(model, "convective_risk", lambda day, now: True)
+    on = model.predict_variable(fc, obs, DAY, "low", now, None, live=True)
+
+    # sanity: the low is locked in both runs
+    assert off["peak_locked"] and on["peak_locked"]
+    # the flag is set only when risk is live
+    assert on["convective_widened"] and not off["convective_widened"]
+    # confidence loosens: spread widens to the convective floor
+    assert on["sigma_used"] > off["sigma_used"]
+    assert on["sigma_used"] >= config.CONVECTIVE_SIGMA - 1e-9
+    # one-sided: zero mass above the observed low (79) either way
+    assert model.prob_at_least(on["probabilities"], 80) < 1e-9
+    assert model.prob_at_least(off["probabilities"], 80) < 1e-9
+    # real downside mass appears at/below 77
+    assert model.prob_at_most(on["probabilities"], 77) > model.prob_at_most(off["probabilities"], 77)
+    # consensus (mean) is unchanged — only spread moved
+    assert on["consensus"] == off["consensus"]
+
+
+def test_convective_does_not_touch_high(monkeypatch):
+    import model
+    fc, obs, base = _locked_low_inputs()
+    now = datetime(DAY.year, DAY.month, DAY.day, 16, tzinfo=TZ)
+    monkeypatch.setattr(model, "convective_risk", lambda day, now: True)
+    hi_on = model.predict_variable(fc, obs, DAY, "high", now, None, live=True)
+    monkeypatch.setattr(model, "convective_risk", lambda day, now: False)
+    hi_off = model.predict_variable(fc, obs, DAY, "high", now, None, live=True)
+    assert hi_on["probabilities"] == hi_off["probabilities"]
+    assert hi_on["convective_widened"] is False
+
+
+def test_convective_no_op_when_not_live(monkeypatch):
+    # The default (non-live) path — what backtest/replay uses — must never call
+    # convective_risk, even for today's low.
+    import model
+    fc, obs, base = _locked_low_inputs()
+    now = datetime(DAY.year, DAY.month, DAY.day, 16, tzinfo=TZ)
+
+    def boom(day, now):
+        raise AssertionError("convective_risk must not run when live=False")
+
+    monkeypatch.setattr(model, "convective_risk", boom)
+    out = model.predict_variable(fc, obs, DAY, "low", now, None)   # live defaults False
+    assert out["convective_widened"] is False
