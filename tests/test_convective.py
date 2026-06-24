@@ -186,3 +186,11 @@ def test_convective_no_op_when_not_live(monkeypatch):
     monkeypatch.setattr(model, "convective_risk", boom)
     out = model.predict_variable(fc, obs, DAY, "low", now, None)   # live defaults False
     assert out["convective_widened"] is False
+
+
+def test_risk_label_matches_model_flag():
+    # End-to-end glue: a low prediction with the flag set yields a caption; a
+    # plain one yields nothing. Guards against the panel reading the wrong key.
+    from convective import risk_label
+    assert risk_label({"convective_widened": True, "consensus": 77}) is not None
+    assert risk_label({"convective_widened": False, "consensus": 77}) is None
