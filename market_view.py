@@ -108,6 +108,15 @@ def consensus_chart(hist, variable):
                    var_name="series", value_name="degF").dropna()
     long = long.merge(df, on="time", how="left")
 
+    # Pre-rendered one-line readout per timestamp (time + every series value), for
+    # the tap-to-pin label below. Built here because Vega can't easily format a
+    # multi-field string itself.
+    def _readout(row):
+        parts = [pd.to_datetime(row["time"]).strftime("%-I:%M %p")]
+        parts += [f"{c} {row[c]:.1f}°" for c in value_cols if pd.notna(row[c])]
+        return "   ".join(parts)
+    labels = df.assign(label=df.apply(_readout, axis=1))
+
     base = alt.Chart(long).encode(
         x=alt.X("time:T", title=None,
                 axis=alt.Axis(format="%-I:%M %p", values=ticks,
@@ -117,14 +126,29 @@ def consensus_chart(hist, variable):
                         legend=alt.Legend(title=None, orient="top")),
     )
     lines = base.mark_line(strokeWidth=2.5)
-    # Visible dot at every sample — an easy hover target. The tooltip lives only
-    # on the dots, so the readout appears solely when you're on a point and
-    # nothing shows when the cursor is off the line.
-    dots = base.mark_point(filled=True, size=55, opacity=1).encode(
-        tooltip=[alt.Tooltip("time:T", title="time", format="%-I:%M %p")] +
-                [alt.Tooltip(f"{c}:Q", title=c, format=".1f") for c in value_cols])
 
-    return (lines + dots).properties(height=220)
+    # Tap/click a dot to pin its readout (mobile-friendly: touch devices don't
+    # fire the hover events that drive Vega tooltips, so the hover-only readout
+    # never appeared on a tap). The selection keys on the timestamp so any series'
+    # dot at that time pins the same combined row.
+    pick = alt.selection_point(on="click", nearest=True, fields=["time"],
+                               empty=False, clear="dblclick")
+    # Visible dot at every sample — an easy hover/tap target. Tooltip still serves
+    # desktop hover; the selection drives the pinned label for touch.
+    dots = base.mark_point(filled=True, opacity=1).encode(
+        size=alt.condition(pick, alt.value(140), alt.value(55)),
+        tooltip=[alt.Tooltip("time:T", title="time", format="%-I:%M %p")] +
+                [alt.Tooltip(f"{c}:Q", title=c, format=".1f")
+                 for c in value_cols],
+    ).add_params(pick)
+    # Pinned readout for the tapped point, anchored top-left so it never clips off
+    # the plot edge. Shows only while a dot is selected.
+    pinned = alt.Chart(labels).mark_text(
+        align="left", baseline="top", x=6, y=4, fontSize=13, fontWeight="bold",
+        color=line_color,
+    ).encode(text="label:N").transform_filter(pick)
+
+    return (lines + dots + pinned).properties(height=220)
 
 
 def reliability_df(bins):
@@ -613,9 +637,21 @@ def render_page(snap, calib, adapter, load_accuracy):
     if calib:
         top[4].metric("Calib bias (hi/lo)",
                       f"{calib['bias']['deterministic']['high']:+.1f}/"
-                      f"{calib['bias']['deterministic']['low']:+.1f}°F")
+                      f"{calib['bias']['deterministic']['low']:+.1f}°F",
+                      help="The raw weather models' average signed error over the last "
+                           f"{calib.get('n_days', '~45')} settled days, which the model "
+                           "subtracts out before forecasting. A −1.0°F high bias means "
+                           "the raw models ran ~1°F too hot on highs, so the model pulls "
+                           "its high down by that much (and likewise for the low). Near 0 "
+                           "= the models are already well-centered.")
         top[5].metric("Day-ahead σ (hi/lo)",
-                      f"{calib['sigma']['high']:.1f}/{calib['sigma']['low']:.1f}°F")
+                      f"{calib['sigma']['high']:.1f}/{calib['sigma']['low']:.1f}°F",
+                      help="The model's day-ahead forecast uncertainty — one standard "
+                           "deviation (°F), calibrated from how far past forecasts missed. "
+                           "Roughly 68% of outcomes land within ±this of consensus, ~95% "
+                           "within ±2×. It's the baseline spread for a ~24h-out forecast; "
+                           "tomorrow runs wider and today collapses below it as live "
+                           "observations lock the extreme in.")
 
     day = st.sidebar.radio("Day", ["Today", "Tomorrow"], index=0,
                            key=f"day_{adapter.name}")
