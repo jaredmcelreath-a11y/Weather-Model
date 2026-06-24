@@ -243,6 +243,10 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
         if d.get("cooling_applied"):
             st.caption("🌙 Clear/calm night — extra radiational-cooling offset "
                        "applied to the low.")
+        from convective import risk_label
+        _conv = risk_label(d)
+        if _conv:
+            st.caption(_conv)
 
         level, headline, detail = lock_status(d, variable)
         getattr(st, level)(f"**{headline}** — {detail}")

@@ -1,0 +1,196 @@
+"""Tests for the convective downside-humility trigger and the model sigma gate.
+All synthetic — no live network — mirroring tests/test_accuracy.py.
+"""
+
+import math
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
+
+import config
+from config import TIMEZONE
+
+TZ = ZoneInfo(TIMEZONE)
+DAY = date(2026, 6, 16)
+
+
+def test_convective_config_constants():
+    assert config.CONVECTIVE_SIGMA >= 2.0
+    assert config.CONVECTIVE_POP_MIN > 0
+    assert config.CONVECTIVE_CAPE_MIN > 0
+    ugc = set(config.CONVECTIVE_UPSTREAM_UGC)
+    assert "TXC497" in ugc  # Wise County — the NW approach
+
+
+def test_window_max_reduces_to_remaining_hours():
+    from sources.open_meteo_models import _window_max
+    base = datetime(DAY.year, DAY.month, DAY.day, tzinfo=TZ)
+    times = [base + timedelta(hours=h) for h in range(24)]
+    pop = [float(h) for h in range(24)]          # 0..23, increasing
+    cape = [100.0 * h for h in range(24)]         # 0..2300
+    now = datetime(DAY.year, DAY.month, DAY.day, 18, tzinfo=TZ)
+    mp, mc = _window_max(times, pop, cape, DAY, now)
+    assert mp == 23.0 and mc == 2300.0            # max over [18:00, midnight)
+
+
+def test_window_max_empty_window_is_none():
+    from sources.open_meteo_models import _window_max
+    base = datetime(DAY.year, DAY.month, DAY.day, tzinfo=TZ)
+    times = [base + timedelta(hours=h) for h in range(5)]   # only 00:00-04:00
+    now = datetime(DAY.year, DAY.month, DAY.day, 18, tzinfo=TZ)
+    mp, mc = _window_max(times, [1.0] * 5, [1.0] * 5, DAY, now)
+    assert mp is None and mc is None
+
+
+def test_fetch_active_returns_data_on_success(monkeypatch):
+    from sources import nws_alerts, common
+    payload = {"features": [{"properties": {"event": "Heat Advisory"}}]}
+    monkeypatch.setattr(common, "get_json", lambda *a, **k: payload)
+    assert nws_alerts.fetch_active() == payload
+
+
+def test_fetch_active_returns_empty_on_error(monkeypatch):
+    from sources import nws_alerts, common
+
+    def boom(*a, **k):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(common, "get_json", boom)
+    assert nws_alerts.fetch_active() == {"features": []}
+
+
+def test_point_triggered():
+    from convective import _point_triggered
+    assert _point_triggered(40, 100, pop_min=30, cape_min=1000) is True   # POP over
+    assert _point_triggered(10, 1500, pop_min=30, cape_min=1000) is True  # CAPE over
+    assert _point_triggered(10, 100, pop_min=30, cape_min=1000) is False  # both under
+    assert _point_triggered(None, None, pop_min=30, cape_min=1000) is False
+
+
+def test_upstream_triggered():
+    from convective import _upstream_triggered
+    zones = frozenset({"TXC497", "TXC237"})
+    svr = {"features": [{"properties": {
+        "event": "Severe Thunderstorm Warning",
+        "geocode": {"UGC": ["TXC497", "TXC367"]}}}]}
+    assert _upstream_triggered(svr, zones) is True
+    # right counties, wrong event
+    flood = {"features": [{"properties": {
+        "event": "Flood Warning", "geocode": {"UGC": ["TXC497"]}}}]}
+    assert _upstream_triggered(flood, zones) is False
+    # right event, counties outside the approach set
+    far = {"features": [{"properties": {
+        "event": "Severe Thunderstorm Warning", "geocode": {"UGC": ["TXC999"]}}}]}
+    assert _upstream_triggered(far, zones) is False
+    assert _upstream_triggered({}, zones) is False
+
+
+def test_risk_label():
+    from convective import risk_label
+    assert risk_label({"convective_widened": True}) is not None
+    assert risk_label({"convective_widened": False}) is None
+    assert risk_label({}) is None
+
+
+def test_convective_risk_ors_signals_and_is_best_effort(monkeypatch):
+    import convective
+    from sources import nws_alerts, open_meteo_models
+    now = datetime(DAY.year, DAY.month, DAY.day, 16, tzinfo=TZ)
+    no_alerts = {"features": []}
+    one_zone = list(convective.UPSTREAM_UGC)[0]
+    svr = {"features": [{"properties": {
+        "event": "Severe Thunderstorm Warning", "geocode": {"UGC": [one_zone]}}}]}
+
+    # point signal alone fires
+    monkeypatch.setattr(open_meteo_models, "convective_window", lambda d, n: (50.0, 200.0))
+    monkeypatch.setattr(nws_alerts, "fetch_active", lambda: no_alerts)
+    assert convective.convective_risk(DAY, now) is True
+
+    # upstream signal alone fires (point quiet)
+    monkeypatch.setattr(open_meteo_models, "convective_window", lambda d, n: (0.0, 0.0))
+    monkeypatch.setattr(nws_alerts, "fetch_active", lambda: svr)
+    assert convective.convective_risk(DAY, now) is True
+
+    # neither
+    monkeypatch.setattr(nws_alerts, "fetch_active", lambda: no_alerts)
+    assert convective.convective_risk(DAY, now) is False
+
+    # any exception -> False (best-effort)
+    def boom(*a, **k):
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(open_meteo_models, "convective_window", boom)
+    monkeypatch.setattr(nws_alerts, "fetch_active", boom)
+    assert convective.convective_risk(DAY, now) is False
+
+
+def _locked_low_inputs():
+    """Obs V-shape: low 79 at 05:00, risen to 90 by 16:00 (low locked), plus
+    three full-day forecast members with mins straddling 79."""
+    base = datetime(DAY.year, DAY.month, DAY.day, tzinfo=TZ)
+    ot = [base + timedelta(hours=h) for h in range(17)]
+    ov = [79 + abs(h - 5) for h in range(17)]          # 84..79..90
+    ftimes = [base + timedelta(hours=h) for h in range(24)]
+    fc = {f"det_{i}": (ftimes, [79 + m + abs(h - 5) for h in range(24)])
+          for i, m in enumerate((-1, 0, 1))}
+    return fc, {"obs": (ot, ov)}, base
+
+
+def test_convective_widens_locked_low(monkeypatch):
+    import model
+    fc, obs, base = _locked_low_inputs()
+    now = datetime(DAY.year, DAY.month, DAY.day, 16, tzinfo=TZ)
+
+    monkeypatch.setattr(model, "convective_risk", lambda day, now: False)
+    off = model.predict_variable(fc, obs, DAY, "low", now, None, live=True)
+    monkeypatch.setattr(model, "convective_risk", lambda day, now: True)
+    on = model.predict_variable(fc, obs, DAY, "low", now, None, live=True)
+
+    # sanity: the low is locked in both runs
+    assert off["peak_locked"] and on["peak_locked"]
+    # the flag is set only when risk is live
+    assert on["convective_widened"] and not off["convective_widened"]
+    # confidence loosens: spread widens to the convective floor
+    assert on["sigma_used"] > off["sigma_used"]
+    assert on["sigma_used"] >= config.CONVECTIVE_SIGMA - 1e-9
+    # one-sided: zero mass above the observed low (79) either way
+    assert model.prob_at_least(on["probabilities"], 80) < 1e-9
+    assert model.prob_at_least(off["probabilities"], 80) < 1e-9
+    # real downside mass appears at/below 77
+    assert model.prob_at_most(on["probabilities"], 77) > model.prob_at_most(off["probabilities"], 77)
+    # consensus (mean) is unchanged — only spread moved
+    assert on["consensus"] == off["consensus"]
+
+
+def test_convective_does_not_touch_high(monkeypatch):
+    import model
+    fc, obs, base = _locked_low_inputs()
+    now = datetime(DAY.year, DAY.month, DAY.day, 16, tzinfo=TZ)
+    monkeypatch.setattr(model, "convective_risk", lambda day, now: True)
+    hi_on = model.predict_variable(fc, obs, DAY, "high", now, None, live=True)
+    monkeypatch.setattr(model, "convective_risk", lambda day, now: False)
+    hi_off = model.predict_variable(fc, obs, DAY, "high", now, None, live=True)
+    assert hi_on["probabilities"] == hi_off["probabilities"]
+    assert hi_on["convective_widened"] is False
+
+
+def test_convective_no_op_when_not_live(monkeypatch):
+    # The default (non-live) path — what backtest/replay uses — must never call
+    # convective_risk, even for today's low.
+    import model
+    fc, obs, base = _locked_low_inputs()
+    now = datetime(DAY.year, DAY.month, DAY.day, 16, tzinfo=TZ)
+
+    def boom(day, now):
+        raise AssertionError("convective_risk must not run when live=False")
+
+    monkeypatch.setattr(model, "convective_risk", boom)
+    out = model.predict_variable(fc, obs, DAY, "low", now, None)   # live defaults False
+    assert out["convective_widened"] is False
+
+
+def test_risk_label_matches_model_flag():
+    # End-to-end glue: a low prediction with the flag set yields a caption; a
+    # plain one yields nothing. Guards against the panel reading the wrong key.
+    from convective import risk_label
+    assert risk_label({"convective_widened": True, "consensus": 77}) is not None
+    assert risk_label({"convective_widened": False, "consensus": 77}) is None

@@ -21,9 +21,10 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from config import (BIN_HIGH, BIN_LOW, CALM_WIND_MAX, CLEAR_CLOUD_MAX,
-                    LEAD_SIGMA_INFLATION, PEAK_LOCK_DROP, TIMEZONE,
-                    bin_labels, lead_bucket)
+                    CONVECTIVE_SIGMA, LEAD_SIGMA_INFLATION, PEAK_LOCK_DROP,
+                    TIMEZONE, bin_labels, lead_bucket)
 from settlement import covers_extreme, local_day_bounds, observed_so_far
+from convective import convective_risk
 from sources import (open_meteo_ensemble, open_meteo_models, nws_forecast,
                      nws_observations, iem_mos)
 
@@ -315,7 +316,7 @@ def _offset_bucket(settle_offset, variable, day, calib):
 
 
 def predict_variable(series, obs_series, day, variable, now, calib,
-                     settle_offset=None):
+                     settle_offset=None, live=False):
     """Return a dict describing the predicted distribution for one variable.
 
     Spread logic: start from the calibrated day-ahead consensus error, then
@@ -421,6 +422,24 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     if settle_gap_std:
         sigma = math.hypot(sigma, settle_gap_std)
 
+    # Convective downside humility: on a storm-risk day the smooth fields can't
+    # see an evening downdraft, so a locked low collapses sigma to ~0.7 and
+    # over-reports confidence. Floor the spread at CONVECTIVE_SIGMA for *today's
+    # low only*; the hard bound below then makes the extra spread one-sided
+    # (downside). Best-effort and floor-only: it never lowers sigma, shifts the
+    # mean, or touches the high/tomorrow. Storm-free days never trigger. Gated on
+    # `live`: the trigger reads live POP/CAPE and live alerts, so it must not fire
+    # in backtest/replay (which calls this with a today-relative `now` on a past
+    # day).
+    convective_widened = False
+    if live and variable == "low" and now is not None and lead_bucket(now, day) == 0:
+        try:
+            if convective_risk(day, now):
+                sigma = max(sigma, CONVECTIVE_SIGMA)
+                convective_widened = True
+        except Exception:
+            pass
+
     probs = _bin_probabilities(samples, sigma, weights)
     probs = _apply_hard_bound(probs, variable, observed_bound)
 
@@ -437,6 +456,7 @@ def predict_variable(series, obs_series, day, variable, now, calib,
         "observed_so_far": observed,
         "cooling_applied": cooling_applied,
         "peak_locked": locked,
+        "convective_widened": convective_widened,
     }
 
 
@@ -513,14 +533,14 @@ def predict(day: date, now: datetime | None = None, calib: dict | None = None,
     if now is None:
         now = datetime.now(TZ)
     series, obs = gather_series(forecast_days)
-    return _predict_from(series, obs, day, now, calib, settle_offset)
+    return _predict_from(series, obs, day, now, calib, settle_offset, live=True)
 
 
-def _predict_from(series, obs, day, now, calib, settle_offset=None):
+def _predict_from(series, obs, day, now, calib, settle_offset=None, live=False):
     return {
         "day": day.isoformat(),
-        "high": predict_variable(series, obs, day, "high", now, calib, settle_offset),
-        "low": predict_variable(series, obs, day, "low", now, calib, settle_offset),
+        "high": predict_variable(series, obs, day, "high", now, calib, settle_offset, live=live),
+        "low": predict_variable(series, obs, day, "low", now, calib, settle_offset, live=live),
     }
 
 
@@ -561,8 +581,8 @@ def snapshot(calib: dict | None = None, settle_offset=None,
 
     return {
         "updated": now.isoformat(timespec="seconds"),
-        "today": _predict_from(series, obs, today, now, calib, settle_offset),
-        "tomorrow": _predict_from(series, obs, tomorrow, now, calib, settle_offset),
+        "today": _predict_from(series, obs, today, now, calib, settle_offset, live=True),
+        "tomorrow": _predict_from(series, obs, tomorrow, now, calib, settle_offset, live=True),
         "current": current,
         "sources": {"today": per_source_extremes(series, today),
                     "tomorrow": per_source_extremes(series, tomorrow)},

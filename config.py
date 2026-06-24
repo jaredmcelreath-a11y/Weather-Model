@@ -107,5 +107,34 @@ CLEAR_CLOUD_MAX = 30      # % mean cloud cover
 CALM_WIND_MAX = 10        # km/h mean 10m wind
 NIGHT_WINDOW_HOURS = (0, 8)
 
+# --- Convective downside humility (daily low) ---
+# Smooth gridded fields can't see a thunderstorm downdraft, so on a storm day the
+# model locks to the morning low and over-reports confidence. When evening
+# convection could still set a new lower minimum before midnight, we floor the
+# low's 1-sigma spread at CONVECTIVE_SIGMA instead of collapsing to observation
+# noise. Trigger fires on point POP/CAPE at KDFW OR an active severe-thunderstorm
+# warning in the N/NW approach counties (storms move SE toward the metroplex; the
+# airport sits on its north side). Widening is one-sided: the hard bound deletes
+# all mass above the observed low.
+CONVECTIVE_SIGMA = 3.0       # °F floor on today's low spread when storm risk is live
+CONVECTIVE_POP_MIN = 30      # % precip probability (remaining hours) that arms the point trigger
+CONVECTIVE_CAPE_MIN = 1000   # J/kg CAPE that arms the point trigger
+
+# NWS county UGC codes for the N/NW storm approach to KDFW plus the metro counties
+# themselves. A Severe Thunderstorm Warning intersecting this set arms the
+# upstream trigger. (TXC + 3-digit county FIPS.)
+CONVECTIVE_UPSTREAM_UGC = (
+    "TXC497",  # Wise
+    "TXC237",  # Jack
+    "TXC367",  # Parker
+    "TXC363",  # Palo Pinto
+    "TXC503",  # Young
+    "TXC121",  # Denton
+    "TXC097",  # Cooke
+    "TXC337",  # Montague
+    "TXC439",  # Tarrant (airport county)
+    "TXC113",  # Dallas
+)
+
 # Disk cache TTL (seconds) for live API calls, to avoid hammering on refresh.
 CACHE_TTL_SECONDS = 600
