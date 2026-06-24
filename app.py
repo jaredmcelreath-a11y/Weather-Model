@@ -1,7 +1,7 @@
 """KDFW high/low probability dashboard.
 
 Run with:  streamlit run app.py
-Two pages — Robinhood (ForecastEx) and Kalshi — switchable via the sidebar nav.
+Two pages — Kalshi (default) and Robinhood (ForecastEx) — switchable via the sidebar nav.
 Each page auto-refreshes; switch Today/Tomorrow and the safe-hold floor in the
 sidebar. All rendering lives in market_view; exchange differences in markets.
 """
@@ -127,6 +127,6 @@ def kalshi_page():
 
 
 st.navigation([
-    st.Page(robinhood_page, title="Robinhood", icon="🪶", default=True),
-    st.Page(kalshi_page, title="Kalshi", icon="📈"),
+    st.Page(kalshi_page, title="Kalshi", icon="📈", default=True),
+    st.Page(robinhood_page, title="Robinhood", icon="🪶"),
 ]).run()
