@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
@@ -68,6 +69,53 @@ def consensus_history_df(rows, day_iso, variable, basis, include_temp):
             row["current temp"] = r["current_temp"]
         data.append(row)
     return pd.DataFrame(data).set_index("time")
+
+
+def consensus_chart(hist, variable):
+    """Altair line chart of consensus (and today's live temp) through the day.
+
+    Built by hand (rather than st.line_chart) so we can: label the x-axis with
+    clock times (not dates) at 30-minute ticks; hold a readable 50–100°F y-window
+    that only expands when the data runs outside it (lows in the 70s shouldn't be
+    squashed against a 0–100 axis); and show one combined, swatch-free hover
+    readout of the time plus each series.
+    """
+    df = hist.reset_index()
+    value_cols = [c for c in df.columns if c != "time"]
+    line_color = "#ff6b6b" if variable == "high" else "#4dabf7"
+    others = [c for c in value_cols if c != "consensus"]
+    color_scale = alt.Scale(domain=["consensus"] + others,
+                            range=[line_color] + ["#adb5bd"] * len(others))
+
+    vals = pd.concat([df[c] for c in value_cols]).dropna()
+    lo = min(50.0, float(vals.min()) - 2) if not vals.empty else 50.0
+    hi = max(100.0, float(vals.max()) + 2) if not vals.empty else 100.0
+
+    long = df.melt("time", value_vars=value_cols,
+                   var_name="series", value_name="degF").dropna()
+    lines = alt.Chart(long).mark_line().encode(
+        x=alt.X("time:T", title=None,
+                axis=alt.Axis(format="%-I:%M %p",
+                              tickCount={"interval": "minute", "step": 30})),
+        y=alt.Y("degF:Q", title="°F", scale=alt.Scale(domain=[lo, hi])),
+        color=alt.Color("series:N", scale=color_scale,
+                        legend=alt.Legend(title=None, orient="top")),
+    )
+
+    nearest = alt.selection_point(nearest=True, on="pointerover",
+                                  fields=["time"], empty=False)
+    selectors = alt.Chart(df).mark_point().encode(
+        x="time:T", opacity=alt.value(0)).add_params(nearest)
+    rule = alt.Chart(df).mark_rule(color="#868e96").encode(
+        x="time:T",
+        opacity=alt.condition(nearest, alt.value(0.4), alt.value(0)),
+        tooltip=[alt.Tooltip("time:T", title="time", format="%-I:%M %p")] +
+                [alt.Tooltip(f"{c}:Q", title=c, format=".1f") for c in value_cols],
+    )
+    points = lines.mark_point(filled=True).encode(
+        opacity=alt.condition(nearest, alt.value(1), alt.value(0)))
+
+    return (lines + selectors + points + rule).properties(height=220)
 
 
 def reliability_df(bins):
@@ -258,10 +306,8 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
         hist = consensus_history_df(_consensus_history(), day_iso, variable,
                                     adapter.basis, include_temp=(day_iso == today_iso))
         if hist is not None:
-            line_color = "#ff6b6b" if variable == "high" else "#4dabf7"
-            colors = [line_color if c == "consensus" else "#adb5bd"
-                      for c in hist.columns]
-            st.line_chart(hist, height=200, color=colors)
+            st.altair_chart(consensus_chart(hist, variable),
+                            use_container_width=True)
             st.caption("Model consensus (°F) sampled every ~30 min" +
                        (", with the live temperature overlaid — watch it converge "
                         "on the predicted peak/trough." if "current temp" in hist.columns
