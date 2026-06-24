@@ -56,3 +56,36 @@ def test_fetch_active_returns_empty_on_error(monkeypatch):
 
     monkeypatch.setattr(common, "get_json", boom)
     assert nws_alerts.fetch_active() == {"features": []}
+
+
+def test_point_triggered():
+    from convective import _point_triggered
+    assert _point_triggered(40, 100, pop_min=30, cape_min=1000) is True   # POP over
+    assert _point_triggered(10, 1500, pop_min=30, cape_min=1000) is True  # CAPE over
+    assert _point_triggered(10, 100, pop_min=30, cape_min=1000) is False  # both under
+    assert _point_triggered(None, None, pop_min=30, cape_min=1000) is False
+
+
+def test_upstream_triggered():
+    from convective import _upstream_triggered
+    zones = frozenset({"TXC497", "TXC237"})
+    svr = {"features": [{"properties": {
+        "event": "Severe Thunderstorm Warning",
+        "geocode": {"UGC": ["TXC497", "TXC367"]}}}]}
+    assert _upstream_triggered(svr, zones) is True
+    # right counties, wrong event
+    flood = {"features": [{"properties": {
+        "event": "Flood Warning", "geocode": {"UGC": ["TXC497"]}}}]}
+    assert _upstream_triggered(flood, zones) is False
+    # right event, counties outside the approach set
+    far = {"features": [{"properties": {
+        "event": "Severe Thunderstorm Warning", "geocode": {"UGC": ["TXC999"]}}}]}
+    assert _upstream_triggered(far, zones) is False
+    assert _upstream_triggered({}, zones) is False
+
+
+def test_risk_label():
+    from convective import risk_label
+    assert risk_label({"convective_widened": True}) is not None
+    assert risk_label({"convective_widened": False}) is None
+    assert risk_label({}) is None
