@@ -63,7 +63,10 @@ def consensus_history_df(rows, day_iso, variable, basis, include_temp):
     pts.sort(key=lambda r: r["captured_at"])
     data = []
     for r in pts:
-        row = {"time": datetime.fromisoformat(r["captured_at"]),
+        # Naive local wall-clock time: keeps the x-axis labelled in station-local
+        # clock time regardless of the viewer's browser timezone, and Altair only
+        # accepts naive/UTC datetimes for explicit axis tick values.
+        row = {"time": datetime.fromisoformat(r["captured_at"]).replace(tzinfo=None),
                "consensus": r.get("consensus")}
         if include_temp and r.get("current_temp") is not None:
             row["current temp"] = r["current_temp"]
@@ -91,12 +94,19 @@ def consensus_chart(hist, variable):
     lo = min(50.0, float(vals.min()) - 2) if not vals.empty else 50.0
     hi = max(100.0, float(vals.max()) + 2) if not vals.empty else 100.0
 
+    # Explicit half-hour tick positions (Vega chokes on a 30-min `tickCount`
+    # interval object). labelOverlap drops labels that would collide once the
+    # day's span grows, while keeping the 30-min tick marks themselves.
+    t = pd.to_datetime(df["time"])
+    ticks = pd.date_range(t.min().floor("30min"), t.max().ceil("30min"),
+                          freq="30min").to_pydatetime().tolist()
+
     long = df.melt("time", value_vars=value_cols,
                    var_name="series", value_name="degF").dropna()
-    lines = alt.Chart(long).mark_line().encode(
+    lines = alt.Chart(long).mark_line(strokeWidth=2.5).encode(
         x=alt.X("time:T", title=None,
-                axis=alt.Axis(format="%-I:%M %p",
-                              tickCount={"interval": "minute", "step": 30})),
+                axis=alt.Axis(format="%-I:%M %p", values=ticks,
+                              labelOverlap=True, labelAngle=-40)),
         y=alt.Y("degF:Q", title="°F", scale=alt.Scale(domain=[lo, hi])),
         color=alt.Color("series:N", scale=color_scale,
                         legend=alt.Legend(title=None, orient="top")),
