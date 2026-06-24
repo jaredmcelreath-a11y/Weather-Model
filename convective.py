@@ -10,8 +10,11 @@ counties. model.py uses the decision to floor the low's spread.
 
 from __future__ import annotations
 
+from datetime import date, datetime
+
 from config import (CONVECTIVE_CAPE_MIN, CONVECTIVE_POP_MIN,
                     CONVECTIVE_UPSTREAM_UGC)
+from sources import nws_alerts, open_meteo_models
 
 UPSTREAM_UGC = frozenset(CONVECTIVE_UPSTREAM_UGC)
 _SEVERE = "Severe Thunderstorm Warning"
@@ -42,3 +45,23 @@ def risk_label(low_pred: dict) -> str | None:
         return ("⚡ Convective risk — evening storms could set a new low; "
                 "confidence on the low has been widened.")
     return None
+
+
+def convective_risk(day: date, now: datetime) -> bool:
+    """True if evening convection could push today's low lower before midnight.
+
+    Best-effort: each signal is guarded independently, and any data/network
+    failure contributes no risk (returns without raising). Point POP/CAPE OR an
+    upstream severe-thunderstorm warning is sufficient."""
+    try:
+        pop, cape = open_meteo_models.convective_window(day, now)
+        if _point_triggered(pop, cape):
+            return True
+    except Exception:
+        pass
+    try:
+        if _upstream_triggered(nws_alerts.fetch_active()):
+            return True
+    except Exception:
+        pass
+    return False

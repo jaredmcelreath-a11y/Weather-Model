@@ -89,3 +89,35 @@ def test_risk_label():
     assert risk_label({"convective_widened": True}) is not None
     assert risk_label({"convective_widened": False}) is None
     assert risk_label({}) is None
+
+
+def test_convective_risk_ors_signals_and_is_best_effort(monkeypatch):
+    import convective
+    from sources import nws_alerts, open_meteo_models
+    now = datetime(DAY.year, DAY.month, DAY.day, 16, tzinfo=TZ)
+    no_alerts = {"features": []}
+    one_zone = list(convective.UPSTREAM_UGC)[0]
+    svr = {"features": [{"properties": {
+        "event": "Severe Thunderstorm Warning", "geocode": {"UGC": [one_zone]}}}]}
+
+    # point signal alone fires
+    monkeypatch.setattr(open_meteo_models, "convective_window", lambda d, n: (50.0, 200.0))
+    monkeypatch.setattr(nws_alerts, "fetch_active", lambda: no_alerts)
+    assert convective.convective_risk(DAY, now) is True
+
+    # upstream signal alone fires (point quiet)
+    monkeypatch.setattr(open_meteo_models, "convective_window", lambda d, n: (0.0, 0.0))
+    monkeypatch.setattr(nws_alerts, "fetch_active", lambda: svr)
+    assert convective.convective_risk(DAY, now) is True
+
+    # neither
+    monkeypatch.setattr(nws_alerts, "fetch_active", lambda: no_alerts)
+    assert convective.convective_risk(DAY, now) is False
+
+    # any exception -> False (best-effort)
+    def boom(*a, **k):
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(open_meteo_models, "convective_window", boom)
+    monkeypatch.setattr(nws_alerts, "fetch_active", boom)
+    assert convective.convective_risk(DAY, now) is False
