@@ -18,6 +18,7 @@ import calibration
 import consensus_log
 import forecast_log
 import model
+import settlements
 from sources import kalshi
 
 
@@ -39,8 +40,18 @@ def main() -> None:
         print(f"market block skipped: {e}")
     forecast_log.record(cli_snap, basis="cli")
     consensus_log.record(cli_snap, basis="cli")
+    # Persist actual settlements for any forecast day that has now settled, on
+    # both bases — the durable ground truth for historical accuracy. Best-effort:
+    # an archive hiccup just leaves those days for the next run.
+    try:
+        settlements.record()
+        s = len(settlements.load(settlements._PATH))
+    except Exception as e:
+        print(f"settlement recording skipped: {e}")
+        s = len(settlements.load(settlements._PATH))
     n = len(forecast_log.load(forecast_log._PATH))
-    print(f"logged hourly+cli snapshots; log now holds {n} records")
+    print(f"logged hourly+cli snapshots; log now holds {n} records, "
+          f"{s} settlements")
 
 
 if __name__ == "__main__":
