@@ -133,6 +133,13 @@ def record(snapshot: dict, path: str | None = None, basis: str = "hourly") -> No
             # meaningful for today — tomorrow's curve hasn't happened yet.
             if target_date == today_iso and current_temp is not None:
                 rec["current_temp"] = current_temp
+            # The Kalshi market's implied extreme at this capture, so the chart can
+            # trace the market's own forecast through the day alongside ours.
+            # Present only on the CLI snapshot (where scheduled_log attaches the
+            # market block); absent on hourly, so the line shows on the Kalshi page.
+            mev = (snapshot.get("market", {}).get(which, {}).get(variable) or {}).get("ev")
+            if mev is not None:
+                rec["market_ev"] = mev
             rows.append(rec)
             appended = True
 

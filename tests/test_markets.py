@@ -78,6 +78,46 @@ def test_basis_note_kalshi_set_robinhood_none():
     assert KALSHI.basis_note and "CLI" in KALSHI.basis_note
 
 
+# --- Kalshi market line on the consensus chart ---
+
+def test_consensus_log_records_market_ev(tmp_path):
+    import consensus_log
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from config import TIMEZONE
+    tz = ZoneInfo(TIMEZONE)
+    now = datetime(2026, 6, 16, 12, tzinfo=tz)
+    snap = {
+        "updated": now.isoformat(),
+        "current": {"temp": 88},
+        "today": {"day": "2026-06-16",
+                  "high": {"consensus": 95.0},
+                  "low": {"consensus": 77.0}},
+        # market block as scheduled_log attaches to the CLI snapshot
+        "market": {"today": {"high": {"ev": 96.0}}},
+    }
+    p = str(tmp_path / "hist.jsonl")
+    consensus_log.record(snap, path=p, basis="cli")
+    by = {(r["target_date"], r["variable"]): r for r in consensus_log.load(p)}
+    assert by[("2026-06-16", "high")]["market_ev"] == 96.0
+    # low had no market EV -> key omitted (back-compatible)
+    assert "market_ev" not in by[("2026-06-16", "low")]
+
+
+def test_consensus_history_df_includes_kalshi_line():
+    import market_view
+    rows = [
+        {"target_date": "2026-06-16", "variable": "high", "basis": "cli",
+         "captured_at": "2026-06-16T10:00:00", "consensus": 95.0, "market_ev": 94.0},
+        {"target_date": "2026-06-16", "variable": "high", "basis": "cli",
+         "captured_at": "2026-06-16T10:30:00", "consensus": 95.5, "market_ev": 94.5},
+    ]
+    df = market_view.consensus_history_df(rows, "2026-06-16", "high", "cli",
+                                          include_temp=False)
+    assert "kalshi (market)" in df.columns
+    assert list(df["kalshi (market)"]) == [94.0, 94.5]
+
+
 def test_accuracy_note_kalshi_set_robinhood_none():
     assert ROBINHOOD.accuracy_note is None
     assert KALSHI.accuracy_note and "CLI" in KALSHI.accuracy_note

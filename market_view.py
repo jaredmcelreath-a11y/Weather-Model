@@ -70,6 +70,10 @@ def consensus_history_df(rows, day_iso, variable, basis, include_temp):
                "consensus": r.get("consensus")}
         if include_temp and r.get("current_temp") is not None:
             row["current temp"] = r["current_temp"]
+        # The market's implied extreme at this sample (CLI/Kalshi snapshots only),
+        # so the chart can carry Kalshi's own forecast line next to the model's.
+        if r.get("market_ev") is not None:
+            row["kalshi (market)"] = r["market_ev"]
         data.append(row)
     return pd.DataFrame(data).set_index("time")
 
@@ -87,8 +91,11 @@ def consensus_chart(hist, variable):
     value_cols = [c for c in df.columns if c != "time"]
     line_color = "#ff6b6b" if variable == "high" else "#4dabf7"
     others = [c for c in value_cols if c != "consensus"]
+    # Distinct hue for the Kalshi market line; the live-temp overlay stays muted gray.
+    series_color = {"kalshi (market)": "#51cf66", "current temp": "#adb5bd"}
     color_scale = alt.Scale(domain=["consensus"] + others,
-                            range=[line_color] + ["#adb5bd"] * len(others))
+                            range=[line_color] + [series_color.get(c, "#adb5bd")
+                                                  for c in others])
 
     vals = pd.concat([df[c] for c in value_cols]).dropna()
     lo = min(50.0, float(vals.min()) - 2) if not vals.empty else 50.0
@@ -348,10 +355,15 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
         if hist is not None:
             st.altair_chart(consensus_chart(hist, variable),
                             use_container_width=True)
+            extras = []
+            if "current temp" in hist.columns:
+                extras.append("the live temperature (watch it converge on the "
+                              "predicted peak/trough)")
+            if "kalshi (market)" in hist.columns:
+                extras.append("Kalshi's market-implied forecast")
             st.caption("Model consensus (°F) sampled every ~30 min" +
-                       (", with the live temperature overlaid — watch it converge "
-                        "on the predicted peak/trough." if "current temp" in hist.columns
-                        else "."))
+                       (", with " + " and ".join(extras) + " overlaid."
+                        if extras else "."))
         else:
             st.caption("Consensus history builds through the day — a point every "
                        "~30 minutes. Check back as it accumulates.")
