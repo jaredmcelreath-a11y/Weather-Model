@@ -149,13 +149,15 @@ def consensus_chart(hist, variable, day_iso=None, is_today=False):
                    var_name="series", value_name="degF").dropna()
     long = long.merge(df, on="time", how="left")
 
-    # Pre-rendered one-line readout per timestamp (time + every series value), for
-    # the tap-to-pin label below. Built here because Vega can't easily format a
-    # multi-field string itself.
+    # Pre-rendered readout per timestamp (time + every series value), for the
+    # tap-to-pin label below. Built here because Vega can't easily format a
+    # multi-field string itself. One series per line (joined with newlines, drawn
+    # with lineBreak) so a long combined readout stacks vertically instead of
+    # running off the right edge and hiding the last value (e.g. Kalshi's).
     def _readout(row):
         parts = [pd.to_datetime(row["time"]).strftime("%-I:%M %p")]
         parts += [f"{c} {row[c]:.1f}°" for c in value_cols if pd.notna(row[c])]
-        return "   ".join(parts)
+        return "\n".join(parts)
     labels = df.assign(label=df.apply(_readout, axis=1))
 
     base = alt.Chart(long).encode(
@@ -183,13 +185,20 @@ def consensus_chart(hist, variable, day_iso=None, is_today=False):
                  for c in value_cols],
     ).add_params(pick)
     # Pinned readout for the tapped point, anchored top-left so it never clips off
-    # the plot edge. Shows only while a dot is selected.
+    # the plot edge. One line per series (lineBreak) so the full readout stays in
+    # view. Shows only while a dot is selected.
     pinned = alt.Chart(labels).mark_text(
         align="left", baseline="top", x=6, y=4, fontSize=13, fontWeight="bold",
-        color=line_color,
+        lineBreak="\n", lineHeight=15, color=line_color,
     ).encode(text="label:N").transform_filter(pick)
 
-    return (lines + dots + pinned).properties(height=220)
+    # Pan/pinch-zoom the plot (bind an interval selection to the scales). On mobile
+    # this lets a pinch zoom into a crowded stretch of the day; on desktop it's
+    # scroll-to-zoom / drag-to-pan. A single tap still fires the click selection
+    # above, so tap-to-pin keeps working alongside the gesture.
+    return ((lines + dots + pinned)
+            .properties(height=220)
+            .interactive())
 
 
 def reliability_df(bins):
