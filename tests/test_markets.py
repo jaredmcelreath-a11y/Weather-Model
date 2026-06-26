@@ -118,6 +118,62 @@ def test_consensus_history_df_includes_kalshi_line():
     assert list(df["kalshi (market)"]) == [94.0, 94.5]
 
 
+# --- per-variable time window (declutter the through-the-day chart) ---
+
+def test_consensus_history_df_high_windows_to_daytime():
+    # Today's high samples include points captured the previous night/early
+    # morning (logged when the day was still "tomorrow"); the window keeps only
+    # 8am-10pm of the target day.
+    import market_view
+    rows = [
+        {"target_date": "2026-06-16", "variable": "high", "basis": "cli",
+         "captured_at": "2026-06-15T23:00:00", "consensus": 94.0},   # prev night
+        {"target_date": "2026-06-16", "variable": "high", "basis": "cli",
+         "captured_at": "2026-06-16T06:00:00", "consensus": 80.0},   # pre-8am
+        {"target_date": "2026-06-16", "variable": "high", "basis": "cli",
+         "captured_at": "2026-06-16T09:00:00", "consensus": 95.0},
+        {"target_date": "2026-06-16", "variable": "high", "basis": "cli",
+         "captured_at": "2026-06-16T15:00:00", "consensus": 96.0},
+    ]
+    df = market_view.consensus_history_df(rows, "2026-06-16", "high", "cli",
+                                          include_temp=False, is_today=True)
+    assert [t.hour for t in df.index] == [9, 15]
+
+
+def test_consensus_history_df_low_windows_to_overnight():
+    # Today's low forms near dawn; keep last night (from 10pm) through 10am,
+    # dropping the wasted prior-evening and afternoon-flat stretches.
+    import market_view
+    rows = [
+        {"target_date": "2026-06-16", "variable": "low", "basis": "cli",
+         "captured_at": "2026-06-15T18:00:00", "consensus": 80.0},   # before 10pm
+        {"target_date": "2026-06-16", "variable": "low", "basis": "cli",
+         "captured_at": "2026-06-15T23:00:00", "consensus": 78.0},
+        {"target_date": "2026-06-16", "variable": "low", "basis": "cli",
+         "captured_at": "2026-06-16T05:00:00", "consensus": 76.0},
+        {"target_date": "2026-06-16", "variable": "low", "basis": "cli",
+         "captured_at": "2026-06-16T14:00:00", "consensus": 76.0},   # afternoon flat
+    ]
+    df = market_view.consensus_history_df(rows, "2026-06-16", "low", "cli",
+                                          include_temp=False, is_today=True)
+    assert [(t.day, t.hour) for t in df.index] == [(15, 23), (16, 5)]
+
+
+def test_consensus_history_df_future_day_not_windowed():
+    # A future day's chart is entirely pre-day lead-up; windowing it to the
+    # target day's 8am-10pm would empty it, so no window is applied.
+    import market_view
+    rows = [
+        {"target_date": "2026-06-17", "variable": "high", "basis": "cli",
+         "captured_at": "2026-06-16T06:00:00", "consensus": 90.0},
+        {"target_date": "2026-06-17", "variable": "high", "basis": "cli",
+         "captured_at": "2026-06-16T23:00:00", "consensus": 91.0},
+    ]
+    df = market_view.consensus_history_df(rows, "2026-06-17", "high", "cli",
+                                          include_temp=False, is_today=False)
+    assert len(df) == 2
+
+
 def test_accuracy_note_kalshi_set_robinhood_none():
     assert ROBINHOOD.accuracy_note is None
     assert KALSHI.accuracy_note and "CLI" in KALSHI.accuracy_note

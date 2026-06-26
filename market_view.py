@@ -9,7 +9,7 @@ plans, Top-3 flip/hold, Safest-hold) is identical across exchanges.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 
 import altair as alt
 import pandas as pd
@@ -52,22 +52,44 @@ def _consensus_history():
         return []
 
 
-def consensus_history_df(rows, day_iso, variable, basis, include_temp):
-    """Time-indexed df of consensus (+ live temp on today) for one series, for
-    st.line_chart. None when fewer than two points exist yet."""
+def _chart_window(day_iso, variable, is_today):
+    """(start, end) naive datetimes the through-the-day chart should span, or None.
+
+    Only windowed for *today* (a future day's chart is all pre-day lead-up, so
+    clipping it to the target day would empty it). The high forms midday, so we
+    show 8am-10pm of the day and drop the overnight/previous-day clutter; the low
+    forms near dawn, so we show last night (from 10pm) through 10am.
+    """
+    if not is_today:
+        return None
+    d = date.fromisoformat(day_iso)
+    if variable == "high":
+        return (datetime.combine(d, time(8, 0)), datetime.combine(d, time(22, 0)))
+    return (datetime.combine(d - timedelta(days=1), time(22, 0)),
+            datetime.combine(d, time(10, 0)))
+
+
+def consensus_history_df(rows, day_iso, variable, basis, include_temp,
+                         is_today=False):
+    """Time-indexed df of consensus (+ live temp / Kalshi line) for one series.
+
+    On today's chart the series is clipped to the variable's active window (see
+    `_chart_window`) so the previous day and dead overnight hours don't waste
+    space. None when fewer than two points fall inside the window."""
+    window = _chart_window(day_iso, variable, is_today)
     pts = [r for r in rows
            if r.get("target_date") == day_iso and r.get("variable") == variable
            and r.get("basis", "hourly") == basis]
-    if len(pts) < 2:
-        return None
     pts.sort(key=lambda r: r["captured_at"])
     data = []
     for r in pts:
         # Naive local wall-clock time: keeps the x-axis labelled in station-local
         # clock time regardless of the viewer's browser timezone, and Altair only
         # accepts naive/UTC datetimes for explicit axis tick values.
-        row = {"time": datetime.fromisoformat(r["captured_at"]).replace(tzinfo=None),
-               "consensus": r.get("consensus")}
+        t = datetime.fromisoformat(r["captured_at"]).replace(tzinfo=None)
+        if window and not (window[0] <= t <= window[1]):
+            continue
+        row = {"time": t, "consensus": r.get("consensus")}
         if include_temp and r.get("current_temp") is not None:
             row["current temp"] = r["current_temp"]
         # The market's implied extreme at this sample (CLI/Kalshi snapshots only),
@@ -75,10 +97,12 @@ def consensus_history_df(rows, day_iso, variable, basis, include_temp):
         if r.get("market_ev") is not None:
             row["kalshi (market)"] = r["market_ev"]
         data.append(row)
+    if len(data) < 2:
+        return None
     return pd.DataFrame(data).set_index("time")
 
 
-def consensus_chart(hist, variable):
+def consensus_chart(hist, variable, day_iso=None, is_today=False):
     """Altair line chart of consensus (and today's live temp) through the day.
 
     Built by hand (rather than st.line_chart) so we can: label the x-axis with
@@ -86,7 +110,12 @@ def consensus_chart(hist, variable):
     that only expands when the data runs outside it (lows in the 70s shouldn't be
     squashed against a 0–100 axis); mark every sample with a visible dot; and show
     one combined, swatch-free readout only while hovering a dot (nothing off it).
+
+    On today's chart the x-axis is pinned to the variable's active window (see
+    `_chart_window`) so it spans the full daytime/overnight span from the start
+    rather than stretching to fit whatever has accumulated so far.
     """
+    window = _chart_window(day_iso, variable, is_today) if day_iso else None
     df = hist.reset_index()
     value_cols = [c for c in df.columns if c != "time"]
     line_color = "#ff6b6b" if variable == "high" else "#4dabf7"
@@ -103,10 +132,15 @@ def consensus_chart(hist, variable):
 
     # Explicit half-hour tick positions (Vega chokes on a 30-min `tickCount`
     # interval object). labelOverlap drops labels that would collide once the
-    # day's span grows, while keeping the 30-min tick marks themselves.
-    t = pd.to_datetime(df["time"])
-    ticks = pd.date_range(t.min().floor("30min"), t.max().ceil("30min"),
-                          freq="30min").to_pydatetime().tolist()
+    # day's span grows, while keeping the 30-min tick marks themselves. When the
+    # chart is windowed (today), span the full fixed window; otherwise fit data.
+    if window:
+        tick_lo, tick_hi = pd.Timestamp(window[0]), pd.Timestamp(window[1])
+    else:
+        t = pd.to_datetime(df["time"])
+        tick_lo, tick_hi = t.min().floor("30min"), t.max().ceil("30min")
+    ticks = pd.date_range(tick_lo, tick_hi, freq="30min").to_pydatetime().tolist()
+    x_scale = alt.Scale(domain=list(window)) if window else alt.Undefined
 
     # Long form for the marks; merge every series' value back onto each row so a
     # single dot's tooltip can show the whole combined readout (time + both
@@ -125,14 +159,14 @@ def consensus_chart(hist, variable):
     labels = df.assign(label=df.apply(_readout, axis=1))
 
     base = alt.Chart(long).encode(
-        x=alt.X("time:T", title=None,
+        x=alt.X("time:T", title=None, scale=x_scale,
                 axis=alt.Axis(format="%-I:%M %p", values=ticks,
                               labelOverlap=True, labelAngle=-40)),
         y=alt.Y("degF:Q", title="°F", scale=alt.Scale(domain=[lo, hi])),
         color=alt.Color("series:N", scale=color_scale,
                         legend=alt.Legend(title=None, orient="top")),
     )
-    lines = base.mark_line(strokeWidth=2.5)
+    lines = base.mark_line(strokeWidth=2.5, clip=True)
 
     # Tap/click a dot to pin its readout (mobile-friendly: touch devices don't
     # fire the hover events that drive Vega tooltips, so the hover-only readout
@@ -142,7 +176,7 @@ def consensus_chart(hist, variable):
                                empty=False, clear="dblclick")
     # Visible dot at every sample — an easy hover/tap target. Tooltip still serves
     # desktop hover; the selection drives the pinned label for touch.
-    dots = base.mark_point(filled=True, opacity=1).encode(
+    dots = base.mark_point(filled=True, opacity=1, clip=True).encode(
         size=alt.condition(pick, alt.value(140), alt.value(55)),
         tooltip=[alt.Tooltip("time:T", title="time", format="%-I:%M %p")] +
                 [alt.Tooltip(f"{c}:Q", title=c, format=".1f")
@@ -350,10 +384,12 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
         # point per ~15 min), with today's live temperature overlaid so you can
         # watch the reading climb/fall toward the predicted peak/trough.
         st.markdown("**Consensus through the day**")
+        is_today = (day_iso == today_iso)
         hist = consensus_history_df(_consensus_history(), day_iso, variable,
-                                    adapter.basis, include_temp=(day_iso == today_iso))
+                                    adapter.basis, include_temp=is_today,
+                                    is_today=is_today)
         if hist is not None:
-            st.altair_chart(consensus_chart(hist, variable),
+            st.altair_chart(consensus_chart(hist, variable, day_iso, is_today),
                             use_container_width=True)
             extras = []
             if "current temp" in hist.columns:
