@@ -1,6 +1,6 @@
 name: Log forecast snapshot
 
-# Records a model snapshot to the forward log every 30 min so live self-scoring,
+# Records a model snapshot to the forward log every 15 min so live self-scoring,
 # per-lead sigma, and the intraday consensus history keep accumulating in the
 # cloud — independent of any computer. The logs live on an orphan `data` branch
 # (just those files), kept separate from the deployed branch so these commits
@@ -8,7 +8,7 @@ name: Log forecast snapshot
 
 on:
   schedule:
-    - cron: "7,37 * * * *"      # every 30 min at :07/:37 (off the top of the hour)
+    - cron: "7,22,37,52 * * * *"  # every 15 min (off the top of the hour)
   workflow_dispatch: {}         # allow manual runs from the Actions tab
 
 permissions:

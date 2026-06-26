@@ -1,7 +1,7 @@
 """Intraday history of the model's consensus, for the 'consensus through the day' chart.
 
 Unlike forecast_log (which upserts one row per lead bucket, keeping only the
-latest capture), this keeps a *time series*: one point roughly every 30 minutes
+latest capture), this keeps a *time series*: one point roughly every 15 minutes
 per (target_date, variable, basis) so the dashboard can chart how the consensus
 drifts through the day as the peak/trough approaches. Records whose target_date
 is already in the past are pruned on write, so the file stays tiny (only today
@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo(TIMEZONE)
 _PATH = os.path.join(os.path.dirname(__file__), "consensus_history.jsonl")
-MIN_INTERVAL_MIN = 30  # never append more often than this per series
+MIN_INTERVAL_MIN = 15  # never append more often than this per series
 
 
 def _github_cfg() -> dict | None:
