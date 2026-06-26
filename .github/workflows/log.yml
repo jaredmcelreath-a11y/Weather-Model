@@ -21,8 +21,14 @@ permissions:
   contents: write               # lets the built-in token push the data branch
 
 concurrency:
-  group: forecast-log           # never let two runs race on the data branch
-  cancel-in-progress: false
+  # One shared group across all triggers (external cron, schedule fallback, manual)
+  # so they serialize on the data branch — never two force-pushes racing. With
+  # frequent 15-min runs the fallback schedule can fire alongside the external
+  # cron; cancel-in-progress collapses such overlaps to the newest run. That's
+  # safe and preferable here because every run captures a full fresh snapshot, so
+  # a superseded in-flight run carries nothing the newer one doesn't recompute.
+  group: forecast-log
+  cancel-in-progress: true
 
 jobs:
   log:
