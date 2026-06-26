@@ -7,9 +7,15 @@ name: Log forecast snapshot
 # don't restart the app.
 
 on:
+  # GitHub's own scheduler is best-effort and unreliable (it dropped most of the
+  # 30-min runs, firing only ~3x/day). So the schedule is a free fallback only;
+  # the dependable 15-min cadence comes from an external cron (cron-job.org)
+  # POSTing a repository_dispatch of type `log-snapshot` to the GitHub API.
   schedule:
-    - cron: "7,22,37,52 * * * *"  # every 15 min (off the top of the hour)
+    - cron: "7,22,37,52 * * * *"  # fallback every 15 min (GitHub honors this loosely)
   workflow_dispatch: {}         # allow manual runs from the Actions tab
+  repository_dispatch:
+    types: [log-snapshot]       # external scheduler triggers this for reliable timing
 
 permissions:
   contents: write               # lets the built-in token push the data branch
