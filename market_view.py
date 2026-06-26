@@ -106,9 +106,9 @@ def consensus_chart(hist, variable, day_iso=None, is_today=False):
     """Altair line chart of consensus (and today's live temp) through the day.
 
     Built by hand (rather than st.line_chart) so we can: label the x-axis with
-    clock times (not dates) at 30-minute ticks; hold a readable 50–100°F y-window
-    that only expands when the data runs outside it (lows in the 70s shouldn't be
-    squashed against a 0–100 axis); mark every sample with a visible dot; and show
+    clock times (not dates) at 30-minute ticks; pad the y-window to 10°F past the
+    lowest/highest point so the curves fill the plot instead of bunching against a
+    fixed axis; mark every sample with a visible dot; and show
     one combined, swatch-free readout only while hovering a dot (nothing off it).
 
     On today's chart the x-axis is pinned to the variable's active window (see
@@ -126,9 +126,12 @@ def consensus_chart(hist, variable, day_iso=None, is_today=False):
                             range=[line_color] + [series_color.get(c, "#adb5bd")
                                                   for c in others])
 
+    # Pad the y-window 10°F past the lowest/highest point so the lines fill the
+    # plot instead of bunching against a fixed 50–100 axis (which left big dead
+    # bands and squashed the curves). Falls back to 50–100 only when empty.
     vals = pd.concat([df[c] for c in value_cols]).dropna()
-    lo = min(50.0, float(vals.min()) - 2) if not vals.empty else 50.0
-    hi = max(100.0, float(vals.max()) + 2) if not vals.empty else 100.0
+    lo = float(vals.min()) - 10 if not vals.empty else 50.0
+    hi = float(vals.max()) + 10 if not vals.empty else 100.0
 
     # Explicit half-hour tick positions (Vega chokes on a 30-min `tickCount`
     # interval object). labelOverlap drops labels that would collide once the
