@@ -102,7 +102,7 @@ def consensus_history_df(rows, day_iso, variable, basis, include_temp,
     return pd.DataFrame(data).set_index("time")
 
 
-def consensus_chart(hist, variable, day_iso=None, is_today=False):
+def consensus_chart(hist, variable, day_iso=None, is_today=False, view_window=None):
     """Altair line chart of consensus (and today's live temp) through the day.
 
     Built by hand (rather than st.line_chart) so we can: label the x-axis with
@@ -115,7 +115,10 @@ def consensus_chart(hist, variable, day_iso=None, is_today=False):
     `_chart_window`) so it spans the full daytime/overnight span from the start
     rather than stretching to fit whatever has accumulated so far.
     """
-    window = _chart_window(day_iso, variable, is_today) if day_iso else None
+    # `view_window` (from the zoom slider) pins the x-axis to a user-chosen span
+    # and overrides today's default active-window pinning.
+    window = view_window or (_chart_window(day_iso, variable, is_today)
+                             if day_iso else None)
     df = hist.reset_index()
     value_cols = [c for c in df.columns if c != "time"]
     line_color = "#ff6b6b" if variable == "high" else "#4dabf7"
@@ -195,13 +198,10 @@ def consensus_chart(hist, variable, day_iso=None, is_today=False):
         lineBreak="\n", lineHeight=15, color=line_color,
     ).encode(text="label:N").transform_filter(pick)
 
-    # Pan/pinch-zoom the plot (bind an interval selection to the scales). On mobile
-    # this lets a pinch zoom into a crowded stretch of the day; on desktop it's
-    # scroll-to-zoom / drag-to-pan. A single tap still fires the click selection
-    # above, so tap-to-pin keeps working alongside the gesture.
-    return ((lines + dots + pinned)
-            .properties(height=220)
-            .interactive())
+    # Zoom is driven by the time-window slider in the caller (which re-pins the
+    # x-axis via `view_window`), not by Vega's scale-bound gestures — those are
+    # too jittery on touch and fought with tap-to-pin / page scroll.
+    return (lines + dots + pinned).properties(height=220)
 
 
 def reliability_df(bins):
@@ -401,8 +401,24 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                                     adapter.basis, include_temp=is_today,
                                     is_today=is_today)
         if hist is not None:
-            st.altair_chart(consensus_chart(hist, variable, day_iso, is_today),
-                            use_container_width=True)
+            # Time-window zoom: a range slider beats Vega's touch gestures, which
+            # glitch on mobile. The picked span re-pins the x-axis (view_window)
+            # and the chart re-pads its y-axis to just the visible points, so the
+            # lines fill the plot when you zoom in.
+            times = hist.index.to_pydatetime().tolist()
+            view_window, hist_view = None, hist
+            if len(times) > 2 and times[-1] > times[0]:
+                start, end = st.slider(
+                    "Zoom (time window)", min_value=times[0], max_value=times[-1],
+                    value=(times[0], times[-1]), step=timedelta(minutes=15),
+                    format="h:mm A", label_visibility="collapsed",
+                    key=f"zoom_{variable}_{day_iso}")
+                sub = hist.loc[start:end]
+                if len(sub) >= 2:                 # ignore a too-narrow pick
+                    view_window, hist_view = (start, end), sub
+            st.altair_chart(
+                consensus_chart(hist_view, variable, day_iso, is_today, view_window),
+                use_container_width=True)
             extras = []
             if "current temp" in hist.columns:
                 extras.append("the live temperature (watch it converge on the "
