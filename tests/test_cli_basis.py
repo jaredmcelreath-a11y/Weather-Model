@@ -223,6 +223,72 @@ def test_settle_offset_std_widens_sigma_without_moving_center():
     assert wide["sigma_used"] > base["sigma_used"]   # gap std widened sigma
 
 
+def _obs(day, temps, continuous):
+    """Hourly obs from `temps` (one per hour from midnight), optionally with a
+    finer continuous feed mirroring them (so observed_cont is set)."""
+    base = datetime(day.year, day.month, day.day, tzinfo=_TZ)
+    ot = [base + timedelta(hours=h) for h in range(len(temps))]
+    obs = {"obs": (ot, temps)}
+    if continuous:
+        ct = [base + timedelta(minutes=15 * k) for k in range(len(temps) * 4)]
+        cv = [temps[k // 4] for k in range(len(temps) * 4)]
+        obs["obs_continuous"] = (ct, cv)
+    return obs
+
+
+# Gap-std widening is the average CLI-vs-hourly spread we add when we can't see
+# today's gap. But a LOCKED low whose continuous extreme is already observed has
+# its gap measured — widening there double-hedges and smears the settled low
+# across the rounding boundary (flagging fake edges vs Kalshi). Skip it there.
+_LOCKED_LOW = [79 + abs(h - 5) for h in range(17)]   # dip 79 @05:00, risen to 90 @16:00
+_LOCKED_HIGH = [95 - abs(h - 13) for h in range(18)]  # peak 95 @13:00, fallen to 91 @17:00
+_LOW_OFF = {"low": -0.3, "low_std": 0.46, "high": 0.0, "high_std": 0.0}
+
+
+def test_locked_low_skips_gap_widening_when_continuous_observed():
+    day = date(2030, 7, 1)
+    series = _series(day)
+    now = datetime(day.year, day.month, day.day, 16, tzinfo=_TZ)
+
+    with_cont = model.predict_variable(series, _obs(day, _LOCKED_LOW, True),
+                                       day, "low", now, None, _LOW_OFF)
+    no_cont = model.predict_variable(series, _obs(day, _LOCKED_LOW, False),
+                                     day, "low", now, None, _LOW_OFF)
+
+    assert with_cont["peak_locked"] and no_cont["peak_locked"]
+    assert with_cont["consensus"] == no_cont["consensus"]      # center unchanged
+    # Observed gap -> no widening -> tighter sigma than the unknown-gap path.
+    assert with_cont["sigma_used"] < no_cont["sigma_used"]
+
+
+def test_unlocked_low_still_widens_with_continuous():
+    # Before the low locks, the gap is still unknown -> widening must still apply.
+    day = date(2030, 7, 1)
+    series = _series(day)
+    now = datetime(day.year, day.month, day.day, 4, tzinfo=_TZ)
+    temps = [84, 83, 82, 81, 80]   # still descending at 04:00 -> not locked
+    wide = model.predict_variable(series, _obs(day, temps, True), day, "low",
+                                  now, None, _LOW_OFF)
+    narrow = model.predict_variable(series, _obs(day, temps, True), day, "low",
+                                    now, None, {**_LOW_OFF, "low_std": 0.0})
+    assert not wide["peak_locked"]
+    assert wide["sigma_used"] > narrow["sigma_used"]
+
+
+def test_locked_high_still_widens_with_continuous():
+    # The skip is scoped to the low; a locked high keeps the gap-std widening.
+    day = date(2030, 7, 1)
+    series = _series(day)
+    now = datetime(day.year, day.month, day.day, 17, tzinfo=_TZ)
+    off = {"high": 1.0, "high_std": 2.0, "low": 0.0, "low_std": 0.0}
+    wide = model.predict_variable(series, _obs(day, _LOCKED_HIGH, True), day,
+                                  "high", now, None, off)
+    narrow = model.predict_variable(series, _obs(day, _LOCKED_HIGH, True), day,
+                                    "high", now, None, {**off, "high_std": 0.0})
+    assert wide["peak_locked"]
+    assert wide["sigma_used"] > narrow["sigma_used"]
+
+
 def test_settle_offset_zero_std_matches_no_std():
     day = date(2030, 7, 1)
     series, obs = _series(day), {"obs": ([], [])}

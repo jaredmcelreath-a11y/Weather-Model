@@ -436,7 +436,13 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     # The CLI settlement offset is an average; its gap has irreducible spread
     # (std from calibration) we can't observe live, so widen sigma by it in
     # quadrature whenever the offset is applied. Center (consensus) is unchanged.
-    if settle_gap_std:
+    # EXCEPTION — a locked low whose continuous extreme is already observed: there
+    # we've measured today's CLI-vs-hourly gap directly, so the average-gap spread
+    # is no longer unknown. Widening it would double-hedge and smear a settled low
+    # across the rounding boundary, printing fake edges vs Kalshi. Low-only: the
+    # high's gap is larger and not pinned by the realized morning extreme.
+    gap_observed = variable == "low" and locked and observed_cont is not None
+    if settle_gap_std and not gap_observed:
         sigma = math.hypot(sigma, settle_gap_std)
 
     # Convective downside humility: on a storm-risk day the smooth fields can't
