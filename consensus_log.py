@@ -24,7 +24,13 @@ from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo(TIMEZONE)
 _PATH = os.path.join(os.path.dirname(__file__), "consensus_history.jsonl")
-MIN_INTERVAL_MIN = 15  # never append more often than this per series
+# Throttle floor per series. Must sit comfortably below the 15-min logging cron
+# (.github/workflows/log.yml): at exactly 15 the throttle equalled the cadence,
+# so normal Actions startup jitter pushed runs a few seconds under the interval
+# and dropped every other point, collapsing the chart to 30-min spacing. 10 min
+# keeps every scheduled run while still throttling an always-open local
+# dashboard that refreshes every minute.
+MIN_INTERVAL_MIN = 10
 
 
 def _github_cfg() -> dict | None:
