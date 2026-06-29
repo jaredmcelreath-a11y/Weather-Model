@@ -285,6 +285,31 @@ def prob_table(probs: dict, variable: str, observed=None, top: int = 14) -> pd.D
     return df.set_index("bin")
 
 
+def prob_bar_chart(df, variable):
+    """Bar chart of the per-bin probabilities, with the x-axis pinned to the
+    numeric bin order that prob_table emits.
+
+    st.bar_chart treats the string bins as a nominal axis, and Vega-Lite sorts
+    those lexicographically — so "100" lands before "99" and the triple-digit
+    bin jumps to the wrong side, giving the chart a U/jagged shape. Building the
+    chart explicitly lets us force sort=<the dataframe's own order>, keeping
+    hotter to the right.
+    """
+    color = "#ff6b6b" if variable == "high" else "#4dabf7"
+    data = df.reset_index()
+    return (
+        alt.Chart(data)
+        .mark_bar(color=color)
+        .encode(
+            x=alt.X("bin:N", sort=list(df.index), title=None),
+            y=alt.Y("prob %:Q", title=None),
+            tooltip=[alt.Tooltip("bin:N", title="bin"),
+                     alt.Tooltip("prob %:Q", title="prob %", format=".1f")],
+        )
+        .properties(height=240)
+    )
+
+
 def lock_status(d, variable):
     """Interpret the nowcast lock state into an actionable badge + buy-window note.
 
@@ -434,7 +459,7 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
 
         probs = d["probabilities"]
         df = prob_table(probs, variable)
-        st.bar_chart(df["prob %"], height=240, color="#ff6b6b" if title.startswith("High") else "#4dabf7")
+        st.altair_chart(prob_bar_chart(df, variable), use_container_width=True)
         st.dataframe(df[["prob %", "chance %"]], width="stretch", height=210)
         chance_dir = "this degree or hotter" if variable == "high" else "this degree or colder"
         st.caption(f"prob % = chance the {variable} lands exactly in that bin. "
