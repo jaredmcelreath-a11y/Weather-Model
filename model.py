@@ -21,10 +21,10 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from config import (BIN_HIGH, BIN_LOW, CALM_WIND_MAX, CLEAR_CLOUD_MAX,
-                    CONVECTIVE_SIGMA, LEAD_SIGMA_INFLATION, PEAK_LOCK_DROP,
+                    LEAD_SIGMA_INFLATION, PEAK_LOCK_DROP,
                     TIMEZONE, bin_labels, lead_bucket)
 from settlement import covers_extreme, local_day_bounds, observed_so_far
-from convective import convective_risk
+from convective import convective_sigma
 from sources import (open_meteo_ensemble, open_meteo_models, nws_forecast,
                      nws_observations, iem_mos)
 
@@ -441,18 +441,20 @@ def predict_variable(series, obs_series, day, variable, now, calib,
 
     # Convective downside humility: on a storm-risk day the smooth fields can't
     # see an evening downdraft, so a locked low collapses sigma to ~0.7 and
-    # over-reports confidence. Floor the spread at CONVECTIVE_SIGMA for *today's
-    # low only*; the hard bound below then makes the extra spread one-sided
-    # (downside). Best-effort and floor-only: it never lowers sigma, shifts the
-    # mean, or touches the high/tomorrow. Storm-free days never trigger. Gated on
-    # `live`: the trigger reads live POP/CAPE and live alerts, so it must not fire
-    # in backtest/replay (which calls this with a today-relative `now` on a past
-    # day).
+    # over-reports confidence. Floor the spread for *today's low only* at a sigma
+    # scaled by how likely storms actually are (POP, or full on an upstream severe
+    # warning — see convective.convective_sigma); the hard bound below then makes
+    # the extra spread one-sided (downside). Best-effort and floor-only: it never
+    # lowers sigma, shifts the mean, or touches the high/tomorrow. Storm-free days
+    # return 0 and never widen. Gated on `live`: it reads live POP and live
+    # alerts, so it must not fire in backtest/replay (which calls this with a
+    # today-relative `now` on a past day).
     convective_widened = False
     if live and variable == "low" and now is not None and lead_bucket(now, day) == 0:
         try:
-            if convective_risk(day, now):
-                sigma = max(sigma, CONVECTIVE_SIGMA)
+            conv_sigma = convective_sigma(day, now)
+            if conv_sigma > 0:
+                sigma = max(sigma, conv_sigma)
                 convective_widened = True
         except Exception:
             pass

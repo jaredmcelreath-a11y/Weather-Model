@@ -111,14 +111,21 @@ NIGHT_WINDOW_HOURS = (0, 8)
 # Smooth gridded fields can't see a thunderstorm downdraft, so on a storm day the
 # model locks to the morning low and over-reports confidence. When evening
 # convection could still set a new lower minimum before midnight, we floor the
-# low's 1-sigma spread at CONVECTIVE_SIGMA instead of collapsing to observation
-# noise. Trigger fires on point POP/CAPE at KDFW OR an active severe-thunderstorm
-# warning in the N/NW approach counties (storms move SE toward the metroplex; the
-# airport sits on its north side). Widening is one-sided: the hard bound deletes
-# all mass above the observed low.
-CONVECTIVE_SIGMA = 3.0       # °F floor on today's low spread when storm risk is live
-CONVECTIVE_POP_MIN = 30      # % precip probability (remaining hours) that arms the point trigger
-CONVECTIVE_CAPE_MIN = 1000   # J/kg CAPE that arms the point trigger
+# low's 1-sigma spread instead of collapsing to observation noise. Widening is
+# one-sided: the hard bound deletes all mass above the observed low.
+#
+# The point trigger is precip probability (POP), NOT CAPE. CAPE measures latent
+# instability that runs high on storm-free Texas summer afternoons, so arming on
+# it spread the locked low downward almost every hot day; POP is the model's
+# actual expectation that storms fire. The downside scales with POP: a barely-
+# armed day earns CONVECTIVE_SIGMA_MIN, a near-certain-storm day the full
+# CONVECTIVE_SIGMA. An active severe-thunderstorm warning in the N/NW approach
+# counties (storms move SE toward the metroplex; the airport sits on its north
+# side) is direct evidence of storms and commands the full floor on its own.
+CONVECTIVE_SIGMA = 3.0       # °F max downside floor (near-certain evening storms / upstream warning)
+CONVECTIVE_SIGMA_MIN = 1.5   # °F downside floor the moment POP clears the arming threshold
+CONVECTIVE_POP_MIN = 30      # % precip probability (remaining hours) that arms the trigger
+CONVECTIVE_POP_FULL = 70     # % POP at/above which the full CONVECTIVE_SIGMA applies
 
 # NWS county UGC codes for the N/NW storm approach to KDFW plus the metro counties
 # themselves. A Severe Thunderstorm Warning intersecting this set arms the

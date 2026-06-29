@@ -2,29 +2,43 @@
 
 The smooth gridded fields the model ingests cannot see a thunderstorm
 downdraft, so on a storm day the model locks to the morning low and reports
-false high confidence. This module decides, best-effort, whether evening
-convection could still set a new lower minimum before midnight — from point
-POP/CAPE at KDFW or an active severe-thunderstorm warning in the N/NW approach
-counties. model.py uses the decision to floor the low's spread.
+false high confidence. This module decides, best-effort, how much downside
+spread evening convection warrants before midnight — scaled by the remaining-
+hours precip probability (POP) at KDFW, or pinned to the full floor by an active
+severe-thunderstorm warning in the N/NW approach counties. model.py uses the
+returned sigma to floor the low's spread.
+
+POP, not CAPE, is the gate: CAPE measures latent instability that runs high on
+storm-free summer afternoons, so arming on it spread the locked low downward
+almost every hot day. POP is the model's actual expectation that storms fire.
 """
 
 from __future__ import annotations
 
 from datetime import date, datetime
 
-from config import (CONVECTIVE_CAPE_MIN, CONVECTIVE_POP_MIN,
-                    CONVECTIVE_UPSTREAM_UGC)
+from config import (CONVECTIVE_POP_FULL, CONVECTIVE_POP_MIN, CONVECTIVE_SIGMA,
+                    CONVECTIVE_SIGMA_MIN, CONVECTIVE_UPSTREAM_UGC)
 from sources import nws_alerts, open_meteo_models
 
 UPSTREAM_UGC = frozenset(CONVECTIVE_UPSTREAM_UGC)
 _SEVERE = "Severe Thunderstorm Warning"
 
 
-def _point_triggered(pop, cape, pop_min=CONVECTIVE_POP_MIN,
-                     cape_min=CONVECTIVE_CAPE_MIN) -> bool:
-    """True when remaining-hours POP or CAPE clears its arming threshold."""
-    return ((pop is not None and pop >= pop_min)
-            or (cape is not None and cape >= cape_min))
+def _point_triggered(pop, pop_min=CONVECTIVE_POP_MIN) -> bool:
+    """True when the remaining-hours precip probability clears the arming
+    threshold. CAPE is deliberately not a trigger (see module docstring)."""
+    return pop is not None and pop >= pop_min
+
+
+def _point_sigma(pop, pop_min=CONVECTIVE_POP_MIN, pop_full=CONVECTIVE_POP_FULL,
+                 lo=CONVECTIVE_SIGMA_MIN, hi=CONVECTIVE_SIGMA) -> float:
+    """Downside sigma the point POP warrants: 0 below the arming threshold,
+    ramping linearly from `lo` at pop_min to the full `hi` at/above pop_full."""
+    if not _point_triggered(pop, pop_min):
+        return 0.0
+    frac = min(1.0, (pop - pop_min) / max(pop_full - pop_min, 1e-9))
+    return lo + frac * (hi - lo)
 
 
 def _upstream_triggered(alerts: dict, zones=UPSTREAM_UGC) -> bool:
@@ -47,21 +61,26 @@ def risk_label(low_pred: dict) -> str | None:
     return None
 
 
-def convective_risk(day: date, now: datetime) -> bool:
-    """True if evening convection could push today's low lower before midnight.
+def convective_sigma(day: date, now: datetime) -> float:
+    """One-sided downside sigma floor for today's low (0.0 = no convective risk).
 
-    Best-effort: each signal is guarded independently, and any data/network
-    failure contributes no risk (returns without raising). Point POP/CAPE OR an
-    upstream severe-thunderstorm warning is sufficient."""
-    try:
-        pop, cape = open_meteo_models.convective_window(day, now)
-        if _point_triggered(pop, cape):
-            return True
-    except Exception:
-        pass
+    An active upstream severe-thunderstorm warning is direct evidence of storms
+    on the approach, so it commands the full CONVECTIVE_SIGMA. Otherwise the floor
+    scales with the point precip probability (see `_point_sigma`). Best-effort:
+    each signal is guarded independently, and any data/network failure simply
+    contributes no downside (never raises)."""
     try:
         if _upstream_triggered(nws_alerts.fetch_active()):
-            return True
+            return CONVECTIVE_SIGMA
     except Exception:
         pass
-    return False
+    try:
+        pop, _cape = open_meteo_models.convective_window(day, now)
+        return _point_sigma(pop)
+    except Exception:
+        return 0.0
+
+
+def convective_risk(day: date, now: datetime) -> bool:
+    """Back-compat boolean: True when any convective downside applies."""
+    return convective_sigma(day, now) > 0.0
