@@ -407,7 +407,7 @@ def _bias_correction() -> dict:
     """
     try:
         import scoring
-        return {"by_lead": scoring.per_lead_bias()}
+        return {"by_lead": scoring.per_lead_bias(basis="cli")}
     except Exception:
         return {"by_lead": {}}
 
@@ -496,7 +496,7 @@ def compute() -> dict:
     # have settled (lazy import avoids a cycle: scoring -> backtest -> calibration).
     try:
         import scoring
-        by_lead = scoring.per_lead_sigma()
+        by_lead = scoring.per_lead_sigma(basis="cli")
         if by_lead:
             sigma["by_lead"] = by_lead
     except Exception:

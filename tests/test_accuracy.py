@@ -371,12 +371,28 @@ def test_per_lead_bias_forwards_basis_and_today(monkeypatch):
     assert seen == {"today": date(2026, 6, 20), "basis": "cli"}
 
 
+def test_per_lead_sigma_forwards_basis(monkeypatch):
+    seen = {}
+    def fake_score(today=None, basis="hourly"):
+        seen["basis"] = basis
+        return {"by_lead": {}}
+    monkeypatch.setattr(scoring, "score", fake_score)
+    scoring.per_lead_sigma(basis="cli")
+    assert seen["basis"] == "cli"
+
+
 def test_bias_correction_block_wraps_scoring(monkeypatch):
     import calibration
-    monkeypatch.setattr(scoring, "per_lead_bias", lambda: {24: {"high": -1.1}})
+    seen = {}
+    def fake_bias(basis="hourly"):
+        seen["basis"] = basis
+        return {24: {"high": -1.1}}
+    monkeypatch.setattr(scoring, "per_lead_bias", fake_bias)
     assert calibration._bias_correction() == {"by_lead": {24: {"high": -1.1}}}
+    # the Kalshi/CLI site means calibration must source CLI-basis self-scoring
+    assert seen["basis"] == "cli"
     # scoring failure must degrade to an empty (no-op) block, never raise
-    def boom():
+    def boom(basis="hourly"):
         raise RuntimeError("scoring down")
     monkeypatch.setattr(scoring, "per_lead_bias", boom)
     assert calibration._bias_correction() == {"by_lead": {}}

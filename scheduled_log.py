@@ -24,9 +24,9 @@ from sources import kalshi
 
 def main() -> None:
     calib = calibration.get(refresh=True)
-    hourly_snap = model.snapshot(calib)                              # hourly basis
-    forecast_log.record(hourly_snap)
-    consensus_log.record(hourly_snap)
+    # The live site is Kalshi/CLI-only — log just the CLI snapshot. The hourly
+    # (Robinhood) basis is retired from the site, so the scheduler no longer
+    # grows an hourly cohort. (model.snapshot's hourly mode stays available.)
     off = (calib or {}).get("settlement_offset")
     cli_snap = model.snapshot(calib, settle_offset=off, continuous_obs=True)
     # Attach the live Kalshi market's implied forecast to the CLI snapshot, so the
@@ -50,8 +50,7 @@ def main() -> None:
         print(f"settlement recording skipped: {e}")
         s = len(settlements.load(settlements._PATH))
     n = len(forecast_log.load(forecast_log._PATH))
-    print(f"logged hourly+cli snapshots; log now holds {n} records, "
-          f"{s} settlements")
+    print(f"logged cli snapshot; log now holds {n} records, {s} settlements")
 
 
 if __name__ == "__main__":

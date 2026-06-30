@@ -178,15 +178,17 @@ def market_accuracy(today: date | None = None) -> dict:
     return out
 
 
-def per_lead_sigma(min_days: int = MIN_LEAD_DAYS, today: date | None = None) -> dict:
+def per_lead_sigma(min_days: int = MIN_LEAD_DAYS, today: date | None = None,
+                   basis: str = "hourly") -> dict:
     """{lead_bucket: {variable: sigma}} for buckets with enough settled days.
 
     Calibration uses this to override the interim inflation factor once the
     forward log can speak for itself. Buckets below `min_days` are omitted, so
-    the model keeps falling back to the static inflation for those.
+    the model keeps falling back to the static inflation for those. `basis`
+    selects which settlement cohort to score against (the live site is CLI).
     """
     out: dict[int, dict[str, float]] = {}
-    for bucket, vars_ in score(today, basis="hourly").get("by_lead", {}).items():
+    for bucket, vars_ in score(today, basis=basis).get("by_lead", {}).items():
         for var, stats in vars_.items():
             if stats["n"] >= min_days and stats.get("sigma") is not None:
                 out.setdefault(int(bucket), {})[var] = stats["sigma"]

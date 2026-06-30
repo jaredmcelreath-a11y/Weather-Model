@@ -192,7 +192,9 @@ def test_backtest_cli_uses_cli_truth_and_applies_offset(monkeypatch):
     assert cli_no["high"]["mae"] == 1.0     # consensus 90 vs cli 91 -> off by 1
 
 
-def test_scheduled_log_records_both_bases(monkeypatch):
+def test_scheduled_log_records_cli_only(monkeypatch):
+    """The live site is Kalshi/CLI-only, so the scheduler logs the CLI snapshot
+    and no longer grows an hourly (Robinhood) cohort."""
     import scheduled_log
     import model
 
@@ -208,8 +210,9 @@ def test_scheduled_log_records_both_bases(monkeypatch):
 
     scheduled_log.main()
 
-    assert (None, "hourly") in calls                       # hourly snapshot, no offset
-    assert ({"high": 1.0, "low": 0.0}, "cli") in calls     # offset snapshot, cli basis
+    # only the offset/CLI snapshot is logged; no hourly basis row
+    assert ({"high": 1.0, "low": 0.0}, "cli") in calls
+    assert all(basis == "cli" for _off, basis in calls)
 
 
 def test_settle_offset_std_widens_sigma_without_moving_center():

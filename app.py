@@ -126,7 +126,9 @@ def kalshi_page():
     _page(KALSHI, load_snapshot_kalshi, load_accuracy_kalshi, "cli")
 
 
+# Robinhood (hourly-basis) page retired from the live site — the model is now
+# Kalshi/CLI-only. robinhood_page() and its hourly loaders are kept below,
+# unreferenced, so re-listing it here is a one-line revert if ever needed.
 st.navigation([
     st.Page(kalshi_page, title="Kalshi", icon="📈", default=True),
-    st.Page(robinhood_page, title="Robinhood", icon="🪶"),
 ]).run()
