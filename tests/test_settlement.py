@@ -27,6 +27,41 @@ def test_high_low_within_day():
     assert lo == 78   # 78.4 rounds to 78
 
 
+def _minute_series(values):
+    """values: list of (minute_offset, temp) from midnight -> (times, temps)."""
+    start = datetime(DAY.year, DAY.month, DAY.day, tzinfo=TZ)
+    times = [start + timedelta(minutes=m) for m, _ in values]
+    temps = [t for _, t in values]
+    return times, temps
+
+
+def test_robust_extreme_rejects_lone_spike():
+    # The 5-min feed occasionally reports a single reading a whole degC off. A
+    # genuine peak persists across >=2 readings; a lone spike must be discarded.
+    now = datetime(DAY.year, DAY.month, DAY.day, 16, tzinfo=TZ)
+    vals = [(m, 96.8) for m in range(0, 180, 5)]      # steady 96.8 all afternoon
+    vals[10] = (vals[10][0], 98.6)                     # one spurious 37C spike
+    times, temps = _minute_series(vals)
+
+    raw_max, _ = S.observed_so_far(times, temps, DAY, now)
+    robust_max, _ = S.observed_so_far_robust(times, temps, DAY, now)
+
+    assert raw_max == 98.6           # the naive max takes the spike
+    assert robust_max == 96.8        # the robust max rejects it
+
+
+def test_robust_extreme_keeps_corroborated_peak():
+    # A real peak — seen in 3 consecutive readings — must survive the filter.
+    now = datetime(DAY.year, DAY.month, DAY.day, 16, tzinfo=TZ)
+    vals = [(m, 96.8) for m in range(0, 180, 5)]
+    for i in (10, 11, 12):
+        vals[i] = (vals[i][0], 98.6)                   # a sustained 15-min peak
+    times, temps = _minute_series(vals)
+
+    robust_max, _ = S.observed_so_far_robust(times, temps, DAY, now)
+    assert robust_max == 98.6
+
+
 def test_excludes_other_days():
     # A scorching reading at the next midnight must NOT count for DAY.
     start = datetime(DAY.year, DAY.month, DAY.day, tzinfo=TZ)

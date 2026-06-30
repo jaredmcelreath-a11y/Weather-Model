@@ -297,14 +297,16 @@ def test_continuous_bound_captures_spike():
     base = datetime(day.year, day.month, day.day, tzinfo=TZ)
     ftimes = [base + timedelta(hours=h) for h in range(24)]
     fc = {"det_a": (ftimes, [88 - abs(h - 15) for h in range(24)])}   # forecast high ~88
-    # Hourly obs top out at 88; a 5-minute spike hit 91 (clears the 0.9°F haircut).
+    # Hourly obs top out at 88; a sustained sub-hourly peak hit 91 across several
+    # 5-minute readings (a lone single-sample spike is now rejected as sensor
+    # noise — see test_robust_extreme_rejects_lone_spike).
     ot = [base + timedelta(hours=h) for h in range(17)]
     ov = [88 - abs(h - 14) for h in range(17)]
-    spike_t = ot + [base + timedelta(hours=14, minutes=20)]
-    spike_v = ov + [91.0]
+    spike_t = ot + [base + timedelta(hours=14, minutes=m) for m in (15, 20, 25)]
+    spike_v = ov + [91.0, 91.0, 91.0]
     obs = {"obs": (ot, ov), "obs_continuous": (spike_t, spike_v)}
     out = model.predict_variable(fc, obs, day, "high", now, None)
-    # The continuous spike (91 - 0.9 = 90.1) floors the distribution: no mass below 90.
+    # The corroborated peak (91 - 0.9 = 90.1) floors the distribution: no mass below 90.
     assert model.prob_at_most(out["probabilities"], 89) < 1e-9
     # Without the continuous feed, the 88 hourly bound leaves mass at 88-89.
     out0 = model.predict_variable(fc, {"obs": (ot, ov)}, day, "high", now, None)

@@ -104,6 +104,37 @@ def observed_so_far(times: list[datetime], temps: list[float], day: date,
     return max(vals), min(vals)
 
 
+def _corroborated_extreme(vals: list[float], which: str,
+                          tol: float, min_support: int) -> float:
+    """Most extreme value supported by >= `min_support` readings within `tol`,
+    rejecting a lone sensor spike. Falls back to the raw extreme if nothing
+    clears the support threshold (too few readings to corroborate)."""
+    ordered = sorted(vals, reverse=(which == "max"))
+    for v in ordered:
+        support = (sum(1 for x in vals if x >= v - tol) if which == "max"
+                   else sum(1 for x in vals if x <= v + tol))
+        if support >= min_support:
+            return v
+    return ordered[0]
+
+
+def observed_so_far_robust(times: list[datetime], temps: list[float], day: date,
+                           now: datetime, tol: float = 0.7,
+                           min_support: int = 2
+                           ) -> tuple[float | None, float | None]:
+    """Like `observed_so_far`, but for the sub-hourly continuous feed, which
+    occasionally reports a single reading a whole °C off the real value. An
+    extreme is only trusted when corroborated by >= `min_support` readings within
+    `tol`°F — a genuine peak/trough persists across several 5-min samples, a
+    sensor spike stands alone. `tol`=0.7°F is under one °C step, so it never
+    merges adjacent real °C levels."""
+    vals = _within_day(times, temps, day, upto=now)
+    if not vals:
+        return None, None
+    return (_corroborated_extreme(vals, "max", tol, min_support),
+            _corroborated_extreme(vals, "min", tol, min_support))
+
+
 def bin_for_temp(temp: float) -> str:
     """Label of the bin a (continuous) temperature settles into after rounding."""
     t = round_half_up(temp)

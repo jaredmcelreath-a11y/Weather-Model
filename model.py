@@ -23,7 +23,8 @@ from zoneinfo import ZoneInfo
 from config import (BIN_HIGH, BIN_LOW, CALM_WIND_MAX, CLEAR_CLOUD_MAX,
                     LEAD_SIGMA_INFLATION, PEAK_LOCK_DROP,
                     TIMEZONE, bin_labels, lead_bucket)
-from settlement import covers_extreme, local_day_bounds, observed_so_far
+from settlement import (covers_extreme, local_day_bounds, observed_so_far,
+                        observed_so_far_robust)
 from convective import convective_sigma
 from sources import (open_meteo_ensemble, open_meteo_models, nws_forecast,
                      nws_observations, iem_mos)
@@ -357,7 +358,9 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     observed_cont = None  # raw sub-hourly extreme (CLI/Kalshi basis), for display
     cont_times, cont_temps = obs_series.get("obs_continuous", (None, None))
     if cont_times and now is not None:
-        c_max, c_min = observed_so_far(cont_times, cont_temps, day, now)
+        # Spike-robust: the 5-min feed can report a lone reading a whole °C off
+        # (a false high/low), which would wrongly tighten the bound and anchor.
+        c_max, c_min = observed_so_far_robust(cont_times, cont_temps, day, now)
         if variable == "high" and c_max is not None:
             observed_cont = c_max
             cand = c_max - 0.9
@@ -401,6 +404,17 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     # so consensus/bins move but still-possible bins are not zeroed. A constant
     # shift leaves sigma and locked_ratio unchanged. None => Robinhood, no shift.
     settle_shift, settle_gap_std = _offset_bucket(settle_offset, variable, day, calib)
+    # Locked + continuous extreme observed: the CLI settlement value is directly
+    # measured. observed_cont already includes any real sub-hourly spike the
+    # average offset is meant to approximate, so anchor on the OBSERVED gap
+    # (continuous − hourly) and drop the gap-std widening — instead of layering
+    # the average offset and its spread on top, which double-counts and (for the
+    # high) pushes mass above the realized peak into impossible bins. Applies to
+    # high and low alike. Pure-forecast / unlocked days keep the average offset.
+    if settle_offset is not None and locked and observed_cont is not None \
+            and observed is not None:
+        settle_shift = observed_cont - observed
+        settle_gap_std = 0.0
     if settle_shift:
         samples = [s + settle_shift for s in samples]
         fullday = [s + settle_shift for s in fullday]
@@ -436,13 +450,9 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     # The CLI settlement offset is an average; its gap has irreducible spread
     # (std from calibration) we can't observe live, so widen sigma by it in
     # quadrature whenever the offset is applied. Center (consensus) is unchanged.
-    # EXCEPTION — a locked low whose continuous extreme is already observed: there
-    # we've measured today's CLI-vs-hourly gap directly, so the average-gap spread
-    # is no longer unknown. Widening it would double-hedge and smear a settled low
-    # across the rounding boundary, printing fake edges vs Kalshi. Low-only: the
-    # high's gap is larger and not pinned by the realized morning extreme.
-    gap_observed = variable == "low" and locked and observed_cont is not None
-    if settle_gap_std and not gap_observed:
+    # The locked + continuous-observed case has already zeroed settle_gap_std
+    # above (the gap is measured, not estimated), so it skips this widening.
+    if settle_gap_std:
         sigma = math.hypot(sigma, settle_gap_std)
 
     # Convective downside humility: on a storm-risk day the smooth fields can't

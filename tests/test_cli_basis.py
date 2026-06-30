@@ -245,7 +245,7 @@ _LOCKED_HIGH = [95 - abs(h - 13) for h in range(18)]  # peak 95 @13:00, fallen t
 _LOW_OFF = {"low": -0.3, "low_std": 0.46, "high": 0.0, "high_std": 0.0}
 
 
-def test_locked_low_skips_gap_widening_when_continuous_observed():
+def test_locked_low_anchors_on_continuous_and_skips_widening():
     day = date(2030, 7, 1)
     series = _series(day)
     now = datetime(day.year, day.month, day.day, 16, tzinfo=_TZ)
@@ -254,10 +254,15 @@ def test_locked_low_skips_gap_widening_when_continuous_observed():
                                        day, "low", now, None, _LOW_OFF)
     no_cont = model.predict_variable(series, _obs(day, _LOCKED_LOW, False),
                                      day, "low", now, None, _LOW_OFF)
+    no_offset = model.predict_variable(series, _obs(day, _LOCKED_LOW, True),
+                                       day, "low", now, None, None)
 
     assert with_cont["peak_locked"] and no_cont["peak_locked"]
-    assert with_cont["consensus"] == no_cont["consensus"]      # center unchanged
-    # Observed gap -> no widening -> tighter sigma than the unknown-gap path.
+    # Continuous mirrors hourly here -> the measured CLI gap is 0, so the anchored
+    # center equals the no-offset (hourly) center, NOT the average-offset center.
+    assert with_cont["consensus"] == no_offset["consensus"]
+    assert with_cont["consensus"] != no_cont["consensus"]
+    # Gap observed -> no widening -> tighter sigma than the unknown-gap path.
     assert with_cont["sigma_used"] < no_cont["sigma_used"]
 
 
@@ -275,18 +280,37 @@ def test_unlocked_low_still_widens_with_continuous():
     assert wide["sigma_used"] > narrow["sigma_used"]
 
 
-def test_locked_high_still_widens_with_continuous():
-    # The skip is scoped to the low; a locked high keeps the gap-std widening.
+def test_locked_high_anchors_on_continuous_and_skips_widening():
+    # Extended to the high: a locked high with the continuous peak observed anchors
+    # on the measured value and drops the average offset + gap-std widening.
     day = date(2030, 7, 1)
     series = _series(day)
     now = datetime(day.year, day.month, day.day, 17, tzinfo=_TZ)
     off = {"high": 1.0, "high_std": 2.0, "low": 0.0, "low_std": 0.0}
-    wide = model.predict_variable(series, _obs(day, _LOCKED_HIGH, True), day,
-                                  "high", now, None, off)
-    narrow = model.predict_variable(series, _obs(day, _LOCKED_HIGH, True), day,
-                                    "high", now, None, {**off, "high_std": 0.0})
-    assert wide["peak_locked"]
-    assert wide["sigma_used"] > narrow["sigma_used"]
+    with_cont = model.predict_variable(series, _obs(day, _LOCKED_HIGH, True), day,
+                                       "high", now, None, off)
+    no_cont = model.predict_variable(series, _obs(day, _LOCKED_HIGH, False), day,
+                                     "high", now, None, off)
+    assert with_cont["peak_locked"] and no_cont["peak_locked"]
+    # Anchored (gap 0, no widening) vs the average +1.0 offset + gap-std widening
+    # when the continuous feed is absent.
+    assert with_cont["sigma_used"] < no_cont["sigma_used"]
+    assert with_cont["consensus"] < no_cont["consensus"]
+
+
+def test_locked_high_no_mass_above_realized_peak():
+    # The user-reported bug generalized: a locked high must not put real mass
+    # above the peak it already realized (temps don't re-climb after the peak).
+    day = date(2030, 7, 1)
+    series = _series(day)
+    now = datetime(day.year, day.month, day.day, 17, tzinfo=_TZ)
+    off = {"high": 1.0, "high_std": 2.0, "low": 0.0, "low_std": 0.0}
+    hi = model.predict_variable(series, _obs(day, _LOCKED_HIGH, True), day,
+                                "high", now, None, off)   # peak realized at 95
+    # 2°F above the realized peak collapses from ~34% (old offset+widening) to the
+    # sigma-floor tail; 3°F above is effectively impossible.
+    assert model.prob_at_least(hi["probabilities"], 97) < 0.05
+    assert model.prob_at_least(hi["probabilities"], 98) < 0.005
 
 
 def test_settle_offset_zero_std_matches_no_std():
