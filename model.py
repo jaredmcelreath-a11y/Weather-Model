@@ -547,18 +547,21 @@ def prob_for_strike(probs: dict, strike_type: str, floor, cap) -> float:
     return prob_at_most(probs, cap) - prob_at_most(probs, floor - 1)
 
 
-def gather_series(forecast_days: int = 2, continuous_obs: bool = False):
+def gather_series(forecast_days: int = 2, continuous_obs: bool = False,
+                  now: datetime | None = None):
     """All forecast series merged into one dict, plus the obs series.
 
     `continuous_obs` adds the sub-hourly observation feed (for the CLI basis's
-    spike-aware hard bound); the default hourly obs is always present.
+    spike-aware hard bound); the default hourly obs is always present. `now` ties
+    the observation window to the caller's clock so the full settlement day is in
+    view (and the two agree across a midnight rollover).
     """
     series = {}
     series.update(open_meteo_ensemble.fetch(forecast_days))
     series.update(open_meteo_models.fetch(forecast_days))
     series.update(nws_forecast.fetch())
     series.update(iem_mos.fetch(forecast_days))
-    obs = nws_observations.fetch(continuous=continuous_obs)
+    obs = nws_observations.fetch(continuous=continuous_obs, now=now)
     return series, obs
 
 
@@ -607,7 +610,7 @@ def snapshot(calib: dict | None = None, settle_offset=None,
     now = datetime.now(TZ)
     today = now.date()
     tomorrow = today + timedelta(days=1)
-    series, obs = gather_series(forecast_days=2, continuous_obs=continuous_obs)
+    series, obs = gather_series(forecast_days=2, continuous_obs=continuous_obs, now=now)
 
     obs_times, obs_temps = obs.get("obs", ([], []))
     current = None

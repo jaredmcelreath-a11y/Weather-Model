@@ -7,26 +7,35 @@ today's high, the observed min-so-far a hard ceiling on today's low.
 from __future__ import annotations
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
-from config import STATION_ID
+from config import STATION_ID, TIMEZONE
 from sources.common import c_to_f, get_json, parse_local_times, to_hourly
 
 OBS_URL = f"https://api.weather.gov/stations/{STATION_ID}/observations"
+TZ = ZoneInfo(TIMEZONE)
 
 
-def fetch(limit: int = 200,
-          continuous: bool = False) -> dict[str, tuple[list[datetime], list[float]]]:
+def fetch(limit: int = 500, continuous: bool = False, now: datetime | None = None
+          ) -> dict[str, tuple[list[datetime], list[float]]]:
     """Return {'obs': (times, temps_f)} sorted ascending in time.
 
-    `limit` of ~200 METARs comfortably covers the last couple of days,
-    including the overnight low.
+    The feed is sub-hourly (~13 readings/hour), so a fixed count spans far less
+    time than it looks: a 200-cap covers only ~15 hours, which from a late-evening
+    capture starts *after* the early-morning low and makes the same-day low anchor
+    to the evening cooldown (printing several degrees warm). So we instead bound
+    the window by `start` = local midnight of `now`'s day, guaranteeing the whole
+    settlement day — including the morning minimum — is always in view regardless
+    of capture time. `limit` is just a generous ceiling on a single day's readings.
 
     With `continuous=True`, also return `'obs_continuous'`: the full sub-hourly
     feed (5-minute readings, not just the routine :53 METAR) before the hourly
     reduction. The CLI/Kalshi basis uses it to catch a brief spike between routine
     reports; the default hourly basis (Robinhood) ignores it.
     """
-    data = get_json(OBS_URL, {"limit": limit}, ttl=300)
+    now = now or datetime.now(TZ)
+    start = datetime(now.year, now.month, now.day, tzinfo=TZ)  # local midnight
+    data = get_json(OBS_URL, {"limit": limit, "start": start.isoformat()}, ttl=300)
     pairs = []
     for feature in data["features"]:
         props = feature["properties"]
