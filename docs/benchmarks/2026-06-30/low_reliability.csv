@@ -1,0 +1,21 @@
+﻿,predicted,color -- streamlit-generated,value -- streamlit-generated
+0,0.051,observed,0.1
+1,0.154,observed,0.121
+2,0.237,observed,0.133
+3,0.344,observed,0.105
+4,0.433,observed,0.28
+5,0.535,observed,0.714
+6,0.65,observed,0.5
+7,0.766,observed,0.757
+8,0.856,observed,0.96
+9,0.959,observed,0.967
+10,0.051,ideal (perfect),0.051
+11,0.154,ideal (perfect),0.154
+12,0.237,ideal (perfect),0.237
+13,0.344,ideal (perfect),0.344
+14,0.433,ideal (perfect),0.433
+15,0.535,ideal (perfect),0.535
+16,0.65,ideal (perfect),0.65
+17,0.766,ideal (perfect),0.766
+18,0.856,ideal (perfect),0.856
+19,0.959,ideal (perfect),0.959

@@ -1,0 +1,3 @@
+﻿variable,days,exact bin,within ±1°F,Brier
+high,17,29%,59%,0.751
+low,17,35%,53%,0.935

@@ -1,0 +1,5 @@
+﻿lead,variable,days,exact bin,within ±1°F
+same-day,high,9,56%,100%
+same-day,low,9,44%,67%
+day-ahead,high,8,0%,12%
+day-ahead,low,8,25%,38%
