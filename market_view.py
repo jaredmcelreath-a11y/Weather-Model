@@ -58,14 +58,14 @@ def _chart_window(day_iso, variable, is_today):
     Only windowed for *today* (a future day's chart is all pre-day lead-up, so
     clipping it to the target day would empty it). The high forms midday, so we
     show 8am-10pm of the day and drop the overnight/previous-day clutter; the low
-    forms near dawn, so we show last night (from 10pm) through 10am.
+    forms near dawn, so we show last night (from 8pm) through 10am.
     """
     if not is_today:
         return None
     d = date.fromisoformat(day_iso)
     if variable == "high":
         return (datetime.combine(d, time(8, 0)), datetime.combine(d, time(22, 0)))
-    return (datetime.combine(d - timedelta(days=1), time(22, 0)),
+    return (datetime.combine(d - timedelta(days=1), time(20, 0)),
             datetime.combine(d, time(10, 0)))
 
 
