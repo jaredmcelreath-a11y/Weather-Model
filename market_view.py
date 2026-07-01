@@ -55,13 +55,13 @@ def _consensus_history():
 def _chart_window(day_iso, variable, is_today):
     """(start, end) naive datetimes the through-the-day chart should span, or None.
 
-    Only windowed for *today* (a future day's chart is all pre-day lead-up, so
-    clipping it to the target day would empty it). The high forms midday, so we
-    show 8am-10pm of the day and drop the overnight/previous-day clutter; the low
-    forms near dawn, so we show last night (from 8pm) through 10am.
+    Pinned to the target day's active window for every day, not just today: the
+    high forms midday, so we show 8am-10pm of the day and drop the overnight/
+    previous-day clutter; the low forms near dawn, so we show last night (from
+    8pm) through 10am. On a future day the captures accumulate as pre-day lead-up,
+    so the chart stays empty until the window opens (e.g. the tomorrow low starts
+    populating at 8pm tonight).
     """
-    if not is_today:
-        return None
     d = date.fromisoformat(day_iso)
     if variable == "high":
         return (datetime.combine(d, time(8, 0)), datetime.combine(d, time(22, 0)))
@@ -73,9 +73,9 @@ def consensus_history_df(rows, day_iso, variable, basis, include_temp,
                          is_today=False):
     """Time-indexed df of consensus (+ live temp / Kalshi line) for one series.
 
-    On today's chart the series is clipped to the variable's active window (see
-    `_chart_window`) so the previous day and dead overnight hours don't waste
-    space. None when fewer than two points fall inside the window."""
+    The series is clipped to the variable's active window (see `_chart_window`)
+    so the previous day and dead overnight hours don't waste space. None when
+    fewer than two points fall inside the window."""
     window = _chart_window(day_iso, variable, is_today)
     pts = [r for r in rows
            if r.get("target_date") == day_iso and r.get("variable") == variable
@@ -111,9 +111,9 @@ def consensus_chart(hist, variable, day_iso=None, is_today=False, view_window=No
     fixed axis; mark every sample with a visible dot; and show
     one combined, swatch-free readout only while hovering a dot (nothing off it).
 
-    On today's chart the x-axis is pinned to the variable's active window (see
-    `_chart_window`) so it spans the full daytime/overnight span from the start
-    rather than stretching to fit whatever has accumulated so far.
+    The x-axis is pinned to the variable's active window (see `_chart_window`)
+    so it spans the full daytime/overnight span from the start rather than
+    stretching to fit whatever has accumulated so far.
     """
     # `view_window` (from the zoom slider) pins the x-axis to a user-chosen span
     # and overrides today's default active-window pinning.
