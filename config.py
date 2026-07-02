@@ -97,6 +97,10 @@ CALIBRATION_WINDOW_DAYS = 45
 # won't false-lock. ~2°F clears observation/quantization noise comfortably.
 PEAK_LOCK_DROP = 2.0
 
+# The low locks early once past sunrise and risen this many °F above the running
+# min — the dawn minimum is behind us; the margin clears obs/rounding jitter.
+LOW_LOCK_RISE = 0.8
+
 # --- Radiational-cooling predictor (overnight low) ---
 # On clear, calm nights the surface radiates heat away efficiently and the low
 # undershoots what the models say. We flag a night as clear+calm when the mean

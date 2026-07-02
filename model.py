@@ -21,11 +21,12 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from config import (BIN_HIGH, BIN_LOW, CALM_WIND_MAX, CLEAR_CLOUD_MAX,
-                    LEAD_SIGMA_INFLATION, PEAK_LOCK_DROP,
+                    LEAD_SIGMA_INFLATION, LOW_LOCK_RISE, PEAK_LOCK_DROP,
                     TIMEZONE, bin_labels, lead_bucket)
 from settlement import (covers_extreme, local_day_bounds, observed_so_far,
                         observed_so_far_robust)
 from convective import convective_sigma
+import solar
 from sources import (open_meteo_ensemble, open_meteo_models, nws_forecast,
                      nws_observations, iem_mos)
 
@@ -96,7 +97,18 @@ def _extreme_locked(times, temps, day, variable, now, drop=PEAK_LOCK_DROP) -> bo
         # The peak must postdate the trough; an earlier max is just overnight
         # heat ahead of the morning minimum, not a passed daytime peak.
         return vals.index(max(vals)) > vals.index(min(vals))
-    return (cur - min(vals)) >= drop
+    risen = cur - min(vals)
+    if risen >= drop:
+        return True
+    # Early lock: past sunrise the dawn minimum is behind us; a small confirming
+    # rise (clears obs + rounding jitter) means we're off the trough. The margin
+    # naturally waits for a min that lands shortly after sunrise, since temps are
+    # still falling toward it until then (risen <= 0).
+    try:
+        sr = solar.sunrise(day)
+    except Exception:
+        return False
+    return now.astimezone(TZ) >= sr and risen >= LOW_LOCK_RISE
 
 
 def _member_extreme(times, temps, day, variable, now, observed, obs_now=None,
