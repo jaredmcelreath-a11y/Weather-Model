@@ -486,6 +486,9 @@ def active_corrections(calib: dict | None) -> list[str]:
         label = names.get(str(bucket), f"{bucket}h")
         for var, v in sl[bucket].items():
             out.append(f"{label} {var} σ={v:.1f}")
+    wl = ((calib or {}).get("bias_correction") or {}).get("warm_low") or {}
+    if wl:
+        out.append(f"warm low (>={wl['threshold']}°F) {-wl['bias']:+.1f}°F")
     return out
 
 

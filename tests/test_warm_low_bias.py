@@ -124,3 +124,17 @@ def test_model_warm_low_and_cooling_stack(monkeypatch):
                                  None, calib)
     # cooling -0.2 then warm_low +0.5: 78 - 0.2 + 0.5 = 78.3
     assert out["consensus"] == 78.3
+
+
+import calibration
+
+
+def test_active_corrections_lists_warm_low():
+    calib = {"bias_correction": {"warm_low": {"threshold": 76, "bias": -0.4}}}
+    lines = calibration.active_corrections(calib)
+    # shown as applied (warming): -(-0.4) = +0.4
+    assert any("warm low" in s and "76" in s and "+0.4" in s for s in lines)
+
+
+def test_active_corrections_omits_absent_warm_low():
+    assert calibration.active_corrections({"bias_correction": {}}) == []
