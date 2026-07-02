@@ -25,7 +25,8 @@ import os
 import time
 from datetime import date, datetime, timedelta
 
-from config import CALIBRATION_WINDOW_DAYS, CALM_WIND_MAX, CLEAR_CLOUD_MAX
+from config import (CALIBRATION_WINDOW_DAYS, CALM_WIND_MAX, CLEAR_CLOUD_MAX,
+                    WARM_LOW_THRESHOLD)
 from sources import open_meteo_ensemble, open_meteo_models, station_history
 from settlement import day_high_low
 
@@ -142,6 +143,38 @@ def _sep_se(gaps_cc: list[float], gaps_ot: list[float]) -> float:
         sd = (sum((x - m) ** 2 for x in g) / len(g)) ** 0.5
         return math.hypot(sd, _QUANT_PRIOR) / math.sqrt(len(g))
     return math.hypot(se(gaps_cc), se(gaps_ot))
+
+
+def _warm_low_bias(fcst: dict, actual: dict, overall_low_bias: float,
+                   threshold: int = WARM_LOW_THRESHOLD) -> dict:
+    """Extra cold lean on warm nights, beyond the flat low bias.
+
+    On warm nights (consensus forecast low >= threshold) the low runs cold; warm
+    and cool leans cancel so the flat bias misses it. Measured over the
+    calibration window as (mean warm-night residual) - overall_low_bias, so it is
+    orthogonal to the flat bias the model already removes. Gated with the same
+    constants as the lead-time loop: >= MIN_LEAD_DAYS warm nights, significance
+    |x| > SIG_Z*sigma/sqrt(n), shrinkage n/(n+SHRINK_K). Returns
+    {"threshold": t, "bias": v} with v < 0 (model cold => model subtracts it,
+    warming the low), or {} when the gate fails.
+    """
+    from scoring import MIN_LEAD_DAYS, SHRINK_K, SIG_Z
+    warm = []
+    for day, ext in fcst.items():
+        if day not in actual:
+            continue
+        consensus = sum(ext["low"]) / len(ext["low"])
+        if consensus >= threshold:
+            warm.append(consensus - actual[day][1])
+    n = len(warm)
+    if n < MIN_LEAD_DAYS:
+        return {}
+    _, sigma = _mean_std(warm)
+    warm_extra = sum(warm) / n - overall_low_bias
+    if abs(warm_extra) <= SIG_Z * sigma / math.sqrt(n):
+        return {}
+    return {"threshold": threshold,
+            "bias": round(warm_extra * n / (n + SHRINK_K), 2)}
 
 
 def _settlement_offset(cli: dict, hourly: dict) -> dict:
@@ -561,6 +594,11 @@ def compute() -> dict:
     except Exception:
         weights = {"high": {}, "low": {}}
 
+    bias_correction = _bias_correction()
+    _wl = _warm_low_bias(fcst, actual, bias.get("low", 0.0))
+    if _wl:
+        bias_correction["warm_low"] = _wl
+
     return {
         "computed": datetime.now().isoformat(timespec="seconds"),
         "window_days": CALIBRATION_WINDOW_DAYS,
@@ -576,7 +614,7 @@ def compute() -> dict:
         "weights": weights,
         "cooling": cooling,
         "settlement_offset": settlement_offset,
-        "bias_correction": _bias_correction(),
+        "bias_correction": bias_correction,
     }
 
 

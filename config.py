@@ -107,6 +107,10 @@ CLEAR_CLOUD_MAX = 30      # % mean cloud cover
 CALM_WIND_MAX = 10        # km/h mean 10m wind
 NIGHT_WINDOW_HOURS = (0, 8)
 
+# Forecast low (°F) at/above which the warm-night low-bias correction applies.
+# On warm nights the consensus low runs cold in a way the flat bias misses.
+WARM_LOW_THRESHOLD = 76
+
 # --- Convective downside humility (daily low) ---
 # Smooth gridded fields can't see a thunderstorm downdraft, so on a storm day the
 # model locks to the morning low and over-reports confidence. When evening
