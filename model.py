@@ -398,6 +398,12 @@ def predict_variable(series, obs_series, day, variable, now, calib,
                 samples = [s - off for s in samples]
                 cooling_applied = True
 
+    # Warm-night regime for the low bias correction, judged on the forecast
+    # consensus BEFORE the CLI settle-shift so the shift can't blur the threshold.
+    # Uses the same weighted mean the reported consensus uses.
+    regime_low = (sum(w * s for w, s in zip(weights, samples)) / (sum(weights) or 1.0)) \
+        if samples else None
+
     # Kalshi settlement basis: shift the forecast distribution to the CLI basis
     # by a calibrated per-variable offset. Applied to the forecast samples only,
     # NOT the hard observed bound (the offset is an average gap, not a floor) —
@@ -446,6 +452,14 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     bc = (bias_corr.get(str(bucket)) or bias_corr.get(bucket) or {}).get(variable)
     if bc and obs_now is None:
         samples = [s - bc for s in samples]
+
+    # Warm-night low de-bias: on warm forecast nights the consensus runs cold in
+    # a way the flat bias misses (warm/cool leans cancel). Add it back. Pure-
+    # forecast low path only; regime judged pre-settle-shift (see regime_low).
+    wl = (calib or {}).get("bias_correction", {}).get("warm_low") or {}
+    if (wl and variable == "low" and obs_now is None
+            and regime_low is not None and regime_low >= wl["threshold"]):
+        samples = [s - wl["bias"] for s in samples]
 
     # The CLI settlement offset is an average; its gap has irreducible spread
     # (std from calibration) we can't observe live, so widen sigma by it in

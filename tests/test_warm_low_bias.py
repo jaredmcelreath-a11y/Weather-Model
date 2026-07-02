@@ -45,3 +45,82 @@ def test_none_when_warm_lean_insignificant():
     pairs = [(78.0, 81.2), (78.0, 75.0)] * 6 + [(70.0, 70.0)] * 15
     fcst, actual = _mk(pairs)
     assert _warm_low_bias(fcst, actual, 0.0, threshold=76) == {}
+
+
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+import model
+from config import TIMEZONE
+
+_TZ = ZoneInfo(TIMEZONE)
+
+_CALIB_WARM = {
+    "bias": {"deterministic": {"high": 0.0, "low": 0.0}},
+    "sigma": {"high": 2.0, "low": 2.0},
+    "bias_correction": {"warm_low": {"threshold": 76, "bias": -0.5}},
+}
+
+
+def _member(day, peak):
+    base = datetime(day.year, day.month, day.day, tzinfo=_TZ)
+    times = [base + timedelta(hours=h) for h in range(24)]
+    temps = [peak - abs(h - 15) for h in range(24)]   # max=peak, min=peak-15
+    return times, temps
+
+
+def _series(day, peaks=(92.0, 94.0)):
+    return {f"det_{i}": _member(day, p) for i, p in enumerate(peaks)}
+
+
+def test_model_warms_low_on_warm_night():
+    day = date(2030, 7, 1)
+    out = model.predict_variable(_series(day), {"obs": ([], [])}, day, "low",
+                                 None, _CALIB_WARM)
+    # lows 77,79 -> consensus 78 >= 76 -> subtract -0.5 -> +0.5 -> 78.5
+    assert out["consensus"] == 78.5
+
+
+def test_model_leaves_cool_night_low():
+    day = date(2030, 7, 1)
+    out = model.predict_variable(_series(day, peaks=(88.0, 90.0)), {"obs": ([], [])},
+                                 day, "low", None, _CALIB_WARM)
+    # lows 73,75 -> consensus 74 < 76 -> no correction
+    assert out["consensus"] == 74.0
+
+
+def test_model_never_touches_high():
+    day = date(2030, 7, 1)
+    out = model.predict_variable(_series(day), {"obs": ([], [])}, day, "high",
+                                 None, _CALIB_WARM)
+    assert out["consensus"] == 93.0            # mean(92,94), untouched
+
+
+def test_model_skips_warm_low_when_obs_anchored():
+    day = date.today()
+    base = datetime(day.year, day.month, day.day, tzinfo=_TZ)
+    now = base + timedelta(hours=8)
+    obs_times = [base + timedelta(hours=h) for h in range(9)]
+    obs_temps = [82.0 - h * 0.4 for h in range(9)]      # warm morning, min ~78.8
+    obs = {"obs": (obs_times, obs_temps)}
+    warm = model.predict_variable(_series(day), obs, day, "low", now, _CALIB_WARM)
+    plain_calib = dict(_CALIB_WARM, bias_correction={})
+    plain = model.predict_variable(_series(day), obs, day, "low", now, plain_calib)
+    # obs anchor the day -> correction skipped -> identical to no-knob run
+    assert warm["consensus"] == plain["consensus"]
+
+
+def test_model_warm_low_and_cooling_stack(monkeypatch):
+    day = date(2030, 7, 1)
+    monkeypatch.setattr(model.open_meteo_models, "night_conditions",
+                        lambda d: (10.0, 5.0))          # clear + calm
+    calib = {
+        "bias": {"deterministic": {"high": 0.0, "low": 0.0}},
+        "sigma": {"high": 2.0, "low": 2.0},
+        "cooling": {"cloud_thresh": 30, "wind_thresh": 10, "low_offset": 0.2},
+        "bias_correction": {"warm_low": {"threshold": 76, "bias": -0.5}},
+    }
+    out = model.predict_variable(_series(day), {"obs": ([], [])}, day, "low",
+                                 None, calib)
+    # cooling -0.2 then warm_low +0.5: 78 - 0.2 + 0.5 = 78.3
+    assert out["consensus"] == 78.3
