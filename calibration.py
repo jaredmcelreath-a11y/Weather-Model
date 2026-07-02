@@ -124,6 +124,26 @@ def _mean_std(xs: list[float]) -> tuple[float, float]:
     return round(m, 2), round(var ** 0.5, 2)
 
 
+# Whole-degree settlements quantize each daily gap to {0, -1}; a bucket's true
+# per-sample noise is at least the rounding noise (uniform over 1 degree ->
+# std 1/sqrt(12)). Floor each bucket's SE by it so a lucky zero-variance bucket
+# cannot drive the separation test's denominator to zero.
+_QUANT_PRIOR = 1.0 / math.sqrt(12)
+
+
+def _sep_se(gaps_cc: list[float], gaps_ot: list[float]) -> float:
+    """Standard error of the difference in bucket means, each bucket's SE
+    floored by the quantization prior. An empty bucket has infinite SE (no
+    separation can be established), which the caller reads as 'do not split'."""
+    def se(g: list[float]) -> float:
+        if not g:
+            return math.inf
+        m = sum(g) / len(g)
+        sd = (sum((x - m) ** 2 for x in g) / len(g)) ** 0.5
+        return math.hypot(sd, _QUANT_PRIOR) / math.sqrt(len(g))
+    return math.hypot(se(gaps_cc), se(gaps_ot))
+
+
 def _settlement_offset(cli: dict, hourly: dict) -> dict:
     """Mean and std of the (CLI - hourly) daily-extreme gap, per variable.
 
@@ -147,17 +167,17 @@ def _settlement_offset(cli: dict, hourly: dict) -> dict:
 
 def _var_bucket(
     gaps_cc: list[float], gaps_ot: list[float],
-    min_nights: int, margin: float, min_sep: float,
+    min_nights: int, margin: float, sep_z: float,
 ) -> tuple[float, float, float, float, bool]:
     """Per-variable bucket means/stds + whether the split is worth keeping.
 
     Returns (cc_mean, ot_mean, cc_std, ot_std, passed). `passed` is True only
     when there are >= min_nights clear/calm nights, the two bucket means differ
-    by at least `min_sep` degrees (so a near-identical split is rejected), AND
-    splitting reduces the mean absolute residual vs a single flat mean by at
-    least `margin`. The separation guard is what makes "buckets too similar"
-    fall back to flat — with real within-bucket noise the residual check alone
-    is not enough.
+    by at least `sep_z` standard errors of their difference (SE floored by the
+    quantization prior, so a separation the {0,-1} rounding could produce by
+    chance is rejected), AND splitting reduces the mean absolute residual vs a
+    single flat mean by at least `margin`. The residual-margin check is now a
+    belt-and-suspenders guard largely subsumed by the significance test.
 
     Requires at least one gap across both buckets; returns a not-passed result
     for an empty input rather than dividing by zero.
@@ -175,8 +195,13 @@ def _var_bucket(
     resid_flat = sum(abs(g - flat) for g in all_gaps) / len(all_gaps)
     resid_cond = (sum(abs(g - cc_raw) for g in gaps_cc)
                   + sum(abs(g - ot_raw) for g in gaps_ot)) / len(all_gaps)
+    # Separation must exceed sampling noise, not a fixed degree floor: with
+    # {0,-1}-quantized gaps a 0.45 gap between two small buckets is easily
+    # produced by rounding. SE_diff carries the quantization prior, so noise-
+    # driven splits are rejected even once counts are high.
+    se_diff = _sep_se(gaps_cc, gaps_ot)
     passed = (n_cc >= min_nights
-              and abs(cc_raw - ot_raw) >= min_sep
+              and abs(cc_raw - ot_raw) >= sep_z * se_diff
               and resid_cond <= resid_flat - margin)
     if not passed:
         # No useful split: fall back to a single flat offset for this variable,
@@ -190,8 +215,8 @@ def _var_bucket(
 
 
 def _conditional_settlement_offset(cli: dict, hourly: dict, cond: dict,
-                                   min_nights: int = 5, margin: float = 0.02,
-                                   min_sep: float = 0.25) -> dict | None:
+                                   min_nights: int = 12, margin: float = 0.02,
+                                   sep_z: float = 2.0) -> dict | None:
     """Bucketed (clear_calm/other) CLI-hourly offset, or None to use the flat one.
 
     Splits the per-day gap by overnight conditions (cloud<CLEAR_CLOUD_MAX and
@@ -215,7 +240,7 @@ def _conditional_settlement_offset(cli: dict, hourly: dict, cond: dict,
     any_passed = False
     for var in ("high", "low"):
         cm, om, cs, os_, passed = _var_bucket(cc[var], ot[var], min_nights,
-                                              margin, min_sep)
+                                              margin, sep_z)
         any_passed = any_passed or passed
         out[var] = {"clear_calm": cm, "other": om,
                     "clear_calm_std": cs, "other_std": os_}
