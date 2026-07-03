@@ -36,26 +36,67 @@ class _Resp:
 # ---------------------------------------------------------------------------
 
 def test_get_json_retries_transient_timeout(monkeypatch, tmp_path):
-    """A read timeout that clears on a later attempt should still return data."""
+    """A read timeout that clears on the retry should still return data."""
     monkeypatch.setattr(common, "_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(common, "_FAILED_HOSTS", {})
     monkeypatch.setattr(common.time, "sleep", lambda *_: None)  # no real backoff
     attempts = {"n": 0}
 
     def flaky_get(url, params=None, timeout=None):
         attempts["n"] += 1
-        if attempts["n"] < 3:
+        if attempts["n"] < 2:
             raise requests.exceptions.ReadTimeout("slow")
         return _Resp({"ok": True})
 
     monkeypatch.setattr(common._session, "get", flaky_get)
     data = common.get_json("https://example.test/x", {"a": 1}, ttl=0)
     assert data == {"ok": True}
-    assert attempts["n"] == 3
+    assert attempts["n"] == 2  # one retry rescued the blip (default retries=1)
+
+
+def test_get_json_circuit_breaker_fast_fails_a_dead_host(monkeypatch, tmp_path):
+    """After a host exhausts its retries, further calls to it fail instantly.
+
+    A single outage should cost one timeout, not one per call site — otherwise
+    the several open-meteo calls in a snapshot each wait out the full retry.
+    """
+    monkeypatch.setattr(common, "_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(common, "_FAILED_HOSTS", {})
+    monkeypatch.setattr(common.time, "sleep", lambda *_: None)
+    calls = {"n": 0}
+
+    def always_timeout(url, params=None, timeout=None):
+        calls["n"] += 1
+        raise requests.exceptions.ReadTimeout("down")
+
+    monkeypatch.setattr(common._session, "get", always_timeout)
+
+    for _ in range(2):
+        try:
+            common.get_json("https://dead.test/x", ttl=0)
+        except requests.exceptions.RequestException:
+            pass
+    first_round = calls["n"]  # network attempts for the first (real) call
+
+    # A subsequent call to the SAME host must not touch the network at all.
+    before = calls["n"]
+    try:
+        common.get_json("https://dead.test/y", ttl=0)
+    except requests.exceptions.RequestException:
+        pass
+    assert calls["n"] == before, "breaker should fast-fail without a network call"
+
+    # A different, healthy host is unaffected by the breaker.
+    monkeypatch.setattr(common._session, "get",
+                        lambda url, params=None, timeout=None: _Resp({"ok": 1}))
+    assert common.get_json("https://alive.test/z", ttl=0) == {"ok": 1}
+    assert first_round >= 2  # the first call really did retry before tripping
 
 
 def test_get_json_raises_after_exhausting_retries(monkeypatch, tmp_path):
     """A sustained outage still raises (so gather_series can drop the source)."""
     monkeypatch.setattr(common, "_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(common, "_FAILED_HOSTS", {})
     monkeypatch.setattr(common.time, "sleep", lambda *_: None)
 
     def always_timeout(url, params=None, timeout=None):

@@ -7,6 +7,7 @@ import json
 import os
 import time
 from datetime import datetime
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 import requests
@@ -19,6 +20,13 @@ _CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", ".cache")
 _session = requests.Session()
 _session.headers.update({"User-Agent": NWS_USER_AGENT})
 
+# Circuit breaker: once a host exhausts its retries, fast-fail further calls to
+# it for a short cooldown. A total outage of one host (e.g. api.open-meteo.com,
+# which several call sites hit per snapshot) then costs a single timeout instead
+# of one per call site. Keyed by host, so a healthy sibling host is unaffected.
+_FAILED_HOSTS: dict[str, float] = {}
+_HOST_COOLDOWN = 60  # seconds
+
 
 def _cache_path(url: str, params: dict) -> str:
     key = url + "?" + json.dumps(params or {}, sort_keys=True)
@@ -27,14 +35,16 @@ def _cache_path(url: str, params: dict) -> str:
 
 
 def get_json(url: str, params: dict | None = None,
-             ttl: int = CACHE_TTL_SECONDS, timeout: int = 30,
-             retries: int = 2) -> dict:
+             ttl: int = CACHE_TTL_SECONDS, timeout: int = 10,
+             retries: int = 1) -> dict:
     """GET JSON with a simple on-disk TTL cache. ttl=0 disables caching.
 
-    Transient network errors (timeouts, dropped connections) are retried with a
-    short backoff so a brief upstream hiccup doesn't fail the call; a sustained
-    outage still raises after `retries` extra attempts, letting the caller drop
-    that source rather than crash the whole page.
+    Transient network errors (timeouts, dropped connections) are retried once
+    with a short backoff so a brief upstream hiccup doesn't fail the call; a
+    sustained outage still raises after `retries` extra attempts, letting the
+    caller drop that source rather than crash the whole page. The timeout is
+    kept tight (these APIs normally answer in well under a second) so a dead
+    upstream is abandoned in ~20s, not ~90s.
     """
     params = params or {}
     path = _cache_path(url, params)
@@ -42,12 +52,20 @@ def get_json(url: str, params: dict | None = None,
         if time.time() - os.path.getmtime(path) < ttl:
             with open(path) as fh:
                 return json.load(fh)
+    host = urlparse(url).netloc
+    if host in _FAILED_HOSTS:
+        if time.time() - _FAILED_HOSTS[host] < _HOST_COOLDOWN:
+            raise requests.exceptions.ConnectionError(
+                f"{host} skipped: recent failure within {_HOST_COOLDOWN}s cooldown")
+        del _FAILED_HOSTS[host]  # cooldown elapsed — allow a fresh probe
     for attempt in range(retries + 1):
         try:
             resp = _session.get(url, params=params, timeout=timeout)
+            _FAILED_HOSTS.pop(host, None)  # recovered — clear the breaker
             break
         except requests.exceptions.RequestException:
             if attempt == retries:
+                _FAILED_HOSTS[host] = time.time()  # trip the breaker
                 raise
             time.sleep(2 * (attempt + 1))  # brief backoff for a transient blip
     resp.raise_for_status()
