@@ -76,6 +76,18 @@ def test_metrics_mae_and_offset():
     assert round(m[key]["live_rmse"], 2) == 0.20
 
 
+def test_run_end_to_end(tmp_path, monkeypatch):
+    rows = [_hi("15:30", 98.0, 96.9, [[None, 96, 0.2], [97, 98, 0.8]], 98.0, 97.0, 1.2)]
+    # settlement maps come in via join inside run(); monkeypatch as_map through a shim
+    monkeypatch.setattr(edge_report, "_settlement_maps",
+                        lambda: ({date(2026, 7, 1): (98.0, 79.0)},
+                                 {date(2026, 7, 1): (97.0, 79.0)}))
+    rows[0]["target_date"] = "2026-07-01"
+    out = str(tmp_path / "edge")
+    paths = edge_report.run(rows, out)
+    assert any(p.endswith("metrics.csv") for p in paths)
+
+
 def test_write_report_creates_files(tmp_path):
     m = {("15:30", "high"): {"n": 5, "model_mae": 0.5, "market_mae": 0.6,
           "disagreements": 2, "model_bin_wins": 1, "market_bin_wins": 1,

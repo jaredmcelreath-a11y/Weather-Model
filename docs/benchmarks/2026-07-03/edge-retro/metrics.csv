@@ -1,0 +1,2 @@
+capture_slot,variable,n,model_mae,market_mae,disagreements,model_bin_wins,market_bin_wins,n_boundary,flat_rmse,live_rmse,flip_toward,flip_away
+retro,high,2,0.3999999999999986,0.8200000000000003,0,0,0,1,,,0,0

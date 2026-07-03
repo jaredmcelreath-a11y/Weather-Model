@@ -147,3 +147,38 @@ def write_report(metrics_by_key: dict, out_dir: str) -> list[str]:
     with open(md_path, "w") as fh:
         fh.write("\n".join(lines))
     return [csv_path, md_path]
+
+
+def _settlement_maps():
+    import settlements
+    return settlements.as_map("cli"), settlements.as_map("hourly")
+
+
+def run(betting_rows: list[dict], out_dir: str) -> list[str]:
+    cli_map, hourly_map = _settlement_maps()
+    joined = join(betting_rows, cli_map, hourly_map)
+    return write_report(metrics(joined), out_dir)
+
+
+if __name__ == "__main__":
+    import sys
+    from datetime import date
+    import betting_log
+    today = date.today().isoformat()
+    if "--retro" in sys.argv:
+        import forecast_log
+        rows = []
+        for r in forecast_log.load(forecast_log._PATH):
+            if r.get("variable") == "high" and r.get("lead_bucket") == 0 and r.get("market"):
+                rows.append({"target_date": r["target_date"], "variable": "high",
+                             "capture_slot": "retro", "cli_consensus": r.get("consensus"),
+                             "market_ev": r["market"].get("ev"),
+                             "market_buckets": r["market"].get("buckets"),
+                             "model_bins": [], "flat_offset": 0.89, "live_gap": None})
+        out = f"docs/benchmarks/{today}/edge-retro"
+        paths = run(rows, out)
+        print(f"RETRO (directional only, n={len(rows)}): {paths}")
+    else:
+        rows = betting_log.load()
+        out = f"docs/benchmarks/{today}/edge"
+        print(run(rows, out))
