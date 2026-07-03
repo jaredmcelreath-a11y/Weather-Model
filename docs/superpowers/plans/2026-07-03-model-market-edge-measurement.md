@@ -709,7 +709,7 @@ def test_metrics_mae_and_offset():
     m = edge_report.metrics(joined)
     key = ("15:30", "high")
     assert m[key]["n"] == 2
-    assert round(m[key]["model_mae"], 2) == 0.10       # |98-98|, |95.9-96| -> (0+0.1)/2
+    assert round(m[key]["model_mae"], 2) == 0.05       # |98-98|, |95.9-96| -> (0+0.1)/2
     assert round(m[key]["market_mae"], 2) == 0.60      # (1.1+0.1)/2
     # Q2: live_gap (1.2, 0.8) vs flat (0.89) predicting actual_gap (1.0, 1.0)
     # flat rmse = sqrt(((0.89-1)^2)*2/2)=0.11 ; live rmse = sqrt((0.2^2+0.2^2)/2)=0.2
