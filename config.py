@@ -101,13 +101,16 @@ PEAK_LOCK_DROP = 2.0
 # min — the dawn minimum is behind us; the margin clears obs/rounding jitter.
 LOW_LOCK_RISE = 0.8
 
-# Symmetric early lock for the high: the afternoon maximum forms by mid-afternoon,
-# so once we're past this local hour and the temp has eased HIGH_LOCK_DROP °F off a
-# real (post-trough) peak, the high is in — collapse the spread without waiting for
-# the full PEAK_LOCK_DROP retreat. The high needs no convective-downside guard the
-# way the low does; nothing sets a new daytime max after the afternoon window.
-HIGH_LOCK_HOUR = 17      # local hour at/after which the early high lock is allowed
-HIGH_LOCK_DROP = 0.8     # °F off the running max, past HIGH_LOCK_HOUR, to early-lock
+# Symmetric early lock for the high: the afternoon maximum forms a few hours after
+# solar noon, so once we're past (solar noon + HIGH_LOCK_NOON_OFFSET_HOURS) and the
+# temp has eased HIGH_LOCK_DROP °F off a real (post-trough) peak, the high is in —
+# collapse the spread without waiting for the full PEAK_LOCK_DROP retreat. Gating on
+# solar noon (not a fixed clock hour) tracks the peak across seasons: at KDFW the
+# offset lands ~16:46 CDT in July and ~15:46 CST in January. The high needs no
+# convective-downside guard the way the low does; nothing sets a new daytime max
+# after the afternoon window.
+HIGH_LOCK_NOON_OFFSET_HOURS = 3.25   # hours after solar noon the peak is treated as in
+HIGH_LOCK_DROP = 0.8                  # °F off the running max, past the gate, to early-lock
 
 # --- Radiational-cooling predictor (overnight low) ---
 # On clear, calm nights the surface radiates heat away efficiently and the low

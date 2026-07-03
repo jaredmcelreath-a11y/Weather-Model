@@ -21,9 +21,9 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from config import (BIN_HIGH, BIN_LOW, CALM_WIND_MAX, CLEAR_CLOUD_MAX,
-                    HIGH_LOCK_DROP, HIGH_LOCK_HOUR, LEAD_SIGMA_INFLATION,
-                    LOW_LOCK_RISE, PEAK_LOCK_DROP, TIMEZONE, bin_labels,
-                    lead_bucket)
+                    HIGH_LOCK_DROP, HIGH_LOCK_NOON_OFFSET_HOURS,
+                    LEAD_SIGMA_INFLATION, LOW_LOCK_RISE, PEAK_LOCK_DROP,
+                    TIMEZONE, bin_labels, lead_bucket)
 from settlement import (covers_extreme, local_day_bounds, observed_so_far,
                         observed_so_far_robust)
 from convective import convective_sigma
@@ -56,6 +56,21 @@ def _group_of(label: str) -> str:
     if label.startswith("mos_"):
         return "guidance"
     return "other"
+
+
+def _past_high_peak_gate(day, now) -> bool:
+    """True once `now` is past solar noon + HIGH_LOCK_NOON_OFFSET_HOURS — the time
+    of day by which KDFW's afternoon maximum has formed. Used to gate the early
+    high lock and the high's CLI offset gate on the seasonally-shifting peak
+    instead of a fixed clock hour. False (conservative) if solar noon can't be
+    computed."""
+    if now is None:
+        return False
+    try:
+        gate = solar.solar_noon(day) + timedelta(hours=HIGH_LOCK_NOON_OFFSET_HOURS)
+    except Exception:
+        return False
+    return now.astimezone(TZ) >= gate
 
 
 def _extreme_locked(times, temps, day, variable, now, drop=PEAK_LOCK_DROP) -> bool:
@@ -104,8 +119,7 @@ def _extreme_locked(times, temps, day, variable, now, drop=PEAK_LOCK_DROP) -> bo
         # confirming retreat (clears obs + rounding jitter) means we're off the
         # peak. Mirrors the sunrise-gated low lock; nothing sets a new daytime
         # max after this window, so no convective-style guard is needed.
-        return (now.astimezone(TZ).hour >= HIGH_LOCK_HOUR
-                and retreat >= HIGH_LOCK_DROP)
+        return _past_high_peak_gate(day, now) and retreat >= HIGH_LOCK_DROP
     risen = cur - min(vals)
     if risen >= drop:
         return True
@@ -440,13 +454,12 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     # high and low alike. Pure-forecast / unlocked days keep the average offset.
     #
     # The high also takes the measured gap once its peak is *realized but not yet
-    # locked*: past HIGH_LOCK_HOUR the afternoon max is in even if the temp is
-    # sitting on a plateau and hasn't retreated enough to lock. Without this the
-    # flat +offset gets layered onto an already-continuous observed peak, printing
-    # ~1°F too hot in the late-afternoon window (the "95.9 at 6pm when it's 95"
-    # bug). The low keeps the strict `locked` gate — its evening downside is real.
-    high_peak_in = (variable == "high" and now is not None
-                    and now.astimezone(TZ).hour >= HIGH_LOCK_HOUR)
+    # locked*: past the solar-noon peak gate the afternoon max is in even if the
+    # temp is sitting on a plateau and hasn't retreated enough to lock. Without
+    # this the flat +offset gets layered onto an already-continuous observed peak,
+    # printing ~1°F too hot in the late-afternoon window (the "95.9 at 6pm when
+    # it's 95" bug). The low keeps the strict `locked` gate — its downside is real.
+    high_peak_in = variable == "high" and _past_high_peak_gate(day, now)
     if settle_offset is not None and (locked or high_peak_in) \
             and observed_cont is not None and observed is not None:
         settle_shift = observed_cont - observed
