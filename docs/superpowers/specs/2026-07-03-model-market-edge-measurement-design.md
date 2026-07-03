@@ -73,9 +73,10 @@ Keyed on `(target_date, variable, capture_slot)` where `capture_slot` is the loc
 wall-clock label of the snapshot — so each slot's row persists instead of being
 overwritten.
 
-**Capture slots (default):** `15:30, 16:00, 16:30, 17:00` CDT. This brackets the
-betting window *and* the ~16:46 peak-lock transition, so we can measure how much the
-lock actually buys (15:30/16:00 pre-lock vs 17:00 post-lock) rather than assume it.
+**Capture slots (default):** `15:00, 15:30, 16:00, 16:30, 17:00` CDT. This brackets
+the full betting window (15:00-15:30) *and* the ~16:46 peak-lock transition, so we
+can measure how much the lock actually buys (15:00/15:30/16:00 pre-lock vs 17:00
+post-lock) rather than assume it.
 
 **Row schema** — one per `(target_date, variable, slot)`:
 
@@ -146,7 +147,8 @@ on demand    ──► edge_report.py: betting_log × settlements
 ## Decision gate (when the measuring ends)
 
 Target **~25 betting-time days** (~3-4 weeks, one usable settled day per day). Then a
-follow-up spec ships a **dynamic offset** only if, at the **15:30** slot, both hold:
+follow-up spec ships a **dynamic offset** only if, at the **betting slots
+(15:00/15:30)**, both hold:
 
 1. **Q2:** `live_gap` RMSE beats `flat_offset` RMSE by a margin beyond noise
    (≥ **0.15°F** and sign-consistent across the sample), **and**
@@ -159,7 +161,7 @@ benchmark — a real outcome, not a failure.
 
 ## Open decisions (defaults chosen; adjust on review)
 
-- **Capture slots** — `15:30/16:00/16:30/17:00 CDT`. Add earlier (15:00) or later?
+- **Capture slots** — `15:00/15:30/16:00/16:30/17:00 CDT` (15:00 added per review).
 - **Separate `betting_log.jsonl`** (recommended) vs extending the `forecast_log`
   schema with a slot key. Separate file is cleaner and can't regress the existing
   upsert; chosen unless you object.
