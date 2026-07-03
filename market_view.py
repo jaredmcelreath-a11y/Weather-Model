@@ -65,16 +65,16 @@ def _chart_window(day_iso, variable, is_today):
 
     Pinned to the target day's active window for every day, not just today: the
     high forms midday, so we show 8am-10pm of the day and drop the overnight/
-    previous-day clutter; the low forms near dawn, so we show last night (from
-    8pm) through 10am. On a future day the captures accumulate as pre-day lead-up,
-    so the chart stays empty until the window opens (e.g. the tomorrow low starts
-    populating at 8pm tonight).
+    previous-day clutter; the low forms near dawn, so we show midnight through
+    11am. On a future day the captures accumulate as pre-day lead-up, so the
+    chart stays empty until the window opens (e.g. the tomorrow low starts
+    populating at midnight).
     """
     d = date.fromisoformat(day_iso)
     if variable == "high":
         return (datetime.combine(d, time(8, 0)), datetime.combine(d, time(22, 0)))
-    return (datetime.combine(d - timedelta(days=1), time(20, 0)),
-            datetime.combine(d, time(10, 0)))
+    return (datetime.combine(d, time(0, 0)),
+            datetime.combine(d, time(11, 0)))
 
 
 def consensus_history_df(rows, day_iso, variable, basis, include_temp,
