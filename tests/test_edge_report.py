@@ -45,3 +45,31 @@ def test_join_attaches_settlement_and_gap():
     assert r["settled_cli"] == 98.0
     assert r["settled_hourly"] == 97.0
     assert r["actual_gap"] == 1.0
+
+
+def _hi(slot, cli, mkt_ev, buckets, settled_cli, settled_hourly, live_gap, flat=0.89,
+        top_model=None):
+    return {"capture_slot": slot, "variable": "high", "cli_consensus": cli,
+            "market_ev": mkt_ev, "market_buckets": buckets,
+            "model_bins": top_model or [["%d" % round(cli), 1.0]],
+            "settled_cli": settled_cli, "settled_hourly": settled_hourly,
+            "actual_gap": settled_cli - settled_hourly, "live_gap": live_gap,
+            "flat_offset": flat}
+
+
+def test_metrics_mae_and_offset():
+    joined = [
+        # model says 98 (right), market EV 96.9 (off by 1.1); settled 98/hourly 97, gap 1.0
+        _hi("15:30", 98.0, 96.9, [[None, 96, 0.2], [97, 98, 0.8]], 98.0, 97.0, 1.2),
+        # model 95.9 (off 0.1), market 96.1 (off 0.1); settled 96/hourly 95, gap 1.0
+        _hi("15:30", 95.9, 96.1, [[95, 96, 0.9], [97, 98, 0.1]], 96.0, 95.0, 0.8),
+    ]
+    m = edge_report.metrics(joined)
+    key = ("15:30", "high")
+    assert m[key]["n"] == 2
+    assert round(m[key]["model_mae"], 2) == 0.05       # |98-98|, |95.9-96| -> (0+0.1)/2
+    assert round(m[key]["market_mae"], 2) == 0.60      # (1.1+0.1)/2
+    # Q2: live_gap (1.2, 0.8) vs flat (0.89) predicting actual_gap (1.0, 1.0)
+    # flat rmse = sqrt(((0.89-1)^2)*2/2)=0.11 ; live rmse = sqrt((0.2^2+0.2^2)/2)=0.2
+    assert round(m[key]["flat_rmse"], 2) == 0.11
+    assert round(m[key]["live_rmse"], 2) == 0.20
