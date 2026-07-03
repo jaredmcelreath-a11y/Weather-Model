@@ -27,15 +27,29 @@ def _cache_path(url: str, params: dict) -> str:
 
 
 def get_json(url: str, params: dict | None = None,
-             ttl: int = CACHE_TTL_SECONDS, timeout: int = 30) -> dict:
-    """GET JSON with a simple on-disk TTL cache. ttl=0 disables caching."""
+             ttl: int = CACHE_TTL_SECONDS, timeout: int = 30,
+             retries: int = 2) -> dict:
+    """GET JSON with a simple on-disk TTL cache. ttl=0 disables caching.
+
+    Transient network errors (timeouts, dropped connections) are retried with a
+    short backoff so a brief upstream hiccup doesn't fail the call; a sustained
+    outage still raises after `retries` extra attempts, letting the caller drop
+    that source rather than crash the whole page.
+    """
     params = params or {}
     path = _cache_path(url, params)
     if ttl > 0 and os.path.exists(path):
         if time.time() - os.path.getmtime(path) < ttl:
             with open(path) as fh:
                 return json.load(fh)
-    resp = _session.get(url, params=params, timeout=timeout)
+    for attempt in range(retries + 1):
+        try:
+            resp = _session.get(url, params=params, timeout=timeout)
+            break
+        except requests.exceptions.RequestException:
+            if attempt == retries:
+                raise
+            time.sleep(2 * (attempt + 1))  # brief backoff for a transient blip
     resp.raise_for_status()
     data = resp.json()
     os.makedirs(_CACHE_DIR, exist_ok=True)

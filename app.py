@@ -101,6 +101,12 @@ def load_accuracy_kalshi():
 
 def _page(adapter, snapshot_loader, accuracy_loader, record_basis):
     snap, calib = snapshot_loader()
+    dropped = snap.get("dropped_sources") or []
+    if dropped:
+        st.warning(
+            "Running on a reduced model set — these feeds were unreachable and "
+            "were skipped: " + ", ".join(dropped) + ". The consensus and "
+            "probabilities reflect the remaining sources.")
     if record_basis == "cli":
         # Attach the live market's implied forecast so the CLI log can later score
         # market-vs-model (the scheduled Action does the same 24/7).

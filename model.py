@@ -20,6 +20,8 @@ import math
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import requests
+
 from config import (BIN_HIGH, BIN_LOW, CALM_WIND_MAX, CLEAR_CLOUD_MAX,
                     HIGH_LOCK_DROP, HIGH_LOCK_NOON_OFFSET_HOURS,
                     LEAD_SIGMA_INFLATION, LOW_LOCK_RISE, PEAK_LOCK_DROP,
@@ -614,12 +616,23 @@ def gather_series(forecast_days: int = 2, continuous_obs: bool = False,
     view (and the two agree across a midnight rollover).
     """
     series = {}
-    series.update(open_meteo_ensemble.fetch(forecast_days))
-    series.update(open_meteo_models.fetch(forecast_days))
-    series.update(nws_forecast.fetch())
-    series.update(iem_mos.fetch(forecast_days))
+    dropped = []
+    forecast_sources = [
+        ("open-meteo ensemble", lambda: open_meteo_ensemble.fetch(forecast_days)),
+        ("open-meteo models", lambda: open_meteo_models.fetch(forecast_days)),
+        ("nws forecast", lambda: nws_forecast.fetch()),
+        ("iem mos", lambda: iem_mos.fetch(forecast_days)),
+    ]
+    for label, fetch in forecast_sources:
+        try:
+            series.update(fetch())
+        except requests.exceptions.RequestException:
+            # A slow/dead upstream is dropped so the consensus runs on the
+            # remaining models instead of taking the whole page down.
+            dropped.append(label)
+    # Observations are the settlement anchor — not degradable; let it raise.
     obs = nws_observations.fetch(continuous=continuous_obs, now=now)
-    return series, obs
+    return series, obs, dropped
 
 
 def predict(day: date, now: datetime | None = None, calib: dict | None = None,
@@ -628,7 +641,7 @@ def predict(day: date, now: datetime | None = None, calib: dict | None = None,
     when `day` is today; pass None to force a pure forecast."""
     if now is None:
         now = datetime.now(TZ)
-    series, obs = gather_series(forecast_days)
+    series, obs, _dropped = gather_series(forecast_days)
     return _predict_from(series, obs, day, now, calib, settle_offset, live=True)
 
 
@@ -667,7 +680,8 @@ def snapshot(calib: dict | None = None, settle_offset=None,
     now = datetime.now(TZ)
     today = now.date()
     tomorrow = today + timedelta(days=1)
-    series, obs = gather_series(forecast_days=2, continuous_obs=continuous_obs, now=now)
+    series, obs, dropped = gather_series(
+        forecast_days=2, continuous_obs=continuous_obs, now=now)
 
     obs_times, obs_temps = obs.get("obs", ([], []))
     current = None
@@ -682,4 +696,5 @@ def snapshot(calib: dict | None = None, settle_offset=None,
         "current": current,
         "sources": {"today": per_source_extremes(series, today),
                     "tomorrow": per_source_extremes(series, tomorrow)},
+        "dropped_sources": dropped,
     }
