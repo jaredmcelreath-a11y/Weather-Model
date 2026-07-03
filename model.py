@@ -22,8 +22,8 @@ from zoneinfo import ZoneInfo
 
 import requests
 
-from config import (BIN_HIGH, BIN_LOW, CALM_WIND_MAX, CLEAR_CLOUD_MAX,
-                    HIGH_LOCK_DROP, HIGH_LOCK_NOON_OFFSET_HOURS,
+from config import (BIN_HIGH, BIN_LOW, CACHE_TTL_SECONDS, CALM_WIND_MAX,
+                    CLEAR_CLOUD_MAX, HIGH_LOCK_DROP, HIGH_LOCK_NOON_OFFSET_HOURS,
                     LEAD_SIGMA_INFLATION, LOW_LOCK_RISE, MAX_CLI_GAP,
                     PEAK_LOCK_DROP, TIMEZONE, bin_labels, lead_bucket)
 from settlement import (covers_extreme, local_day_bounds, observed_so_far,
@@ -632,7 +632,7 @@ def _fetch_cli_daily(day: date) -> dict:
     (see predict_variable), never a settlement floor — a miss just falls back to
     the hourly/average-offset path."""
     try:
-        return fetch_actual_cli(day, day)
+        return fetch_actual_cli(day, day, ttl=CACHE_TTL_SECONDS)
     except Exception:
         return {}
 
@@ -642,7 +642,9 @@ def gather_series(forecast_days: int = 2, continuous_obs: bool = False,
     """All forecast series merged into one dict, plus the obs series.
 
     `continuous_obs` adds the sub-hourly observation feed (for the CLI basis's
-    spike-aware hard bound); the default hourly obs is always present. `now` ties
+    spike-aware hard bound); the default hourly obs is always present. When set,
+    it also attaches today's daily-summary CLI extremes under the `cli_daily` key
+    of the returned obs dict (best-effort — see `_fetch_cli_daily`). `now` ties
     the observation window to the caller's clock so the full settlement day is in
     view (and the two agree across a midnight rollover).
     """

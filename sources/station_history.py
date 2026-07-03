@@ -79,15 +79,24 @@ def _parse_daily(text: str) -> dict[date, tuple[float, float]]:
     return out
 
 
-def fetch_actual_cli(start: date, end: date) -> dict[date, tuple[float, float]]:
+def fetch_actual_cli(start: date, end: date,
+                     ttl: int | None = None) -> dict[date, tuple[float, float]]:
     """{day: (cli_high_f, cli_low_f)} from the IEM daily summary for [start, end].
 
     The CLI daily max/min come from continuous (1-minute) ASOS data, so they can
     exceed the hourly METAR extremes that `fetch_actual` returns — this is the
-    basis Kalshi settles on (vs Robinhood's hourly basis)."""
+    basis Kalshi settles on (vs Robinhood's hourly basis).
+
+    `ttl` defaults to None, which leaves `get_text`'s own long archive TTL in
+    place (calibration/backtest callers fetch immutable PAST days and rely on
+    that). Live callers fetching TODAY's still-tightening summary should pass
+    a short live-data ttl (e.g. CACHE_TTL_SECONDS) so it isn't frozen stale by
+    the archive cache for a week."""
     params = {
         "network": "TX_ASOS", "stations": "DFW", "format": "comma",
         "year1": start.year, "month1": start.month, "day1": start.day,
         "year2": end.year, "month2": end.month, "day2": end.day,
     }
-    return _parse_daily(get_text(DAILY_URL, params))
+    if ttl is None:
+        return _parse_daily(get_text(DAILY_URL, params))
+    return _parse_daily(get_text(DAILY_URL, params, ttl=ttl))

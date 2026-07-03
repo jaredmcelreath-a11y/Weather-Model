@@ -431,6 +431,25 @@ def test_locked_low_daily_summary_gap_zero_no_average_offset():
     assert with_cli["consensus"] == no_offset["consensus"]
 
 
+def test_locked_low_rejects_out_of_range_gap_falls_back_to_average_offset():
+    """The locked-low branch clamps the measured gap to [-MAX_CLI_GAP, 0]. A gap
+    outside that range (here cli_daily min 74 vs hourly 79 -> gap -5, beyond
+    -MAX_CLI_GAP=-3) must NOT anchor on the out-of-range value -- it should fall
+    back to the flat average offset, exactly as if no cli_daily/continuous were
+    present at all."""
+    day = date(2030, 7, 1)
+    series = _series(day)
+    now = datetime(day.year, day.month, day.day, 16, tzinfo=_TZ)
+    obs = _obs(day, _LOCKED_LOW, True)
+    obs["cli_daily"] = {day: (95.0, 74.0)}   # gap = 74 - 79 = -5 < -MAX_CLI_GAP
+    out_of_range = model.predict_variable(series, obs, day, "low", now, None,
+                                          _LOW_OFF, live=True)
+    fallback = model.predict_variable(series, _obs(day, _LOCKED_LOW, False), day,
+                                      "low", now, None, _LOW_OFF, live=True)
+    assert out_of_range["peak_locked"] and fallback["peak_locked"]
+    assert out_of_range["consensus"] == fallback["consensus"]
+
+
 def test_high_ignores_daily_summary_min():
     day = date(2030, 7, 1)
     series = _series(day)
@@ -456,12 +475,65 @@ def test_robinhood_low_ignores_daily_summary():
 
 def test_fetch_cli_daily_returns_summary(monkeypatch):
     day = date(2026, 7, 3)
-    monkeypatch.setattr(model, "fetch_actual_cli", lambda s, e: {day: (83.0, 78.0)})
+    monkeypatch.setattr(model, "fetch_actual_cli",
+                        lambda s, e, ttl=None: {day: (83.0, 78.0)})
     assert model._fetch_cli_daily(day) == {day: (83.0, 78.0)}
 
 
 def test_fetch_cli_daily_swallows_errors(monkeypatch):
-    def boom(s, e):
+    def boom(s, e, ttl=None):
         raise RuntimeError("network down")
     monkeypatch.setattr(model, "fetch_actual_cli", boom)
     assert model._fetch_cli_daily(date(2026, 7, 3)) == {}
+
+
+def test_fetch_cli_daily_uses_live_ttl(monkeypatch):
+    """Today's daily-summary tightens through the morning, so the live fetch
+    must not use the 7-day archive cache -- it must drive the short live TTL."""
+    from config import CACHE_TTL_SECONDS
+    day = date(2026, 7, 3)
+    captured = {}
+
+    def fake(s, e, ttl=None):
+        captured["ttl"] = ttl
+        return {day: (83.0, 78.0)}
+
+    monkeypatch.setattr(model, "fetch_actual_cli", fake)
+    assert model._fetch_cli_daily(day) == {day: (83.0, 78.0)}
+    assert captured["ttl"] == CACHE_TTL_SECONDS
+
+
+def test_fetch_actual_cli_forwards_live_ttl_to_get_text(monkeypatch):
+    """At the get_text seam: a live caller passing ttl=CACHE_TTL_SECONDS must
+    reach get_text with that short ttl, so today's fetch isn't served from the
+    7-day archive cache."""
+    from config import CACHE_TTL_SECONDS
+    from sources import station_history
+
+    captured = {}
+
+    def fake_get_text(url, params=None, **kwargs):
+        captured["kwargs"] = kwargs
+        return SAMPLE_CSV
+
+    monkeypatch.setattr(station_history, "get_text", fake_get_text)
+    day = date(2026, 6, 8)
+    station_history.fetch_actual_cli(day, day, ttl=CACHE_TTL_SECONDS)
+    assert captured["kwargs"].get("ttl") == CACHE_TTL_SECONDS
+
+
+def test_fetch_actual_cli_default_omits_ttl_for_archive_callers(monkeypatch):
+    """calibration/backtest callers fetch immutable PAST days and pass no ttl --
+    they must keep get_text's own 7-day archive default, not a short live ttl."""
+    from sources import station_history
+
+    captured = {}
+
+    def fake_get_text(url, params=None, **kwargs):
+        captured["kwargs"] = kwargs
+        return SAMPLE_CSV
+
+    monkeypatch.setattr(station_history, "get_text", fake_get_text)
+    day = date(2026, 6, 8)
+    station_history.fetch_actual_cli(day, day)
+    assert "ttl" not in captured["kwargs"]
