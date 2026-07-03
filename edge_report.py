@@ -4,6 +4,7 @@ flat-vs-live settlement-offset predictor. Analysis only — no live path reads t
 from __future__ import annotations
 
 import math
+from datetime import date as _date
 
 
 def settled_bucket(temp: float, buckets: list) -> tuple | None:
@@ -27,3 +28,20 @@ def is_boundary(consensus: float, half_width: float = 0.5) -> bool:
     """True when consensus is within half_width of an even|odd Kalshi edge (even+0.5)."""
     edges = [e + 0.5 for e in range(60, 120, 2)]   # ...94.5, 96.5, 98.5...
     return min(abs(consensus - e) for e in edges) <= half_width
+
+
+def join(betting_rows: list[dict], cli_map: dict, hourly_map: dict) -> list[dict]:
+    """Augment each settled row with settled_cli/settled_hourly/actual_gap."""
+    out = []
+    for r in betting_rows:
+        d = _date.fromisoformat(r["target_date"])
+        if d not in cli_map or d not in hourly_map:
+            continue
+        vi = 0 if r["variable"] == "high" else 1
+        settled_cli = cli_map[d][vi]
+        settled_hourly = hourly_map[d][vi]
+        out.append({**r,
+                    "settled_cli": settled_cli,
+                    "settled_hourly": settled_hourly,
+                    "actual_gap": settled_cli - settled_hourly})
+    return out
