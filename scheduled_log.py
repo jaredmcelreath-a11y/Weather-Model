@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from datetime import date
 
+import betting_log
 import calibration
 import consensus_log
 import forecast_log
@@ -40,6 +41,19 @@ def main() -> None:
         print(f"market block skipped: {e}")
     forecast_log.record(cli_snap, basis="cli")
     consensus_log.record(cli_snap, basis="cli")
+    # Betting-time capture: only when `now` falls in a betting slot (5x/day),
+    # build the hourly center and record a slot-keyed row. Reuses cli_snap (with
+    # its attached market) rather than re-fetching. Best-effort: an error here
+    # doesn't block forecast/consensus logging above.
+    try:
+        from datetime import datetime as _dt
+        from betting_log import TZ as _BTZ
+        if betting_log.current_slot(_dt.now(_BTZ)) is not None:
+            hourly_snap = model.snapshot(calib)
+            slot = betting_log.capture_if_slot(cli_snap, hourly_snap, calib)
+            print(f"betting-time capture at slot {slot}")
+    except Exception as e:
+        print(f"betting capture skipped: {e}")
     # Persist actual settlements for any forecast day that has now settled, on
     # both bases — the durable ground truth for historical accuracy. Best-effort:
     # an archive hiccup just leaves those days for the next run.

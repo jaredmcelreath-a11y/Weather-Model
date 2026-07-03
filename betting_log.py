@@ -123,3 +123,38 @@ def record(cli_snapshot: dict, hourly_snapshot: dict, slot: str, calib: dict,
             index[k] = len(rows)
             rows.append(rec)
     _write(rows, target)
+
+
+def capture_if_slot(cli_snapshot: dict, hourly_snapshot: dict, calib: dict,
+                    now: datetime | None = None) -> str | None:
+    """If `now` falls in a betting slot, record the snapshot and return the slot."""
+    now = now or datetime.now(TZ)
+    slot = current_slot(now)
+    if slot is None:
+        return None
+    record(cli_snapshot, hourly_snapshot, slot, calib)
+    return slot
+
+
+def main() -> None:
+    """Standalone capture (dry-run / manual). The scheduler uses capture_if_slot
+    with the snapshot it already built."""
+    import calibration
+    from datetime import date
+    from sources import kalshi
+    calib = calibration.get(refresh=True)
+    off = (calib or {}).get("settlement_offset")
+    cli = model.snapshot(calib, settle_offset=off, continuous_obs=True)
+    hourly = model.snapshot(calib)
+    try:
+        today = date.fromisoformat(cli["today"]["day"])
+        tomorrow = date.fromisoformat(cli["tomorrow"]["day"])
+        cli["market"] = kalshi.implied_block(today, tomorrow)
+    except Exception as e:
+        print(f"market block skipped: {e}")
+    slot = capture_if_slot(cli, hourly, calib)
+    print(f"betting capture: slot={slot}")
+
+
+if __name__ == "__main__":
+    main()
