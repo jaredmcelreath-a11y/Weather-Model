@@ -34,13 +34,19 @@ if _gh:
     os.environ.setdefault("FORECAST_LOG_GH_TOKEN", _gh.get("token", ""))
 
 
-@st.cache_data(ttl=120, show_spinner="Fetching forecasts and observations…")
+# TTL matches the page's 60s autorefresh and the Kalshi market cache (30s) so the
+# model snapshot and the market-implied EV are recomputed on the same cycle — a
+# 120s model cache next to a 30s market cache let the model lag up to ~2 min behind
+# the market, which read on-screen as a (false) model-vs-market disagreement. The
+# raw forecast/obs HTTP calls stay cheap: they're backed by the 600s disk cache in
+# sources.common, so a tighter st.cache TTL only re-blends, it doesn't refetch.
+@st.cache_data(ttl=60, show_spinner="Fetching forecasts and observations…")
 def load_snapshot():
     calib = calibration.get(refresh=True)
     return model.snapshot(calib), calib
 
 
-@st.cache_data(ttl=120, show_spinner="Fetching forecasts and observations…")
+@st.cache_data(ttl=60, show_spinner="Fetching forecasts and observations…")
 def load_snapshot_kalshi():
     """Snapshot shifted to the Kalshi/CLI settlement basis via the calibrated
     settlement_offset (absent offset -> behaves like the hourly snapshot)."""

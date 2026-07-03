@@ -10,6 +10,7 @@ plans, Top-3 flip/hold, Safest-hold) is identical across exchanges.
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 import altair as alt
 import pandas as pd
@@ -18,7 +19,9 @@ from streamlit_autorefresh import st_autorefresh
 
 import calibration
 import model
-from config import STATION_ID
+from config import STATION_ID, TIMEZONE
+
+_TZ = ZoneInfo(TIMEZONE)
 
 # Most the "Safest hold to $1" box will pay for a contract. Above this the price
 # is already near settlement value, so the remaining upside doesn't justify the
@@ -30,9 +33,14 @@ SAFE_HOLD_MAX_ASK = 0.92
 def _kalshi_implied(day_iso):
     """Kalshi's market-implied expected high/low for `day_iso`, distilled from
     the live contract ladder — shown next to Current temp on both pages. None per
-    variable when no priced contracts are live."""
+    variable when no priced contracts are live.
+
+    `as_of` is the wall-clock time the ladder was actually fetched (frozen with the
+    cache entry, so it reflects the real fetch, not the render). The page shows it
+    so a stale market reading can't masquerade as a live disagreement with the
+    model — the two halves of the comparison carry their own timestamps."""
     from sources import kalshi
-    out = {}
+    out = {"as_of": datetime.now(_TZ).strftime("%H:%M:%S")}
     for var in ("high", "low"):
         try:
             f = kalshi.implied_forecast(var, date.fromisoformat(day_iso))
@@ -733,14 +741,16 @@ def render_page(snap, calib, adapter, load_accuracy):
     top = st.columns(6)
     if cur:
         top[0].metric("Current temp", f"{cur['temp']}°F", help=f"as of {cur['time']}")
+    _mkt_as_of = ki.get("as_of")
+    _mkt_help = ("Today's market-implied expected {x}, from Kalshi's live contract "
+                 "ladder (shown on both pages for reference)."
+                 + (f" Ladder fetched {_mkt_as_of}." if _mkt_as_of else ""))
     top[1].metric("Kalshi high (mkt)",
                   f"{ki['high']:.1f}°F" if ki.get("high") is not None else "—",
-                  help="Today's market-implied expected high, from Kalshi's live "
-                       "contract ladder (shown on both pages for reference).")
+                  help=_mkt_help.format(x="high"))
     top[2].metric("Kalshi low (mkt)",
                   f"{ki['low']:.1f}°F" if ki.get("low") is not None else "—",
-                  help="Today's market-implied expected low, from Kalshi's live "
-                       "contract ladder (shown on both pages for reference).")
+                  help=_mkt_help.format(x="low"))
     top[3].metric("Updated", snap["updated"].split("T")[1])
     if calib:
         top[4].metric("Calib bias (hi/lo)",
@@ -760,6 +770,12 @@ def render_page(snap, calib, adapter, load_accuracy):
                            "within ±2×. It's the baseline spread for a ~24h-out forecast; "
                            "tomorrow runs wider and today collapses below it as live "
                            "observations lock the extreme in.")
+
+    # Juxtapose the two fetch times so a lagging market reading is visibly stale
+    # rather than looking like a live disagreement with the model.
+    if _mkt_as_of:
+        st.caption(f"⏱️ Kalshi market as of {_mkt_as_of} · model snapshot "
+                   f"{snap['updated'].split('T')[1]} (both refresh every ~60s).")
 
     day = st.sidebar.radio("Day", ["Today", "Tomorrow"], index=0,
                            key=f"day_{adapter.name}")
