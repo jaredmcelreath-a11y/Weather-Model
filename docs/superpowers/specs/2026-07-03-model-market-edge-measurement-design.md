@@ -120,7 +120,7 @@ Joins `betting_log` × `settlements` and, **per capture slot**, emits:
 - **d. Offset analysis (Q2):** MAE/RMSE of `flat_offset` vs `live_gap` as predictors
   of `actual_gap`; and a bin-flip count — "swapping flat→live_gap would have moved
   the bin toward / away from the settled bin."
-- **e. Slices:** boundary day (hourly consensus within **1.0°F** of an even|odd
+- **e. Slices:** boundary day (hourly consensus within **0.5°F** of an even|odd
   Kalshi bin edge) vs mid-bin; and coarse temp band.
 
 Output to a dated, benchmark-style folder `docs/benchmarks/<date>/edge/` — CSVs plus
@@ -166,8 +166,9 @@ benchmark — a real outcome, not a failure.
   schema with a slot key. Separate file is cleaner and can't regress the existing
   upsert; chosen unless you object.
 - **Decision N** — 25 days. Raise for more power, lower to act sooner.
-- **Boundary definition** — hourly consensus within **1.0°F** of an even|odd Kalshi
-  bin edge.
+- **Boundary definition** — hourly consensus within **0.5°F** of an even|odd Kalshi
+  bin edge. (1.0 is degenerate: Kalshi edges are 2°F apart, so a 1.0 half-width flags
+  every realistic temp as a boundary. 0.5 = the outer half of each bin.)
 
 ## Risks
 

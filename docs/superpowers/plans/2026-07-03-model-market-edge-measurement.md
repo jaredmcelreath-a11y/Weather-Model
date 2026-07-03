@@ -15,7 +15,7 @@
 - Each log module owns its own `_parse` / `_write` / `load` (repo pattern; see `settlements.py`, `forecast_log.py`). Do not import their private helpers.
 - `betting_log.jsonl` is keyed on `(target_date, variable, capture_slot)` and upserts in place.
 - Capture slots (local CDT clock labels): `15:00, 15:30, 16:00, 16:30, 17:00`; slot tolerance `±7 min`.
-- Boundary day = model CLI consensus within `1.0°F` of an even|odd Kalshi bin edge.
+- Boundary day = model CLI consensus within `0.5°F` of an even|odd Kalshi bin edge. (NOT 1.0: with Kalshi edges 2°F apart, a 1.0 half-width flags every realistic temp as a boundary — degenerate. 0.5 = the outer half of a bin.)
 - No live forecast path may read betting_log/edge_report values (no lookahead).
 - Commit messages end with the `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>` trailer.
 
@@ -503,7 +503,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 - Test: `tests/test_edge_report.py`
 
 **Interfaces:**
-- Produces: `settled_bucket(temp: float, buckets: list) -> tuple | None` (the `[lo, hi, prob]`→`(lo, hi)` bucket containing `temp`, `lo`/`hi` may be `None` for open ends), `top_bucket(buckets: list) -> tuple | None` (highest-prob bucket as `(lo, hi)`), `is_boundary(consensus: float, half_width: float = 1.0) -> bool` (True when `consensus` is within `half_width` of an even|odd Kalshi edge, i.e. an even+0.5 value like 96.5).
+- Produces: `settled_bucket(temp: float, buckets: list) -> tuple | None` (the `[lo, hi, prob]`→`(lo, hi)` bucket containing `temp`, `lo`/`hi` may be `None` for open ends), `top_bucket(buckets: list) -> tuple | None` (highest-prob bucket as `(lo, hi)`), `is_boundary(consensus: float, half_width: float = 0.5) -> bool` (True when `consensus` is within `half_width` of an even|odd Kalshi edge, i.e. an even+0.5 value like 96.5).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -573,7 +573,7 @@ def top_bucket(buckets: list) -> tuple | None:
     return (lo, hi)
 
 
-def is_boundary(consensus: float, half_width: float = 1.0) -> bool:
+def is_boundary(consensus: float, half_width: float = 0.5) -> bool:
     """True when consensus is within half_width of an even|odd Kalshi edge (even+0.5)."""
     edges = [e + 0.5 for e in range(60, 120, 2)]   # ...94.5, 96.5, 98.5...
     return min(abs(consensus - e) for e in edges) <= half_width
