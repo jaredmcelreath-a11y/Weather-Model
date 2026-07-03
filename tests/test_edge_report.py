@@ -66,7 +66,7 @@ def test_metrics_mae_and_offset():
         _hi("15:30", 95.9, 96.1, [[95, 96, 0.9], [97, 98, 0.1]], 96.0, 95.0, 0.8),
     ]
     m = edge_report.metrics(joined)
-    key = ("15:30", "high")
+    key = ("15:30", "high", "all")       # pooled subset
     assert m[key]["n"] == 2
     assert round(m[key]["model_mae"], 2) == 0.05       # |98-98|, |95.9-96| -> (0+0.1)/2
     assert round(m[key]["market_mae"], 2) == 0.60      # (1.1+0.1)/2
@@ -89,7 +89,7 @@ def test_run_end_to_end(tmp_path, monkeypatch):
 
 
 def test_write_report_creates_files(tmp_path):
-    m = {("15:30", "high"): {"n": 5, "model_mae": 0.5, "market_mae": 0.6,
+    m = {("15:30", "high", "all"): {"n": 5, "model_mae": 0.5, "market_mae": 0.6,
           "disagreements": 2, "model_bin_wins": 1, "market_bin_wins": 1,
           "n_boundary": 3, "flat_rmse": 0.75, "live_rmse": 0.4,
           "flip_toward": 2, "flip_away": 0}}
@@ -99,3 +99,41 @@ def test_write_report_creates_files(tmp_path):
     assert os.path.exists(os.path.join(out, "ASSESSMENT.md"))
     body = open(os.path.join(out, "metrics.csv")).read()
     assert "15:30" in body and "0.4" in body
+
+
+def test_metrics_slices_by_boundary():
+    # One (slot, variable) group with a boundary row (cli 98.0 -> 0.5 from 98.5)
+    # and a mid-bin row (cli 95.5 -> 1.0 from the nearest edge). The decision gate
+    # is about boundary days, so metrics must slice Q1/Q2, not just count them.
+    joined = [
+        _hi("16:00", 98.0, 96.9, [[None, 96, 0.2], [97, 98, 0.8]], 98.0, 97.0, 1.2),
+        _hi("16:00", 95.5, 95.4, [[95, 96, 0.9], [97, 98, 0.1]], 95.0, 94.0, 0.9),
+    ]
+    m = edge_report.metrics(joined)
+    assert ("16:00", "high", "all") in m
+    assert ("16:00", "high", "boundary") in m
+    assert ("16:00", "high", "mid_bin") in m
+
+    b = m[("16:00", "high", "boundary")]
+    mid = m[("16:00", "high", "mid_bin")]
+    assert b["n"] == 1 and mid["n"] == 1
+    # boundary row: model err |98-98| = 0
+    assert b["model_mae"] == 0.0
+    # boundary Q2: flat 0.89 vs actual 1.0 -> 0.11 ; live 1.2 vs 1.0 -> 0.20
+    assert round(b["flat_rmse"], 2) == 0.11
+    assert round(b["live_rmse"], 2) == 0.20
+    # mid-bin row: model err |95.5-95.0| = 0.5
+    assert mid["model_mae"] == 0.5
+    # the "all" subset still pools both rows
+    assert m[("16:00", "high", "all")]["n"] == 2
+
+
+def test_metrics_values_are_rounded():
+    # errors 0.7 and 0.1 average to 0.4, which naive float math renders as
+    # 0.39999999999999997 — the report must round so the artifact is readable.
+    joined = [
+        _hi("16:30", 95.7, 95.0, [[95, 96, 1.0]], 95.0, 94.0, 1.0),   # err 0.7
+        _hi("16:30", 95.1, 95.0, [[95, 96, 1.0]], 95.0, 94.0, 1.0),   # err 0.1
+    ]
+    m = edge_report.metrics(joined)[("16:30", "high", "all")]
+    assert m["model_mae"] == 0.4          # not 0.39999999999999997
