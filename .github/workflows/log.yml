@@ -53,6 +53,7 @@ jobs:
             git show origin/data:forecast_log.jsonl > forecast_log.jsonl || true
             git show origin/data:consensus_history.jsonl > consensus_history.jsonl || true
             git show origin/data:settlements.jsonl > settlements.jsonl || true
+            git show origin/data:betting_log.jsonl > betting_log.jsonl 2>/dev/null || true
           fi
 
       - name: Append this snapshot
@@ -65,6 +66,7 @@ jobs:
           cp forecast_log.jsonl "$tmp/forecast_log.jsonl"
           [ -f consensus_history.jsonl ] && cp consensus_history.jsonl "$tmp/consensus_history.jsonl"
           [ -f settlements.jsonl ] && cp settlements.jsonl "$tmp/settlements.jsonl"
+          [ -f betting_log.jsonl ] && cp betting_log.jsonl "$tmp/betting_log.jsonl"
           cd "$tmp"
           git init -q
           git config user.name "weather-log-bot"
@@ -73,6 +75,7 @@ jobs:
           git add forecast_log.jsonl
           [ -f consensus_history.jsonl ] && git add consensus_history.jsonl
           [ -f settlements.jsonl ] && git add settlements.jsonl
+          [ -f betting_log.jsonl ] && git add -f betting_log.jsonl
           git commit -q -m "log: snapshot $(date -u +%FT%TZ)"
           git push -fq \
             "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" \
