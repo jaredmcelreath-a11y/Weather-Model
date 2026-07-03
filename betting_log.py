@@ -15,6 +15,8 @@ from datetime import datetime
 from config import TIMEZONE
 from zoneinfo import ZoneInfo
 
+import model
+
 TZ = ZoneInfo(TIMEZONE)
 _PATH = os.path.join(os.path.dirname(__file__), "betting_log.jsonl")
 
@@ -31,3 +33,93 @@ def current_slot(now: datetime, slots=SLOTS, tol_min=SLOT_TOLERANCE_MIN) -> str 
         if abs((local - slot_dt).total_seconds()) <= tol_min * 60:
             return s
     return None
+
+
+def _parse(text: str) -> list[dict]:
+    return [json.loads(l) for l in text.splitlines() if l.strip()]
+
+
+def _write(rows: list[dict], path: str) -> None:
+    with open(path, "w") as fh:
+        for rec in rows:
+            fh.write(json.dumps(rec) + "\n")
+
+
+def load(path: str | None = None) -> list[dict]:
+    path = path or _PATH
+    if not os.path.exists(path):
+        return []
+    with open(path) as fh:
+        return _parse(fh.read())
+
+
+def _key(rec: dict) -> tuple:
+    return (rec["target_date"], rec["variable"], rec["capture_slot"])
+
+
+def _top_bins(probabilities: dict, n: int = 5) -> list:
+    items = sorted(probabilities.items(), key=lambda kv: kv[1], reverse=True)
+    return [[label, round(p, 4)] for label, p in items[:n]]
+
+
+def _row(day: str, variable: str, slot: str, cli_var: dict, hourly_var: dict,
+         market_var: dict | None, flat_offset: float, captured: str) -> dict:
+    obs = cli_var.get("observed_so_far")
+    cont = cli_var.get("observed_continuous")
+    live_gap = (cont - obs) if (obs is not None and cont is not None) else None
+    rec = {
+        "target_date": day,
+        "variable": variable,
+        "capture_slot": slot,
+        "captured_at": captured,
+        "cli_consensus": cli_var.get("consensus"),
+        "hourly_consensus": (hourly_var or {}).get("consensus"),
+        "flat_offset": flat_offset,
+        "live_gap": live_gap,
+        "observed_so_far": obs,
+        "observed_continuous": cont,
+        "peak_locked": cli_var.get("peak_locked"),
+        "sigma_used": cli_var.get("sigma_used"),
+        "model_bins": _top_bins(cli_var.get("probabilities") or {}),
+    }
+    if market_var:
+        rec["market_ev"] = market_var.get("ev")
+        rec["market_buckets"] = market_var.get("buckets")
+    return rec
+
+
+def record(cli_snapshot: dict, hourly_snapshot: dict, slot: str, calib: dict,
+           path: str | None = None) -> None:
+    """Upsert today's high & low betting-time rows for `slot`."""
+    today = cli_snapshot.get("today")
+    if not today:
+        return
+    day = today["day"]
+    from datetime import date as _date
+    day_d = _date.fromisoformat(day)
+    captured = cli_snapshot.get("updated") or datetime.now(TZ).isoformat(timespec="seconds")
+    market_today = (cli_snapshot.get("market") or {}).get("today", {})
+    hourly_today = (hourly_snapshot or {}).get("today", {})
+
+    new_recs = []
+    for variable in ("high", "low"):
+        cli_var = today.get(variable)
+        if not cli_var or not cli_var.get("probabilities"):
+            continue
+        flat_offset, _std = model._offset_bucket(
+            calib.get("settlement_offset"), variable, day_d, calib)
+        new_recs.append(_row(day, variable, slot, cli_var,
+                             hourly_today.get(variable), market_today.get(variable),
+                             flat_offset, captured))
+
+    target = path or _PATH
+    rows = load(target)
+    index = {_key(r): i for i, r in enumerate(rows)}
+    for rec in new_recs:
+        k = _key(rec)
+        if k in index:
+            rows[index[k]] = rec
+        else:
+            index[k] = len(rows)
+            rows.append(rec)
+    _write(rows, target)
