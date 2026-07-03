@@ -5,6 +5,7 @@ calibration.json
 forecast_log.jsonl
 consensus_history.jsonl
 settlements.jsonl
+betting_log.jsonl
 __pycache__/
 *.pyc
 .DS_Store

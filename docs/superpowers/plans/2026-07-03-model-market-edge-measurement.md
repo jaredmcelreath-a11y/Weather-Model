@@ -988,3 +988,15 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 - [ ] Dry-run the live capture inside a slot window (or force `now`): `python betting_log.py` prints `betting capture: slot=<one of the five>` when run 15:00-17:00 CDT, `slot=None` otherwise, and appends a well-formed row to `betting_log.jsonl`.
 - [ ] Confirm `forecast_log.jsonl` is byte-unchanged by a betting capture (diff before/after).
 - [ ] Confirm `.github/workflows/log.yml` restores and publishes `betting_log.jsonl` (grep for both lines).
+
+---
+
+## Post-merge follow-ups (land BEFORE the ~25-day decision gate, not needed for data capture)
+
+These surfaced in the final whole-branch review. The **capture** is complete and correct now (all raw fields — `cli_consensus`, `live_gap`, `flat_offset`, market bins — are logged, so nothing is lost); these only extend the **report** math, which can be added any time before the numbers actually drive the offset decision.
+
+1. **Boundary SLICE, not just count (Important).** `metrics()` currently emits `n_boundary` (a count) but pools Q1/Q2 stats over all rows. The decision gate is specifically about *boundary days* ("on boundary days, does the flat→live swap move bins toward the settled value"). Add boundary-sliced sub-metrics: for each `(slot, variable)`, compute `model_mae`/`market_mae`/disagreement-wins/`flat_rmse`/`live_rmse`/`flip_toward`/`flip_away` over the `is_boundary(cli_consensus)` subset separately from the mid-bin subset. All inputs already exist on the row; this is a pure `metrics()` extension + tests + a second CSV block. Without it the central question can't be answered.
+
+2. **Persist the directional caveat in the retro ASSESSMENT.md (Minor).** The `--retro` "directional only / small-n" banner prints to stdout only; the persisted file conveys small-n solely via the `n=` header and the `retro` slot label. Write a one-line caveat into the retro's `ASSESSMENT.md` so the decision artifact is self-describing after the terminal output is gone.
+
+3. **Round floats on write (Minor).** The retro `metrics.csv`/MD show unrounded values (e.g. `0.3999999999999986`). `round(..., 3)` in `write_report` on emit.
