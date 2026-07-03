@@ -24,8 +24,8 @@ import requests
 
 from config import (BIN_HIGH, BIN_LOW, CALM_WIND_MAX, CLEAR_CLOUD_MAX,
                     HIGH_LOCK_DROP, HIGH_LOCK_NOON_OFFSET_HOURS,
-                    LEAD_SIGMA_INFLATION, LOW_LOCK_RISE, PEAK_LOCK_DROP,
-                    TIMEZONE, bin_labels, lead_bucket)
+                    LEAD_SIGMA_INFLATION, LOW_LOCK_RISE, MAX_CLI_GAP,
+                    PEAK_LOCK_DROP, TIMEZONE, bin_labels, lead_bucket)
 from settlement import (covers_extreme, local_day_bounds, observed_so_far,
                         observed_so_far_robust)
 from convective import convective_sigma
@@ -461,11 +461,30 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     # this the flat +offset gets layered onto an already-continuous observed peak,
     # printing ~1°F too hot in the late-afternoon window (the "95.9 at 6pm when
     # it's 95" bug). The low keeps the strict `locked` gate — its downside is real.
-    high_peak_in = variable == "high" and _past_high_peak_gate(day, now)
-    if settle_offset is not None and (locked or high_peak_in) \
-            and observed_cont is not None and observed is not None:
-        settle_shift = observed_cont - observed
-        settle_gap_std = 0.0
+    if settle_offset is not None and observed is not None:
+        if variable == "high":
+            # Unchanged: once the peak is locked or past the solar-noon gate and
+            # the continuous peak is observed, anchor on the measured gap.
+            if (locked or _past_high_peak_gate(day, now)) and observed_cont is not None:
+                settle_shift = observed_cont - observed
+                settle_gap_std = 0.0
+        else:
+            # Low, CLI basis: prefer the whole-°F daily-summary CLI min (the exact
+            # Kalshi settlement variable) over the whole-°C 5-min feed. Use the
+            # MEASURED gap instead of the flat average offset. A not-yet-locked low
+            # anchors only on the authoritative daily-summary, only when it tightens
+            # the low downward (gap < 0), and only `live` (backtest must not get the
+            # settled value as lookahead). A locked low keeps its measured gap even
+            # at gap == 0 (the settled value must beat the average offset).
+            cli_daily = obs_series.get("cli_daily", {}).get(day)
+            cli_low = cli_daily[1] if cli_daily else observed_cont
+            if cli_low is not None:
+                gap = cli_low - observed
+                trust = (-MAX_CLI_GAP <= gap <= 0) if locked \
+                    else (live and cli_daily is not None and -MAX_CLI_GAP <= gap < 0)
+                if trust:
+                    settle_shift = gap
+                    settle_gap_std = 0.0
     if settle_shift:
         samples = [s + settle_shift for s in samples]
         fullday = [s + settle_shift for s in fullday]

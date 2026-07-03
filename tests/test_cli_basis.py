@@ -344,3 +344,111 @@ def test_backtest_cli_std_widens_distribution(monkeypatch):
                                        "high_std": 3.0, "low_std": 0.0})
     # consensus is centered on the actual (91), so a wider sigma -> higher CRPS
     assert wide["high"]["crps"] > narrow["high"]["crps"]
+
+
+def _top(probs):
+    """Integer degree of the highest-probability bin."""
+    return model.bin_temp(max(probs, key=probs.get))
+
+
+# A morning low that is SET but not yet locked: min 79 @03:00, ticked to 80
+# @04:00 (rise 1°F < 2°F fallback, and pre-sunrise so the early-lock gate is off).
+_NL_TEMPS = [82, 81, 80, 79, 80]
+_NL_NOW_H = 4
+_ZERO_OFF = {"low": 0.0, "low_std": 0.0, "high": 0.0, "high_std": 0.0}
+
+
+def test_live_low_anchors_on_daily_summary_cli_min():
+    day = date(2030, 7, 1)
+    series = _series(day)
+    now = datetime(day.year, day.month, day.day, _NL_NOW_H, tzinfo=_TZ)
+    base = model.predict_variable(series, _obs(day, _NL_TEMPS, False), day,
+                                  "low", now, None, _ZERO_OFF, live=True)
+    obs_cli = _obs(day, _NL_TEMPS, False)
+    obs_cli["cli_daily"] = {day: (95.0, 78.0)}      # CLI min 78 = 1°F below hourly 79
+    anchored = model.predict_variable(series, obs_cli, day, "low", now, None,
+                                      _ZERO_OFF, live=True)
+    assert not base["peak_locked"] and not anchored["peak_locked"]
+    # Measured gap (78 - 79 = -1) replaces the zero average offset -> center -1°F.
+    assert anchored["consensus"] == round(base["consensus"] - 1.0, 1)
+    # Constant shift: spread unchanged, top bin drops one degree.
+    assert anchored["sigma_used"] == base["sigma_used"]
+    assert _top(anchored["probabilities"]) == _top(base["probabilities"]) - 1
+
+
+def test_live_low_ignores_daily_summary_when_warmer_or_too_cold():
+    day = date(2030, 7, 1)
+    series = _series(day)
+    now = datetime(day.year, day.month, day.day, _NL_NOW_H, tzinfo=_TZ)
+    base = model.predict_variable(series, _obs(day, _NL_TEMPS, False), day,
+                                  "low", now, None, _ZERO_OFF, live=True)
+    warm = _obs(day, _NL_TEMPS, False); warm["cli_daily"] = {day: (95.0, 80.0)}
+    cold = _obs(day, _NL_TEMPS, False); cold["cli_daily"] = {day: (95.0, 74.0)}
+    # Warmer-than-hourly (gap >= 0) ignored; implausibly cold (gap < -3) clamped out.
+    assert model.predict_variable(series, warm, day, "low", now, None,
+                                  _ZERO_OFF, live=True)["consensus"] == base["consensus"]
+    assert model.predict_variable(series, cold, day, "low", now, None,
+                                  _ZERO_OFF, live=True)["consensus"] == base["consensus"]
+
+
+def test_backtest_low_ignores_daily_summary_when_not_live():
+    day = date(2030, 7, 1)
+    series = _series(day)
+    now = datetime(day.year, day.month, day.day, _NL_NOW_H, tzinfo=_TZ)
+    base = model.predict_variable(series, _obs(day, _NL_TEMPS, False), day,
+                                  "low", now, None, _ZERO_OFF, live=False)
+    obs_cli = _obs(day, _NL_TEMPS, False); obs_cli["cli_daily"] = {day: (95.0, 78.0)}
+    replay = model.predict_variable(series, obs_cli, day, "low", now, None,
+                                    _ZERO_OFF, live=False)
+    assert replay["consensus"] == base["consensus"]   # not-locked anchor is live-only
+
+
+def test_locked_low_prefers_daily_summary_over_5min_feed():
+    day = date(2030, 7, 1)
+    series = _series(day)
+    now = datetime(day.year, day.month, day.day, 16, tzinfo=_TZ)
+    obs = _obs(day, _LOCKED_LOW, True)               # 5-min feed mirrors hourly low 79
+    only_cont = model.predict_variable(series, obs, day, "low", now, None,
+                                       _LOW_OFF, live=True)
+    obs_cli = _obs(day, _LOCKED_LOW, True); obs_cli["cli_daily"] = {day: (95.0, 78.0)}
+    with_cli = model.predict_variable(series, obs_cli, day, "low", now, None,
+                                      _LOW_OFF, live=True)
+    assert only_cont["peak_locked"] and with_cli["peak_locked"]
+    # Anchors on the whole-°F 78, not the 5-min 79 -> ~1°F colder center.
+    assert with_cli["consensus"] == round(only_cont["consensus"] - 1.0, 1)
+
+
+def test_locked_low_daily_summary_gap_zero_no_average_offset():
+    day = date(2030, 7, 1)
+    series = _series(day)
+    now = datetime(day.year, day.month, day.day, 16, tzinfo=_TZ)
+    obs = _obs(day, _LOCKED_LOW, True); obs["cli_daily"] = {day: (95.0, 79.0)}
+    with_cli = model.predict_variable(series, obs, day, "low", now, None,
+                                      _LOW_OFF, live=True)
+    no_offset = model.predict_variable(series, _obs(day, _LOCKED_LOW, True), day,
+                                       "low", now, None, None, live=True)
+    # Measured gap 0 -> anchored on the hourly low, NOT the -0.3 average offset.
+    assert with_cli["consensus"] == no_offset["consensus"]
+
+
+def test_high_ignores_daily_summary_min():
+    day = date(2030, 7, 1)
+    series = _series(day)
+    now = datetime(day.year, day.month, day.day, _NL_NOW_H, tzinfo=_TZ)
+    off = {"high": 0.0, "high_std": 0.0, "low": 0.0, "low_std": 0.0}
+    base = model.predict_variable(series, _obs(day, _NL_TEMPS, False), day,
+                                  "high", now, None, off, live=True)
+    obs_cli = _obs(day, _NL_TEMPS, False); obs_cli["cli_daily"] = {day: (95.0, 78.0)}
+    assert model.predict_variable(series, obs_cli, day, "high", now, None,
+                                  off, live=True)["consensus"] == base["consensus"]
+
+
+def test_robinhood_low_ignores_daily_summary():
+    day = date(2030, 7, 1)
+    series = _series(day)
+    now = datetime(day.year, day.month, day.day, _NL_NOW_H, tzinfo=_TZ)
+    base = model.predict_variable(series, _obs(day, _NL_TEMPS, False), day,
+                                  "low", now, None, None, live=True)
+    obs_cli = _obs(day, _NL_TEMPS, False); obs_cli["cli_daily"] = {day: (95.0, 78.0)}
+    assert model.predict_variable(series, obs_cli, day, "low", now, None,
+                                  None, live=True) == base

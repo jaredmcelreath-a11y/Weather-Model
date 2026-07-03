@@ -112,6 +112,8 @@ LOW_LOCK_RISE = 0.8
 HIGH_LOCK_NOON_OFFSET_HOURS = 3.25   # hours after solar noon the peak is treated as in
 HIGH_LOCK_DROP = 0.8                  # °F off the running max, past the gate, to early-lock
 
+MAX_CLI_GAP = 3.0   # °F; largest CLI-vs-hourly low gap we trust as a live anchor (spike clamp)
+
 # --- Radiational-cooling predictor (overnight low) ---
 # On clear, calm nights the surface radiates heat away efficiently and the low
 # undershoots what the models say. We flag a night as clear+calm when the mean
