@@ -3,7 +3,9 @@ flat-vs-live settlement-offset predictor. Analysis only — no live path reads t
 """
 from __future__ import annotations
 
+import csv
 import math
+import os
 from datetime import date as _date
 
 
@@ -109,3 +111,39 @@ def join(betting_rows: list[dict], cli_map: dict, hourly_map: dict) -> list[dict
                     "settled_hourly": settled_hourly,
                     "actual_gap": settled_cli - settled_hourly})
     return out
+
+
+_COLS = ["capture_slot", "variable", "n", "model_mae", "market_mae",
+         "disagreements", "model_bin_wins", "market_bin_wins", "n_boundary",
+         "flat_rmse", "live_rmse", "flip_toward", "flip_away"]
+
+
+def write_report(metrics_by_key: dict, out_dir: str) -> list[str]:
+    """Write metrics.csv and ASSESSMENT.md to out_dir. Create out_dir if absent.
+    Returns list of written paths."""
+    os.makedirs(out_dir, exist_ok=True)
+    csv_path = os.path.join(out_dir, "metrics.csv")
+    with open(csv_path, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(_COLS)
+        for (slot, variable), m in sorted(metrics_by_key.items()):
+            w.writerow([slot, variable] + [m.get(c) for c in _COLS[2:]])
+
+    md_path = os.path.join(out_dir, "ASSESSMENT.md")
+    lines = ["# Betting-time edge report", "",
+             "Model-vs-market and flat-vs-live settlement-offset, by capture slot.",
+             "Q2 (flat vs live RMSE) is measured on high rows only.", ""]
+    for (slot, variable), m in sorted(metrics_by_key.items()):
+        lines.append(f"## {slot} — {variable} (n={m['n']}, boundary days={m['n_boundary']})")
+        lines.append(f"- Model MAE {m['model_mae']} vs Market MAE {m['market_mae']}")
+        lines.append(f"- Disagreements {m['disagreements']}: model won {m['model_bin_wins']}, "
+                     f"market won {m['market_bin_wins']}")
+        if m.get("live_rmse") is not None:
+            verdict = ("live gap BEATS flat" if (m["flat_rmse"] or 0) - (m["live_rmse"] or 0) >= 0.15
+                       else "no clear offset edge")
+            lines.append(f"- Offset: flat RMSE {m['flat_rmse']} vs live RMSE {m['live_rmse']} "
+                         f"({verdict}); bin flips toward {m['flip_toward']} / away {m['flip_away']}")
+        lines.append("")
+    with open(md_path, "w") as fh:
+        fh.write("\n".join(lines))
+    return [csv_path, md_path]

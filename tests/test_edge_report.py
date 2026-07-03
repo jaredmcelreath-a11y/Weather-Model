@@ -1,5 +1,6 @@
 import edge_report
 from datetime import date
+import os
 
 _BUCKETS = [[None, 96, 0.3], [97, 98, 0.6], [99, 100, 0.1]]
 
@@ -73,3 +74,16 @@ def test_metrics_mae_and_offset():
     # flat rmse = sqrt(((0.89-1)^2)*2/2)=0.11 ; live rmse = sqrt((0.2^2+0.2^2)/2)=0.2
     assert round(m[key]["flat_rmse"], 2) == 0.11
     assert round(m[key]["live_rmse"], 2) == 0.20
+
+
+def test_write_report_creates_files(tmp_path):
+    m = {("15:30", "high"): {"n": 5, "model_mae": 0.5, "market_mae": 0.6,
+          "disagreements": 2, "model_bin_wins": 1, "market_bin_wins": 1,
+          "n_boundary": 3, "flat_rmse": 0.75, "live_rmse": 0.4,
+          "flip_toward": 2, "flip_away": 0}}
+    out = str(tmp_path / "edge")
+    paths = edge_report.write_report(m, out)
+    assert os.path.exists(os.path.join(out, "metrics.csv"))
+    assert os.path.exists(os.path.join(out, "ASSESSMENT.md"))
+    body = open(os.path.join(out, "metrics.csv")).read()
+    assert "15:30" in body and "0.4" in body
