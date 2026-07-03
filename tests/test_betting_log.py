@@ -21,12 +21,20 @@ def test_current_slot_within_tolerance():
     assert betting_log.current_slot(_at(16, 24)) == "16:30"   # -6 min
 
 
+def test_current_slot_eight_minute_boundary_catches():
+    # ±8 tolerance: an 8-min offset (the cron's :52/:07-style boundary run) fires.
+    assert betting_log.current_slot(_at(14, 52)) == "15:00"   # :52 run covers the :00 slot
+    assert betting_log.current_slot(_at(15, 8)) == "15:00"    # +8 min, inclusive boundary
+
+
 def test_current_slot_outside_tolerance_is_none():
+    assert betting_log.current_slot(_at(15, 9)) is None       # 9 min > 8 -> just outside
     assert betting_log.current_slot(_at(15, 12)) is None      # 12 min off any slot
 
 
 def test_current_slot_all_five_slots_defined():
     assert betting_log.SLOTS == ["15:00", "15:30", "16:00", "16:30", "17:00"]
+    assert betting_log.SLOT_TOLERANCE_MIN == 8
 
 
 _CLI = {

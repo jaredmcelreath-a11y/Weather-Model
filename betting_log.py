@@ -21,7 +21,13 @@ TZ = ZoneInfo(TIMEZONE)
 _PATH = os.path.join(os.path.dirname(__file__), "betting_log.jsonl")
 
 SLOTS = ["15:00", "15:30", "16:00", "16:30", "17:00"]
-SLOT_TOLERANCE_MIN = 7
+# The scheduler fires on a ~15-min cadence (GitHub cron at :07/:22/:37/:52 + the
+# external 15-min trigger). Slots sit at :00/:30, so the nearest run to any slot is
+# at most 7.5 min away. A ±8-min window therefore catches every slot regardless of
+# the cron's phase — and under the :07/:22/:37/:52 fallback each slot gets TWO
+# eligible runs (e.g. :00 is covered by both :52 and :07) instead of a single one
+# hugging the boundary. The per-slot upsert makes redundant runs harmless.
+SLOT_TOLERANCE_MIN = 8
 
 
 def current_slot(now: datetime, slots=SLOTS, tol_min=SLOT_TOLERANCE_MIN) -> str | None:
