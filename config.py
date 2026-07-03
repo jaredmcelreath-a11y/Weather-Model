@@ -101,6 +101,14 @@ PEAK_LOCK_DROP = 2.0
 # min — the dawn minimum is behind us; the margin clears obs/rounding jitter.
 LOW_LOCK_RISE = 0.8
 
+# Symmetric early lock for the high: the afternoon maximum forms by mid-afternoon,
+# so once we're past this local hour and the temp has eased HIGH_LOCK_DROP °F off a
+# real (post-trough) peak, the high is in — collapse the spread without waiting for
+# the full PEAK_LOCK_DROP retreat. The high needs no convective-downside guard the
+# way the low does; nothing sets a new daytime max after the afternoon window.
+HIGH_LOCK_HOUR = 17      # local hour at/after which the early high lock is allowed
+HIGH_LOCK_DROP = 0.8     # °F off the running max, past HIGH_LOCK_HOUR, to early-lock
+
 # --- Radiational-cooling predictor (overnight low) ---
 # On clear, calm nights the surface radiates heat away efficiently and the low
 # undershoots what the models say. We flag a night as clear+calm when the mean
