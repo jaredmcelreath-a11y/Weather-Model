@@ -452,3 +452,16 @@ def test_robinhood_low_ignores_daily_summary():
     obs_cli = _obs(day, _NL_TEMPS, False); obs_cli["cli_daily"] = {day: (95.0, 78.0)}
     assert model.predict_variable(series, obs_cli, day, "low", now, None,
                                   None, live=True) == base
+
+
+def test_fetch_cli_daily_returns_summary(monkeypatch):
+    day = date(2026, 7, 3)
+    monkeypatch.setattr(model, "fetch_actual_cli", lambda s, e: {day: (83.0, 78.0)})
+    assert model._fetch_cli_daily(day) == {day: (83.0, 78.0)}
+
+
+def test_fetch_cli_daily_swallows_errors(monkeypatch):
+    def boom(s, e):
+        raise RuntimeError("network down")
+    monkeypatch.setattr(model, "fetch_actual_cli", boom)
+    assert model._fetch_cli_daily(date(2026, 7, 3)) == {}

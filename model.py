@@ -32,6 +32,7 @@ from convective import convective_sigma
 import solar
 from sources import (open_meteo_ensemble, open_meteo_models, nws_forecast,
                      nws_observations, iem_mos)
+from sources.station_history import fetch_actual_cli
 
 TZ = ZoneInfo(TIMEZONE)
 
@@ -625,6 +626,17 @@ def prob_for_strike(probs: dict, strike_type: str, floor, cap) -> float:
     return prob_at_most(probs, cap) - prob_at_most(probs, floor - 1)
 
 
+def _fetch_cli_daily(day: date) -> dict:
+    """{date: (max_f, min_f)} from the IEM daily summary for `day`, or {} on any
+    failure. Best-effort: the CLI daily min is a live *anchor* for the Kalshi low
+    (see predict_variable), never a settlement floor — a miss just falls back to
+    the hourly/average-offset path."""
+    try:
+        return fetch_actual_cli(day, day)
+    except Exception:
+        return {}
+
+
 def gather_series(forecast_days: int = 2, continuous_obs: bool = False,
                   now: datetime | None = None):
     """All forecast series merged into one dict, plus the obs series.
@@ -651,6 +663,10 @@ def gather_series(forecast_days: int = 2, continuous_obs: bool = False,
             dropped.append(label)
     # Observations are the settlement anchor — not degradable; let it raise.
     obs = nws_observations.fetch(continuous=continuous_obs, now=now)
+    # CLI basis only (Kalshi): the whole-°F daily-summary min anchors today's low
+    # (predict_variable). Best-effort — a miss falls back to the hourly path.
+    if continuous_obs:
+        obs["cli_daily"] = _fetch_cli_daily((now or datetime.now(TZ)).date())
     return series, obs, dropped
 
 
