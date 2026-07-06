@@ -100,6 +100,11 @@ def _inject_theme(name):
         "{flex-wrap:wrap!important;gap:0.5rem!important;}"
         ".st-key-top_metrics [data-testid=\"stColumn\"]"
         "{flex:1 1 47%!important;min-width:47%!important;width:47%!important;}"
+        # keep the High/Low Consensus/Spread/Resolved trio on one row on phones
+        "[class*=\"st-key-mini_\"] [data-testid=\"stHorizontalBlock\"]"
+        "{flex-wrap:nowrap!important;gap:0.35rem!important;}"
+        "[class*=\"st-key-mini_\"] [data-testid=\"stColumn\"]"
+        "{flex:1 1 33%!important;min-width:0!important;width:33%!important;}"
         "}\n"
         "[data-testid=\"stCaptionContainer\"],[data-testid=\"stCaptionContainer\"] p"
         "{color:var(--muted)!important;}\n"
@@ -632,7 +637,9 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
         if d is None:
             st.warning("No data.")
             return
-        c1, c2, c3 = st.columns(3)
+        # keyed so a mobile CSS rule keeps these three on one row (not stacked)
+        with st.container(key=f"mini_{variable}"):
+            c1, c2, c3 = st.columns(3)
         c1.metric("Consensus", f"{d['consensus']}°F")
         c2.metric("Spread", f"{d['sigma_used']}°F (±1σ)",
                   help="One standard deviation of the model's forecast — its error "
@@ -1006,13 +1013,13 @@ def render_page(snap, calib, adapter, load_accuracy):
     _mkt_help = ("Today's market-implied expected {x}, from Kalshi's live contract "
                  "ladder (shown on both pages for reference)."
                  + (f" Ladder fetched {_mkt_as_of}." if _mkt_as_of else ""))
-    top[1].metric("Kalshi High",
+    top[1].metric("Updated", _fmt_clock(snap["updated"], with_seconds=True))
+    top[2].metric("Kalshi High",
                   f"{ki['high']:.1f}°F" if ki.get("high") is not None else "—",
                   help=_mkt_help.format(x="high"))
-    top[2].metric("Kalshi Low",
+    top[3].metric("Kalshi Low",
                   f"{ki['low']:.1f}°F" if ki.get("low") is not None else "—",
                   help=_mkt_help.format(x="low"))
-    top[3].metric("Updated", _fmt_clock(snap["updated"], with_seconds=True))
     if calib:
         top[4].metric("Calib Bias (Hi/Lo)",
                       f"{calib['bias']['deterministic']['high']:+.1f}/"
