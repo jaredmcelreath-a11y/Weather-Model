@@ -1013,11 +1013,12 @@ def render_page(snap, calib, adapter, load_accuracy):
     with st.container(key="top_metrics"):
         top = st.columns(6)
     if cur:
-        top[0].metric("Current Temp", f"{cur['temp']}°F",
-                      help=f"as of {_fmt_clock(cur['time'])}")
         ch = snap.get("current_hourly")
+        _cur_help = f"Live reading as of {_fmt_clock(cur['time'])}."
         if ch and ch.get("time") != cur.get("time"):
-            top[0].caption(f"hourly: {ch['temp']}°F · {_fmt_clock(ch['time'])}")
+            _cur_help += (f" Latest routine hourly (:53 METAR): "
+                          f"{ch['temp']}°F at {_fmt_clock(ch['time'])}.")
+        top[0].metric("Current Temp", f"{cur['temp']}°F", help=_cur_help)
     _mkt_as_of = ki.get("as_of")
     _mkt_help = ("Today's market-implied expected {x}, from Kalshi's live contract "
                  "ladder (shown on both pages for reference)."
