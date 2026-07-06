@@ -77,17 +77,16 @@ def _inject_theme(name):
         "[data-testid=\"stSidebar\"] [data-testid=\"stExpander\"]"
         "{margin-top:auto;margin-bottom:1.5rem;}\n"
         "[data-testid=\"stMetric\"]{background:var(--surface);border:1px solid var(--border);"
-        "border-radius:12px;padding:0.7rem 0.9rem;text-align:center;align-items:center;}\n"
+        "border-radius:12px;padding:0.7rem 0.9rem;text-align:center;align-items:center;"
+        "position:relative;}\n"
         # center the label/value and let the wider ones wrap fully rather than clip
-        "[data-testid=\"stMetricLabel\"]{position:relative;display:flex!important;"
+        "[data-testid=\"stMetricLabel\"]{display:flex!important;"
         "justify-content:center!important;align-items:center;width:100%!important;"
-        "padding:0 1.35rem;overflow:visible!important;}\n"
-        # pin the '?' help bubble (its hover-target wrapper, not just the inner icon)
-        # to the far right so it clears the now-centered label text
-        "[data-testid=\"stMetricLabel\"] [data-testid=\"stTooltipHoverTarget\"],"
-        "[data-testid=\"stMetricLabel\"] [data-testid=\"stTooltipIcon\"]"
-        "{position:absolute!important;right:0.1rem;top:50%;transform:translateY(-50%);"
-        "margin:0!important;}\n"
+        "padding:0 0.4rem;overflow:visible!important;}\n"
+        # pin the '?' help bubble's inline wrapper (<label>) to the top-right corner
+        # of the metric box so it's fully out of the centered label text's way
+        "[data-testid=\"stMetricLabel\"] label,[data-testid=\"stMetricLabel\"] .e1gk92lc3"
+        "{position:absolute!important;top:5px;right:7px;margin:0!important;}\n"
         "[data-testid=\"stMetricLabel\"],[data-testid=\"stMetricLabel\"] *"
         "{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;"
         "font-weight:700;color:var(--muted);font-size:0.76rem;text-align:center!important;}\n"
