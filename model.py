@@ -722,7 +722,15 @@ def snapshot(calib: dict | None = None, settle_offset=None,
 
     obs_times, obs_temps = obs.get("obs", ([], []))
     current = None
-    if obs_times:
+    # Prefer the sub-hourly (~5-min) feed for the live 'current' reading so it
+    # refreshes every few minutes instead of only at the routine :53 METAR; fall
+    # back to the hourly series when the continuous feed isn't fetched.
+    cont = obs.get("obs_continuous")
+    if cont and cont[0]:
+        cont_times, cont_temps = cont
+        current = {"temp": round(cont_temps[-1], 1),
+                   "time": cont_times[-1].isoformat(timespec="minutes")}
+    elif obs_times:
         current = {"temp": round(obs_temps[-1], 1),
                    "time": obs_times[-1].isoformat(timespec="minutes")}
 
