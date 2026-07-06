@@ -48,7 +48,7 @@ THEMES = {
         "good": "#8FD3A6", "warn": "#E7C67A", "bad": "#E7A99B",
     },
 }
-DEFAULT_THEME = "Deep slate"
+DEFAULT_THEME = "Charcoal"
 
 
 def _inject_theme(name):
@@ -93,6 +93,14 @@ def _inject_theme(name):
         "font-weight:700;color:var(--muted);font-size:0.76rem;text-align:center!important;}\n"
         "[data-testid=\"stMetricValue\"]{font-size:1.55rem;white-space:normal;"
         "overflow-wrap:anywhere;justify-content:center;text-align:center;}\n"
+        # phones: grid the 6 top metric boxes 2-per-row instead of stacking them
+        # one-per-row (desktop keeps the 6-across row — this only fires ≤640px).
+        "@media (max-width:640px){"
+        ".st-key-top_metrics [data-testid=\"stHorizontalBlock\"]"
+        "{flex-wrap:wrap!important;gap:0.5rem!important;}"
+        ".st-key-top_metrics [data-testid=\"stColumn\"]"
+        "{flex:1 1 47%!important;min-width:47%!important;width:47%!important;}"
+        "}\n"
         "[data-testid=\"stCaptionContainer\"],[data-testid=\"stCaptionContainer\"] p"
         "{color:var(--muted)!important;}\n"
         # themed, center-justified HTML tables (Streamlit's canvas dataframe can't center)
@@ -987,7 +995,10 @@ def render_page(snap, calib, adapter, load_accuracy):
 
     cur = snap.get("current")
     ki = _kalshi_implied(snap["today"]["day"])      # Kalshi market-implied hi/lo (today)
-    top = st.columns(6)
+    # keyed container so a mobile-only CSS rule can grid these 6 boxes 2-per-row
+    # (instead of Streamlit's one-per-row stack) without touching other columns.
+    with st.container(key="top_metrics"):
+        top = st.columns(6)
     if cur:
         top[0].metric("Current Temp", f"{cur['temp']}°F",
                       help=f"as of {_fmt_clock(cur['time'])}")

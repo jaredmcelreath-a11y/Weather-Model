@@ -1,10 +1,10 @@
-# Dark dashboard theme (Deep slate default). The runtime "Settings" control can
-# switch the palette to Charcoal by injecting CSS on top of this base; these
-# values just guarantee the first paint is dark instead of Streamlit's white.
+# Dark dashboard theme (Charcoal default). The runtime "Settings" control can
+# switch the palette to Deep slate by injecting CSS on top of this base; these
+# values just guarantee the first paint matches the default instead of flashing.
 [theme]
 base = "dark"
-primaryColor = "#6FBF9A"
-backgroundColor = "#14181C"
-secondaryBackgroundColor = "#1E252B"
-textColor = "#E8ECEF"
+primaryColor = "#7FB79A"
+backgroundColor = "#201B18"
+secondaryBackgroundColor = "#2B2420"
+textColor = "#F7F1E6"
 font = "serif"
