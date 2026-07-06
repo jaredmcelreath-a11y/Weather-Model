@@ -1027,18 +1027,18 @@ def render_page(snap, calib, adapter, load_accuracy):
                   f"{ki['low']:.1f}°F" if ki.get("low") is not None else "—",
                   help=_mkt_help.format(x="low"))
     if calib:
-        top[4].metric("Calib Bias (Hi/Lo)",
+        top[4].metric("Calib Bias",
                       f"{calib['bias']['deterministic']['high']:+.1f}/"
                       f"{calib['bias']['deterministic']['low']:+.1f}°F",
-                      help="The raw weather models' average signed error over the last "
+                      help="Shown as high/low. The raw weather models' average signed error over the last "
                            f"{calib.get('n_days', '~45')} settled days, which the model "
                            "subtracts out before forecasting. A −1.0°F high bias means "
                            "the raw models ran ~1°F too hot on highs, so the model pulls "
                            "its high down by that much (and likewise for the low). Near 0 "
                            "= the models are already well-centered.")
-        top[5].metric("Day-Ahead σ (Hi/Lo)",
+        top[5].metric("Day-Ahead σ",
                       f"{calib['sigma']['high']:.1f}/{calib['sigma']['low']:.1f}°F",
-                      help="The model's day-ahead forecast uncertainty — one standard "
+                      help="Shown as high/low. The model's day-ahead forecast uncertainty — one standard "
                            "deviation (°F), calibrated from how far past forecasts missed. "
                            "Roughly 68% of outcomes land within ±this of consensus, ~95% "
                            "within ±2×. It's the baseline spread for a ~24h-out forecast; "
