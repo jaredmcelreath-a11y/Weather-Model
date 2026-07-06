@@ -721,7 +721,12 @@ def snapshot(calib: dict | None = None, settle_offset=None,
         forecast_days=2, continuous_obs=continuous_obs, now=now)
 
     obs_times, obs_temps = obs.get("obs", ([], []))
-    current = None
+    # Latest routine hourly (:53 METAR) reading, kept alongside the live value so
+    # the dashboard can still surface the precise hourly temp under Current Temp.
+    current_hourly = None
+    if obs_times:
+        current_hourly = {"temp": round(obs_temps[-1], 1),
+                          "time": obs_times[-1].isoformat(timespec="minutes")}
     # Prefer the sub-hourly (~5-min) feed for the live 'current' reading so it
     # refreshes every few minutes instead of only at the routine :53 METAR; fall
     # back to the hourly series when the continuous feed isn't fetched.
@@ -730,15 +735,15 @@ def snapshot(calib: dict | None = None, settle_offset=None,
         cont_times, cont_temps = cont
         current = {"temp": round(cont_temps[-1], 1),
                    "time": cont_times[-1].isoformat(timespec="minutes")}
-    elif obs_times:
-        current = {"temp": round(obs_temps[-1], 1),
-                   "time": obs_times[-1].isoformat(timespec="minutes")}
+    else:
+        current = current_hourly
 
     return {
         "updated": now.isoformat(timespec="seconds"),
         "today": _predict_from(series, obs, today, now, calib, settle_offset, live=True),
         "tomorrow": _predict_from(series, obs, tomorrow, now, calib, settle_offset, live=True),
         "current": current,
+        "current_hourly": current_hourly,
         "sources": {"today": per_source_extremes(series, today),
                     "tomorrow": per_source_extremes(series, tomorrow)},
         "dropped_sources": dropped,

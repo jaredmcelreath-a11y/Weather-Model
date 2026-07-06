@@ -1015,6 +1015,9 @@ def render_page(snap, calib, adapter, load_accuracy):
     if cur:
         top[0].metric("Current Temp", f"{cur['temp']}°F",
                       help=f"as of {_fmt_clock(cur['time'])}")
+        ch = snap.get("current_hourly")
+        if ch and ch.get("time") != cur.get("time"):
+            top[0].caption(f"hourly: {ch['temp']}°F · {_fmt_clock(ch['time'])}")
     _mkt_as_of = ki.get("as_of")
     _mkt_help = ("Today's market-implied expected {x}, from Kalshi's live contract "
                  "ladder (shown on both pages for reference)."
