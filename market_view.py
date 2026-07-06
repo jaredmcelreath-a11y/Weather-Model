@@ -105,6 +105,9 @@ def _inject_theme(name):
         "{flex-wrap:nowrap!important;gap:0.35rem!important;}"
         "[class*=\"st-key-mini_\"] [data-testid=\"stColumn\"]"
         "{flex:1 1 33%!important;min-width:0!important;width:33%!important;}"
+        # shrink the mini-metric text a touch so the trio fits comfortably on phones
+        "[class*=\"st-key-mini_\"] [data-testid=\"stMetricValue\"]{font-size:1.1rem!important;}"
+        "[class*=\"st-key-mini_\"] [data-testid=\"stMetricLabel\"] *{font-size:0.66rem!important;}"
         "}\n"
         "[data-testid=\"stCaptionContainer\"],[data-testid=\"stCaptionContainer\"] p"
         "{color:var(--muted)!important;}\n"
