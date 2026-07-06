@@ -69,6 +69,13 @@ def _inject_theme(name):
         "h1,h2,h3,h4,[data-testid=\"stHeading\"]"
         "{font-family:'IM Fell English',Georgia,serif!important;letter-spacing:-0.01em;}\n"
         "[data-testid=\"stSidebar\"]{background-color:var(--surface)!important;}\n"
+        # push the whole page up (trim Streamlit's tall default top padding)
+        "[data-testid=\"stMainBlockContainer\"]{padding-top:2.5rem!important;}\n"
+        # pin the sidebar 'Settings' expander to the bottom, a bit above the edge
+        "[data-testid=\"stSidebarUserContent\"]{display:flex;flex-direction:column;"
+        "min-height:calc(100vh - 5rem);}\n"
+        "[data-testid=\"stSidebar\"] [data-testid=\"stExpander\"]"
+        "{margin-top:auto;margin-bottom:1.5rem;}\n"
         "[data-testid=\"stMetric\"]{background:var(--surface);border:1px solid var(--border);"
         "border-radius:12px;padding:0.7rem 0.9rem;text-align:center;align-items:center;}\n"
         # center the label/value and let the wider ones wrap fully rather than clip
@@ -1026,8 +1033,6 @@ def render_page(snap, calib, adapter, load_accuracy):
     st.sidebar.caption("Tomorrow = pure forecast (no observations yet), so wider. "
                        "Best for the early-morning low before bed.")
 
-    _theme_controls()  # 'Settings' palette picker, grouped with the sidebar controls
-
     safe_pct = st.sidebar.slider(
         "Safe-Hold Risk Floor", min_value=int(adapter.safe_hold_min * 100),
         max_value=95, value=int(adapter.safe_hold_default * 100), step=5,
@@ -1038,6 +1043,10 @@ def render_page(snap, calib, adapter, load_accuracy):
     safe_min = safe_pct / 100
     st.sidebar.caption(f"Safe-hold box shows the best bet with ≥{safe_pct}% model "
                        "win-probability and positive edge, held to settlement.")
+
+    # 'Settings' palette picker, pinned to the bottom of the sidebar (CSS pushes
+    # the sidebar's only expander down via margin-top:auto).
+    _theme_controls()
 
     key = "today" if day == "Today" else "tomorrow"
     pred = snap[key]
