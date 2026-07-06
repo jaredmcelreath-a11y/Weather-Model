@@ -56,7 +56,7 @@ def _upstream_triggered(alerts: dict, zones=UPSTREAM_UGC) -> bool:
 def risk_label(low_pred: dict) -> str | None:
     """Dashboard caption when the low's spread was convectively widened."""
     if (low_pred or {}).get("convective_widened"):
-        return ("⚡ Convective risk — evening storms could set a new low; "
+        return ("Convective risk — evening storms could set a new low; "
                 "confidence on the low has been widened.")
     return None
 

@@ -28,6 +28,233 @@ _TZ = ZoneInfo(TIMEZONE)
 # capital — exclude it from the safe-hold pick regardless of edge.
 SAFE_HOLD_MAX_ASK = 0.92
 
+# ---------------------------------------------------------------------------
+# Dark theme — a light serif palette on a dark ground, modeled on the agency
+# site (IM Fell English headings + Bitter body). Two palettes, switchable at
+# runtime via the "Settings" control; .streamlit/config.toml seeds the first
+# paint with the Deep slate values so there's no white flash before this runs.
+# ---------------------------------------------------------------------------
+THEMES = {
+    "Deep slate": {
+        "bg": "#14181C", "surface": "#1E252B", "surface2": "#283037",
+        "ink": "#E8ECEF", "muted": "#9BA7B0", "accent": "#6FBF9A",
+        "accent_strong": "#97D6B8", "border": "rgba(232,236,239,0.12)",
+        "good": "#7FD3A2", "warn": "#E4C878", "bad": "#E59A8E",
+    },
+    "Charcoal": {
+        "bg": "#201B18", "surface": "#2B2420", "surface2": "#37302A",
+        "ink": "#F7F1E6", "muted": "#B7A99A", "accent": "#7FB79A",
+        "accent_strong": "#A6D2BC", "border": "rgba(231,219,201,0.16)",
+        "good": "#8FD3A6", "warn": "#E7C67A", "bad": "#E7A99B",
+    },
+}
+DEFAULT_THEME = "Deep slate"
+
+
+def _inject_theme(name):
+    """Emit the <style> block that paints the whole app in palette `name`."""
+    t = THEMES.get(name, THEMES[DEFAULT_THEME])
+    st.markdown(
+        "<style>\n"
+        "@import url('https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1"
+        "&family=Bitter:wght@400;500;600;700&display=swap');\n"
+        ":root{"
+        f"--bg:{t['bg']};--surface:{t['surface']};--surface2:{t['surface2']};"
+        f"--ink:{t['ink']};--muted:{t['muted']};--accent:{t['accent']};"
+        f"--accent-strong:{t['accent_strong']};--border:{t['border']};"
+        f"--good:{t['good']};--warn:{t['warn']};--bad:{t['bad']};}}\n"
+        ".stApp{background-color:var(--bg)!important;}\n"
+        ".stApp,.stApp p,.stApp li,.stApp label,[data-testid=\"stMarkdownContainer\"]"
+        "{color:var(--ink);font-family:'Bitter',Georgia,serif;}\n"
+        "h1,h2,h3,h4,[data-testid=\"stHeading\"]"
+        "{font-family:'IM Fell English',Georgia,serif!important;letter-spacing:-0.01em;}\n"
+        "[data-testid=\"stSidebar\"]{background-color:var(--surface)!important;}\n"
+        "[data-testid=\"stMetric\"]{background:var(--surface);border:1px solid var(--border);"
+        "border-radius:12px;padding:0.7rem 0.9rem;text-align:center;align-items:center;}\n"
+        # center the label/value and let the wider ones wrap fully rather than clip
+        "[data-testid=\"stMetricLabel\"]{position:relative;display:flex!important;"
+        "justify-content:center!important;align-items:center;width:100%!important;"
+        "padding:0 1.35rem;overflow:visible!important;}\n"
+        # pin the '?' help bubble (its hover-target wrapper, not just the inner icon)
+        # to the far right so it clears the now-centered label text
+        "[data-testid=\"stMetricLabel\"] [data-testid=\"stTooltipHoverTarget\"],"
+        "[data-testid=\"stMetricLabel\"] [data-testid=\"stTooltipIcon\"]"
+        "{position:absolute!important;right:0.1rem;top:50%;transform:translateY(-50%);"
+        "margin:0!important;}\n"
+        "[data-testid=\"stMetricLabel\"],[data-testid=\"stMetricLabel\"] *"
+        "{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;"
+        "font-weight:700;color:var(--muted);font-size:0.76rem;text-align:center!important;}\n"
+        "[data-testid=\"stMetricValue\"]{font-size:1.55rem;white-space:normal;"
+        "overflow-wrap:anywhere;justify-content:center;text-align:center;}\n"
+        "[data-testid=\"stCaptionContainer\"],[data-testid=\"stCaptionContainer\"] p"
+        "{color:var(--muted)!important;}\n"
+        # themed, center-justified HTML tables (Streamlit's canvas dataframe can't center)
+        ".wtbl-wrap{background:var(--surface);border:1px solid var(--border);border-radius:10px;"
+        "overflow-x:auto;overflow-y:hidden;margin:0.3rem 0 0.4rem;scrollbar-width:none;}\n"
+        # hide the horizontal scrollbar (the strip under wide tables); trackpad still scrolls
+        ".wtbl-wrap::-webkit-scrollbar{display:none;}\n"
+        "table.wtbl{width:100%;border-collapse:collapse;font-family:'Bitter',serif;"
+        "font-size:0.86rem;font-variant-numeric:tabular-nums;margin:0!important;}\n"
+        # keep the contract label (e.g. '99 to 100') on a single line
+        "table.wtbl td:first-child,table.wtbl th:first-child{white-space:nowrap;}\n"
+        "table.wtbl thead th{font-weight:700;color:var(--accent-strong);background:var(--surface2);"
+        "text-align:center;padding:0.5rem 0.6rem;border-bottom:1.5px solid var(--border);"
+        "white-space:nowrap;}\n"
+        "table.wtbl td{text-align:center;padding:0.42rem 0.6rem;border-bottom:1px solid var(--border);"
+        "color:var(--ink);white-space:nowrap;}\n"
+        "table.wtbl td.hold{background:rgba(229,120,110,0.22);color:var(--bad);font-weight:700;}\n"
+        "table.wtbl td.buy{color:var(--good);font-weight:700;}\n"
+        # Streamlit's own chrome doesn't read our palette — repaint it to match
+        "[data-testid=\"stHeader\"]{background:var(--bg)!important;}\n"
+        "[data-testid=\"stToolbar\"]{background:transparent!important;}\n"
+        # the on-hover fullscreen/show-data/download toolbar over charts: strip the
+        # slate box (background + border on the toolbar AND every inner wrapper),
+        # then paint only the buttons brown.
+        "[data-testid=\"stElementToolbar\"],[data-testid=\"stElementToolbar\"] *"
+        "{background-color:transparent!important;border-color:transparent!important;"
+        "box-shadow:none!important;}\n"
+        "[data-testid=\"stElementToolbar\"] button,"
+        "[data-testid=\"stElementToolbarButton\"]{background-color:var(--surface)!important;"
+        "color:var(--ink)!important;}\n"
+        "[data-testid=\"stElementToolbar\"] button:hover,"
+        "[data-testid=\"stElementToolbarButton\"]:hover"
+        "{background-color:var(--surface2)!important;}\n"
+        # the hover-text popup on those buttons (base-web tooltip) — was slate
+        "[data-baseweb=\"tooltip\"],[data-baseweb=\"tooltip\"] div,[role=\"tooltip\"]"
+        "{background:var(--surface)!important;color:var(--ink)!important;}\n"
+        # the fullscreen backdrop + its slate frame border, shown when expanded
+        "[data-testid=\"stFullScreenFrame\"],[data-testid=\"stFullScreenFrame\"] > div"
+        "{background:var(--bg)!important;}\n"
+        "[data-testid=\"stFullScreenFrame\"] *{border-color:var(--border)!important;}\n"
+        # the Vega tooltip box that appears when hovering the consensus line
+        "#vg-tooltip-element,#vg-tooltip-element.vg-tooltip{background:var(--surface)!important;"
+        "border-color:var(--border)!important;color:var(--ink)!important;}\n"
+        "#vg-tooltip-element td,#vg-tooltip-element th{color:var(--ink)!important;}\n"
+        # themed bordered container ('box around each section')
+        "[data-testid=\"stVerticalBlockBorderWrapper\"]{background:var(--surface)!important;"
+        "border:1px solid var(--border)!important;border-radius:12px!important;}\n"
+        # the sidebar 'Settings' expander panel (was slate when opened)
+        "[data-testid=\"stExpander\"] details,[data-testid=\"stExpander\"] summary,"
+        "[data-testid=\"stExpanderDetails\"]{background:var(--surface)!important;"
+        "border-color:var(--border)!important;}\n"
+        # bordered 'Safest hold' section with three equal, centered, single-line boxes
+        ".wbox{background:var(--surface);border:1px solid var(--border);border-radius:12px;"
+        "padding:0.9rem 1rem;margin:0.4rem 0 0.3rem;}\n"
+        ".wboxtitle{font-family:'Bitter',serif;font-weight:700;font-size:0.95rem;"
+        "color:var(--ink);margin:0 0 0.6rem;}\n"
+        ".wbox .wnote{color:var(--muted);font-size:0.85rem;margin:0;}\n"
+        ".wmini3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0.7rem;}\n"
+        ".wmini{background:var(--surface2);border:1px solid var(--border);border-radius:10px;"
+        "padding:0.6rem 0.35rem;text-align:center;min-width:0;}\n"
+        ".wmini .wlabel{font-size:0.72rem;font-weight:700;color:var(--muted);white-space:nowrap;}\n"
+        ".wmini .wval{font-size:0.9rem;font-weight:700;color:var(--ink);white-space:nowrap;"
+        "margin-top:0.15rem;}\n"
+        "</style>",
+        unsafe_allow_html=True,
+    )
+
+
+def _chart_colors():
+    """Chart hues for the active palette. Deep slate keeps the bright default
+    red/blue/green; Charcoal softens them to terracotta (high), blue-grey (low),
+    and puts the Kalshi line on the table-header accent."""
+    if st.session_state.get("wx_theme") == "Charcoal":
+        return {"high": "#C97B5E", "low": "#8794A6",
+                "kalshi": THEMES["Charcoal"]["accent_strong"], "temp": "#B7A99A"}
+    return {"high": "#ff6b6b", "low": "#4dabf7", "kalshi": "#51cf66", "temp": "#adb5bd"}
+
+
+def _seed_theme():
+    """Resolve the active palette, seeding session state from the URL query param
+    on a fresh load so a chosen theme survives a browser refresh."""
+    if "wx_theme" not in st.session_state:
+        qp = st.query_params.get("theme")
+        st.session_state["wx_theme"] = qp if qp in THEMES else DEFAULT_THEME
+    return st.session_state["wx_theme"]
+
+
+def _theme_controls():
+    """Palette picker — lives in the left sidebar with the Day/Safe-hold controls,
+    inside a collapsible 'Settings' section. Persists the choice to the URL so it
+    becomes the default on the next load, then injects it."""
+    _seed_theme()
+    with st.sidebar.expander("Settings", expanded=False):
+        st.radio("Theme", list(THEMES), key="wx_theme")
+    if st.query_params.get("theme") != st.session_state["wx_theme"]:
+        st.query_params["theme"] = st.session_state["wx_theme"]
+    _inject_theme(st.session_state["wx_theme"])
+
+
+def _fmt_clock(iso, with_seconds=False):
+    """ISO timestamp -> 12-hour clock string (e.g. '2:47:36 PM')."""
+    try:
+        fmt = "%-I:%M:%S %p" if with_seconds else "%-I:%M %p"
+        return datetime.fromisoformat(iso).strftime(fmt)
+    except (ValueError, TypeError):
+        return iso
+
+
+def _html_table(df, buy_cols=(), hold_col=None, hold_val=None, container=None):
+    """Render `df` as a themed, center-justified HTML table (see .wtbl CSS).
+
+    All cell values must already be display strings. `buy_cols` are tinted green
+    when non-empty; when a row's `hold_col` equals `hold_val`, its first cell is
+    tinted red — the 'too wide-spread to flip, hold to settlement' cue. Renders
+    into `container` (e.g. a bordered st.container) when given, else the page.
+    """
+    sink = container or st
+    cols = list(df.columns)
+    head = "".join(f"<th>{c}</th>" for c in cols)
+    body = []
+    for _, r in df.iterrows():
+        flag = hold_col is not None and str(r.get(hold_col, "")) == hold_val
+        cells = []
+        for i, c in enumerate(cols):
+            classes = []
+            if i == 0 and flag:
+                classes.append("hold")
+            if c in buy_cols and str(r[c]).strip() not in ("", "—"):
+                classes.append("buy")
+            cls = f' class="{" ".join(classes)}"' if classes else ""
+            cells.append(f"<td{cls}>{r[c]}</td>")
+        body.append("<tr>" + "".join(cells) + "</tr>")
+    sink.markdown(
+        '<div class="wtbl-wrap"><table class="wtbl"><thead><tr>' + head
+        + "</tr></thead><tbody>" + "".join(body) + "</tbody></table></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _html_df(df, container=None):
+    """Render a DataFrame (with a meaningful index) as a themed HTML table —
+    the index becomes the first column, floats are trimmed to a few decimals,
+    and column labels are kept as-is. Used for the Model-Accuracy tables so they
+    follow the palette (the canvas st.dataframe cannot be recolored via CSS)."""
+    d = df.reset_index().astype(object)
+
+    def _fmt(v):
+        if isinstance(v, float):
+            return f"{v:.3f}".rstrip("0").rstrip(".")
+        return str(v)
+
+    for c in d.columns:
+        d[c] = d[c].map(_fmt)
+    _html_table(d, container=container)
+
+
+def _reliability_chart(rdf):
+    """Reliability line chart on a transparent background so it follows the
+    palette (observed line vs the ideal diagonal)."""
+    long = rdf.reset_index().melt("predicted", var_name="series",
+                                  value_name="value")
+    return (alt.Chart(long).mark_line().encode(
+                x=alt.X("predicted:Q", title=None),
+                y=alt.Y("value:Q", title=None),
+                color=alt.Color("series:N",
+                                legend=alt.Legend(title=None, orient="top")))
+            .properties(height=220, background="transparent")
+            .configure_view(fill=None, strokeWidth=0))
+
 
 @st.cache_data(ttl=30, show_spinner=False)
 def _kalshi_implied(day_iso):
@@ -40,7 +267,7 @@ def _kalshi_implied(day_iso):
     so a stale market reading can't masquerade as a live disagreement with the
     model — the two halves of the comparison carry their own timestamps."""
     from sources import kalshi
-    out = {"as_of": datetime.now(_TZ).strftime("%H:%M:%S")}
+    out = {"as_of": datetime.now(_TZ).strftime("%-I:%M:%S %p")}
     for var in ("high", "low"):
         try:
             f = kalshi.implied_forecast(var, date.fromisoformat(day_iso))
@@ -110,7 +337,8 @@ def consensus_history_df(rows, day_iso, variable, basis, include_temp,
     return pd.DataFrame(data).set_index("time")
 
 
-def consensus_chart(hist, variable, day_iso=None, is_today=False, view_window=None):
+def consensus_chart(hist, variable, day_iso=None, is_today=False, view_window=None,
+                    colors=None):
     """Altair line chart of consensus (and today's live temp) through the day.
 
     Built by hand (rather than st.line_chart) so we can: label the x-axis with
@@ -129,10 +357,13 @@ def consensus_chart(hist, variable, day_iso=None, is_today=False, view_window=No
                              if day_iso else None)
     df = hist.reset_index()
     value_cols = [c for c in df.columns if c != "time"]
-    line_color = "#ff6b6b" if variable == "high" else "#4dabf7"
+    colors = colors or {}
+    line_color = colors.get("high" if variable == "high" else "low") or (
+        "#ff6b6b" if variable == "high" else "#4dabf7")
     others = [c for c in value_cols if c != "consensus"]
     # Distinct hue for the Kalshi market line; the live-temp overlay stays muted gray.
-    series_color = {"kalshi (market)": "#51cf66", "current temp": "#adb5bd"}
+    series_color = {"kalshi (market)": colors.get("kalshi", "#51cf66"),
+                    "current temp": colors.get("temp", "#adb5bd")}
     color_scale = alt.Scale(domain=["consensus"] + others,
                             range=[line_color] + [series_color.get(c, "#adb5bd")
                                                   for c in others])
@@ -209,7 +440,9 @@ def consensus_chart(hist, variable, day_iso=None, is_today=False, view_window=No
     # Zoom is driven by the time-window slider in the caller (which re-pins the
     # x-axis via `view_window`), not by Vega's scale-bound gestures — those are
     # too jittery on touch and fought with tap-to-pin / page scroll.
-    return (lines + dots + pinned).properties(height=220)
+    return ((lines + dots + pinned)
+            .properties(height=220, background="transparent")
+            .configure_view(fill=None, strokeWidth=0))
 
 
 def reliability_df(bins):
@@ -252,22 +485,6 @@ def exit_plan(ask, bid):
     return f"flip @ {cents(target)}"
 
 
-def _flag_hold_only(df, exit_col):
-    """Tint the `contract` cell red on rows whose recommended side is too
-    wide-spread to flip (exit plan == 'hold to settle', i.e. spread > 20% of the
-    ask) — a quick 'don't look at this one to flip before settlement' cue.
-    Streamlit renders Styler color/background on data cells, so the contract is a
-    hidden-index column here rather than the dataframe index.
-    """
-    def _row(row):
-        styles = [""] * len(row)
-        if row.get(exit_col) == "hold to settle":
-            styles[row.index.get_loc("contract")] = (
-                "background-color: rgba(255,75,75,0.22); color: #ff4b4b")
-        return styles
-    return df.style.apply(_row, axis=1)
-
-
 def prob_table(probs: dict, variable: str, observed=None, top: int = 14) -> pd.DataFrame:
     """Bins with non-trivial probability, sorted by temperature.
 
@@ -293,7 +510,7 @@ def prob_table(probs: dict, variable: str, observed=None, top: int = 14) -> pd.D
     return df.set_index("bin")
 
 
-def prob_bar_chart(df, variable):
+def prob_bar_chart(df, variable, color=None):
     """Bar chart of the per-bin probabilities, with the x-axis pinned to the
     numeric bin order that prob_table emits.
 
@@ -303,7 +520,7 @@ def prob_bar_chart(df, variable):
     chart explicitly lets us force sort=<the dataframe's own order>, keeping
     hotter to the right.
     """
-    color = "#ff6b6b" if variable == "high" else "#4dabf7"
+    color = color or ("#ff6b6b" if variable == "high" else "#4dabf7")
     data = df.reset_index()
     return (
         alt.Chart(data)
@@ -314,7 +531,8 @@ def prob_bar_chart(df, variable):
             tooltip=[alt.Tooltip("bin:N", title="bin"),
                      alt.Tooltip("prob %:Q", title="prob %", format=".1f")],
         )
-        .properties(height=240)
+        .properties(height=240, background="transparent")
+        .configure_view(fill=None, strokeWidth=0)
     )
 
 
@@ -339,44 +557,44 @@ def lock_status(d, variable):
         window = ("late afternoon (≈4–6pm CDT), after the peak"
                   if variable == "high"
                   else "early morning (≈7–9am CDT), after the dawn trough")
-        return ("info", "📅 Pure forecast — nothing observed yet",
+        return ("info", "Pure Forecast — Nothing Observed Yet",
                 f"Spread is at its widest. The {variable} won't lock until "
                 f"{window}; σ floors near {floor:.1f}°F once it does.")
 
     if variable == "high":
         if d.get("peak_locked"):
-            return ("success", "🔒 Locked — peak has passed",
+            return ("success", "Locked — Peak Has Passed",
                     f"High is in at {obs:.1f}°F — temperature has fallen back from "
                     f"the peak, so it's observationally settled (σ ≈ "
                     f"{d['sigma_used']:.1f}°F). Prime buy window.")
         if consensus > obs + 1.0:
-            return ("info", "⏳ Open — peak not reached",
+            return ("info", "Open — Peak Not Reached",
                     f"High still climbing toward ~{consensus:.0f}°F (only "
                     f"{obs:.1f}°F observed so far). Wait for the afternoon peak.")
         if resolved >= 85:
-            return ("success", "🔒 Locked — peak has passed",
+            return ("success", "Locked — Peak Has Passed",
                     f"High is in at {obs:.1f}°F and σ has collapsed to "
                     f"{d['sigma_used']:.1f}°F (floor ~{floor:.1f}). Prime buy window.")
-        return ("info", "🔓 Locking — near the peak",
+        return ("info", "Locking — Near the Peak",
                 f"High ≈ {obs:.1f}°F and tightening ({resolved}% resolved). "
                 "Close to the prime window.")
 
     # variable == "low"
     if d.get("peak_locked"):
-        return ("success", "🔒 Locked — dawn trough is in",
+        return ("success", "Locked — Dawn Trough Is In",
                 f"Low is in at {obs:.1f}°F — temperature has climbed back from the "
                 f"trough, so it's observationally settled (σ ≈ "
                 f"{d['sigma_used']:.1f}°F). Prime buy window.")
     if consensus < obs - 1.0:
-        return ("warning", "⚠️ Front risk — colder reading expected later",
+        return ("warning", "Front Risk — Colder Reading Expected Later",
                 f"Coldest so far is {obs:.1f}°F but the model sees ~{consensus:.0f}°F "
                 "later (possible evening front before midnight). The morning low is "
                 "NOT safe to treat as settled — wait or size down.")
     if resolved >= 85:
-        return ("success", "🔒 Locked — dawn trough is in",
+        return ("success", "Locked — Dawn Trough Is In",
                 f"Low is in at {obs:.1f}°F with no colder reading expected; σ "
                 f"collapsed to {d['sigma_used']:.1f}°F (floor ~{floor:.1f}). Prime buy window.")
-    return ("info", "🔓 Locking — past the dawn trough",
+    return ("info", "Locking — Past the Dawn Trough",
             f"Low ≈ {obs:.1f}°F ({resolved}% resolved). Watch the evening for a "
             "front before treating it as final.")
 
@@ -386,10 +604,16 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
     if safe_min is None:
         safe_min = adapter.safe_hold_default
     with col:
-        head = f"### {title}"
+        head = f"<h3>{title}"
         if featured:
-            head += " ⭐"
-        st.markdown(head)
+            head += (
+                " <span style='font-family:Bitter,serif;font-size:0.62rem;"
+                "font-weight:700;letter-spacing:0.1em;text-transform:uppercase;"
+                "color:var(--accent-strong);border:1px solid var(--accent);"
+                "border-radius:999px;padding:0.1rem 0.5rem;vertical-align:middle;'>"
+                "Featured</span>")
+        head += "</h3>"
+        st.markdown(head, unsafe_allow_html=True)
         if d is None:
             st.warning("No data.")
             return
@@ -415,7 +639,7 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                 obs_line += f"  ·  {cont:.1f}°F (continuous, Kalshi basis)"
             st.caption(obs_line)
         if d.get("cooling_applied"):
-            st.caption("🌙 Clear/calm night — extra radiational-cooling offset "
+            st.caption("Clear/calm night — extra radiational-cooling offset "
                        "applied to the low.")
         from convective import risk_label
         _conv = risk_label(d)
@@ -428,7 +652,8 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
         # Consensus through the day: how the model's consensus has drifted (one
         # point per ~15 min), with today's live temperature overlaid so you can
         # watch the reading climb/fall toward the predicted peak/trough.
-        st.markdown("**Consensus through the day**")
+        cbox = st.container(border=True)
+        cbox.markdown("**Consensus Through the Day**")
         is_today = (day_iso == today_iso)
         hist = consensus_history_df(_consensus_history(), day_iso, variable,
                                     adapter.basis, include_temp=is_today,
@@ -441,7 +666,7 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
             times = hist.index.to_pydatetime().tolist()
             view_window, hist_view = None, hist
             if len(times) > 2 and times[-1] > times[0]:
-                start, end = st.slider(
+                start, end = cbox.slider(
                     "Zoom (time window)", min_value=times[0], max_value=times[-1],
                     value=(times[0], times[-1]), step=timedelta(minutes=15),
                     format="h:mm A", label_visibility="collapsed",
@@ -449,8 +674,9 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                 sub = hist.loc[start:end]
                 if len(sub) >= 2:                 # ignore a too-narrow pick
                     view_window, hist_view = (start, end), sub
-            st.altair_chart(
-                consensus_chart(hist_view, variable, day_iso, is_today, view_window),
+            cbox.altair_chart(
+                consensus_chart(hist_view, variable, day_iso, is_today, view_window,
+                                colors=_chart_colors()),
                 use_container_width=True)
             extras = []
             if "current temp" in hist.columns:
@@ -458,28 +684,38 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                               "predicted peak/trough)")
             if "kalshi (market)" in hist.columns:
                 extras.append("Kalshi's market-implied forecast")
-            st.caption("Model consensus (°F) sampled every ~15 min" +
-                       (", with " + " and ".join(extras) + " overlaid."
-                        if extras else "."))
+            cbox.caption("Model consensus (°F) sampled every ~15 min" +
+                         (", with " + " and ".join(extras) + " overlaid."
+                          if extras else "."))
         else:
-            st.caption("Consensus history builds through the day — a point every "
-                       "~15 minutes. Check back as it accumulates.")
+            cbox.caption("Consensus history builds through the day — a point every "
+                         "~15 minutes. Check back as it accumulates.")
 
         probs = d["probabilities"]
         df = prob_table(probs, variable)
-        st.altair_chart(prob_bar_chart(df, variable), use_container_width=True)
-        st.dataframe(df[["prob %", "chance %"]], width="stretch", height=210)
+        dbox = st.container(border=True)
+        dbox.markdown("**Probability Distribution**")
+        _cc = _chart_colors()
+        dbox.altair_chart(
+            prob_bar_chart(df, variable, color=_cc["high" if variable == "high" else "low"]),
+            use_container_width=True)
+        disp = df.reset_index()[["bin", "prob %", "chance %"]]
+        disp.columns = ["Bin", "Prob %", "Chance %"]
+        disp["Prob %"] = disp["Prob %"].map(lambda v: f"{v:g}%")
+        disp["Chance %"] = disp["Chance %"].map(lambda v: f"{v:g}%")
+        _html_table(disp, container=dbox)
         chance_dir = "this degree or hotter" if variable == "high" else "this degree or colder"
-        st.caption(f"prob % = chance the {variable} lands exactly in that bin. "
-                   f"chance % = cumulative chance it's {chance_dir}.")
+        dbox.caption(f"prob % = chance the {variable} lands exactly in that bin. "
+                     f"chance % = cumulative chance it's {chance_dir}.")
 
         # Live market vs the model (contracts + price→model mapping from the adapter).
-        st.markdown(adapter.heading(variable))
+        mbox = st.container(border=True)
+        mbox.markdown(adapter.heading(variable))
         if adapter.basis_note:
-            st.caption(adapter.basis_note)
+            mbox.caption(adapter.basis_note)
         contracts = adapter.fetch(variable, day_iso)
         if not contracts:
-            st.caption(adapter.no_market_msg)
+            mbox.caption(adapter.no_market_msg)
             return
         rows = []
         picks = []  # actionable buys, for the Top-3 section below
@@ -519,25 +755,25 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
             else:
                 signal = "—"
             rows.append({
-                "contract": c["label"],
-                "model %": f"{p*100:.0f}%",
-                "YES (bid/ask)": f"{cents(yb)}/{cents(ya)}",
-                "NO (bid/ask)": f"{cents(nb)}/{cents(na)}",
-                "last": cents(c["last"]),
-                "signal": signal,
-                "spread": spread,
-                "exit plan": plan,
+                "Contract": c["label"],
+                "Model %": f"{p*100:.0f}%",
+                "Yes (Bid/Ask)": f"{cents(yb)}/{cents(ya)}",
+                "No (Bid/Ask)": f"{cents(nb)}/{cents(na)}",
+                "Spread": spread,
+                "Last": cents(c["last"]),
+                "Signal": signal,
+                "Exit Plan": plan,
             })
-        st.dataframe(_flag_hold_only(pd.DataFrame(rows), "exit plan"),
-                     width="stretch", height=320, hide_index=True)
-        st.caption("model % = model's YES probability for that contract. "
-                   "signal = buy side with >3pp edge vs the ask. "
-                   "spread = ask − bid on the signal's side: how far the bid must "
-                   "climb just to break even on a flip. "
-                   "exit plan = 'flip @ X' when the spread is tight enough to sell "
-                   "for +20%, else 'hold to settle' (where the spread costs nothing). "
-                   "A contract shown in 🔴 red is too wide-spread to flip — hold it to "
-                   f"settlement. Prices in ¢, live from {adapter.name} (refreshes ~30s).")
+        _html_table(pd.DataFrame(rows), buy_cols=("Signal",),
+                    hold_col="Exit Plan", hold_val="hold to settle", container=mbox)
+        mbox.caption("model % = model's YES probability for that contract. "
+                     "signal = buy side with >3pp edge vs the ask. "
+                     "spread = ask − bid on the signal's side: how far the bid must "
+                     "climb just to break even on a flip. "
+                     "exit plan = 'flip @ X' when the spread is tight enough to sell "
+                     "for +20%, else 'hold to settle' (where the spread costs nothing). "
+                     "A contract shown in red is too wide-spread to flip — hold it to "
+                     f"settlement. Prices in ¢, live from {adapter.name} (refreshes ~30s).")
 
         # Top 3 HOLD-TO-SETTLEMENT trades: the model's best value picks to carry to
         # $1. Scored by edge × return-on-cost EV (geometric mean, edge / sqrt(ask)):
@@ -545,8 +781,9 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
         # penny longshots dominate. Held to settlement, so the spread is irrelevant.
         # Gated at ≥60% model win-probability so only genuinely confident bets show.
         TOP3_MIN_CONF = 0.60
-        st.markdown(f"**🎯 Top 3 {variable} hold-to-settlement trades** — best value "
-                    "held to $1")
+        tbox = st.container(border=True)
+        tbox.markdown(f"**Top 3 {variable.capitalize()} Hold-to-Settlement Trades** — "
+                      "Best Value Held to $1")
         scored = []
         for lbl, side, mp, price, edge, bid in picks:
             if mp < TOP3_MIN_CONF:               # confidence gate
@@ -558,53 +795,55 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
         if scored:
             scored.sort(key=lambda x: x[0], reverse=True)
             top = [{
-                "contract": lbl,
-                "side": side,
-                "model %": f"{mp*100:.0f}%",
-                "ask": cents(ask),
-                "spread": cents(spread_c(ask, bid)),
-                "edge (pp)": f"+{edge*100:.0f}",
-                "EV %/cost": f"+{ev*100:.0f}%",
-                "exit": exit_plan(ask, bid),
+                "Contract": lbl,
+                "Side": side,
+                "Model %": f"{mp*100:.0f}%",
+                "Ask": cents(ask),
+                "Spread": cents(spread_c(ask, bid)),
+                "Edge (pp)": f"+{edge*100:.0f}",
+                "EV %/Cost": f"+{ev*100:.0f}%",
+                "Exit": exit_plan(ask, bid),
             } for _, lbl, side, mp, ask, edge, ev, bid in scored[:3]]
-            st.dataframe(_flag_hold_only(pd.DataFrame(top), "exit"),
-                         width="stretch", height=140, hide_index=True)
-            st.caption("The model's most likely winning bets for the "
-                       f"{variable}, ranked by a blend of edge and expected value "
-                       "(this is hold-to-settlement value, so the spread does NOT "
-                       "affect the ranking — at settlement it costs nothing). "
-                       "edge (pp) = model prob for that side minus the ask. "
-                       "EV %/cost = expected return per dollar risked (edge ÷ ask). "
-                       "spread / exit = liquidity cue if you change your mind: a wide "
-                       "spread (🔴) means flipping early isn't viable. Only contracts "
-                       "clearing both the 3pp edge threshold and "
-                       f"{TOP3_MIN_CONF*100:.0f}% model confidence are shown.")
+            _html_table(pd.DataFrame(top), buy_cols=("Edge (pp)",),
+                        hold_col="Exit", hold_val="hold to settle", container=tbox)
+            tbox.caption("The model's most likely winning bets for the "
+                         f"{variable}, ranked by a blend of edge and expected value "
+                         "(this is hold-to-settlement value, so the spread does NOT "
+                         "affect the ranking — at settlement it costs nothing). "
+                         "edge (pp) = model prob for that side minus the ask. "
+                         "EV %/cost = expected return per dollar risked (edge ÷ ask). "
+                         "spread / exit = liquidity cue if you change your mind: a wide "
+                         "spread (red) means flipping early isn't viable. Only contracts "
+                         "clearing both the 3pp edge threshold and "
+                         f"{TOP3_MIN_CONF*100:.0f}% model confidence are shown.")
         else:
-            st.caption(f"No contract clears both the 3pp edge and "
-                       f"{TOP3_MIN_CONF*100:.0f}% model-confidence bar right now — "
-                       "no high-confidence value buy.")
+            tbox.caption(f"No contract clears both the 3pp edge and "
+                         f"{TOP3_MIN_CONF*100:.0f}% model-confidence bar right now — "
+                         "no high-confidence value buy.")
 
         # Safest hold-to-$1 pick: the highest risk-adjusted-return bet among the
         # high-confidence, positively-priced contracts. Held to settlement, so the
         # spread is irrelevant — this is the low-variance counterweight to the
         # longshot-friendly Top-3 above.
-        st.markdown(f"**🛡️ Safest {variable} hold to $1** — lowest-risk bet to hold "
-                    "to settlement")
+        safest_title = (f"Safest {variable.capitalize()} Hold to $1 — "
+                        "Lowest-Risk Bet to Hold to Settlement")
         if holds:
             holds.sort(key=lambda x: x[0], reverse=True)
             _, lbl, side, win, ask, h_edge = holds[0]
             ev_cost = h_edge / ask          # expected return per dollar risked
             win_ret = (1 - ask) / ask       # return if it settles to $1
-            hc = st.columns(4)
-            hc[0].metric(f"BUY {side} · {lbl}", f"win {win*100:.0f}%",
-                         help="Model probability this side settles to $1. Must clear "
-                              f"{safe_min*100:.0f}% to be eligible here.")
-            hc[1].metric("Cost (ask)", cents(ask),
-                         help="What you pay now. Pays 100¢ at settlement if it wins.")
-            hc[2].metric("Edge", f"+{h_edge*100:.0f}pp",
-                         help="Model win-prob minus the ask — how underpriced it is.")
-            hc[3].metric("Loss chance", f"{(1-win)*100:.0f}%",
-                         help="Model probability it settles to $0 (your whole risk).")
+            minis = [
+                ("Contract", lbl),
+                ("Side · Win %", f"{side} · {win*100:.0f}%"),
+                ("Ask · Edge", f"{cents(ask)} · +{h_edge*100:.0f}"),
+            ]
+            cells = "".join(
+                f'<div class="wmini"><div class="wlabel">{lab}</div>'
+                f'<div class="wval">{val}</div></div>' for lab, val in minis)
+            st.markdown(
+                f'<div class="wbox"><div class="wboxtitle">{safest_title}</div>'
+                f'<div class="wmini3">{cells}</div></div>',
+                unsafe_allow_html=True)
             st.caption(
                 f"Ranked by risk-adjusted return (edge ÷ outcome volatility), so it "
                 f"favors confident, fairly-priced bets over cheap longshots. Hold to "
@@ -614,13 +853,16 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                 f"chance. Must clear {safe_min*100:.0f}% model win-prob and "
                 "positive edge.")
         else:
-            st.caption(f"No contract clears the {safe_min*100:.0f}% "
-                       "win-probability + positive-edge bar right now — no low-risk "
-                       "hold available (the market isn't underpricing a safe side).")
+            st.markdown(
+                f'<div class="wbox"><div class="wboxtitle">{safest_title}</div>'
+                f'<p class="wnote">No contract clears the {safe_min*100:.0f}% '
+                "win-probability + positive-edge bar right now — no low-risk hold "
+                "available (the market isn't underpricing a safe side).</p></div>",
+                unsafe_allow_html=True)
 
 
 def _render_accuracy(load_accuracy, calib=None):
-    """The '📊 Model accuracy' expander body — backtest table + reliability charts
+    """The 'Model Accuracy' expander body — backtest table + reliability charts
     + live self-scoring. `load_accuracy` is the cached () -> (bt, live) callable."""
     bt, live = load_accuracy()
     corr = calibration.active_corrections(calib)
@@ -642,7 +884,7 @@ def _render_accuracy(load_accuracy, calib=None):
                 "MAE °F": m["mae"], "MAE base": m["mae_baseline"],
                 "50% cov": f"{m['coverage_50']:.0f}%", "80% cov": f"{m['coverage_80']:.0f}%",
             })
-        st.dataframe(pd.DataFrame(mrows).set_index("variable"), width="stretch")
+        _html_df(pd.DataFrame(mrows).set_index("variable"))
         st.caption("**exact bin** = how often the model's top (peak) bin is the exact "
                    "settled degree; **within ±1°F** forgives a one-degree miss. These come "
                    "from the deterministic backtest with a flat spread and no same-day "
@@ -671,7 +913,7 @@ def _render_accuracy(load_accuracy, calib=None):
             rdf = reliability_df(bt.get(var, {}).get("reliability"))
             if rdf is not None:
                 rc[i].caption(f"{var.title()} reliability — predicted vs observed")
-                rc[i].line_chart(rdf, height=220)
+                rc[i].altair_chart(_reliability_chart(rdf), use_container_width=True)
         st.caption("**Reliability charts:** x = the probability the model gave, y = how "
                    "often it actually happened. The closer the *observed* line hugs the "
                    "*ideal* diagonal, the better calibrated the model — e.g. things it "
@@ -690,7 +932,7 @@ def _render_accuracy(load_accuracy, calib=None):
                   "within ±1°F": _pct(m.get("within1")), "Brier": m["brier"]}
                  for var, m in live.get("by_variable", {}).items()]
         if lrows:
-            st.dataframe(pd.DataFrame(lrows).set_index("variable"), width="stretch")
+            _html_df(pd.DataFrame(lrows).set_index("variable"))
 
         # Per-lead breakout: same-day (anchored) vs day-ahead exact-bin accuracy.
         lead_names = {0: "same-day", 24: "day-ahead", 36: "2-day"}
@@ -705,8 +947,7 @@ def _render_accuracy(load_accuracy, calib=None):
         if leadrows:
             st.caption("Exact-bin accuracy by lead time — same-day is anchored to live "
                        "observations, so it should beat day-ahead.")
-            st.dataframe(pd.DataFrame(leadrows).set_index(["lead", "variable"]),
-                         width="stretch")
+            _html_df(pd.DataFrame(leadrows).set_index(["lead", "variable"]))
 
         mkt = live.get("market")
         if mkt and mkt.get("n"):
@@ -719,7 +960,7 @@ def _render_accuracy(load_accuracy, calib=None):
                       "market closer": f"{m['market_closer_pct']:.0f}%"}
                      for var, m in mkt.get("by_variable", {}).items()]
             if mrows:
-                st.dataframe(pd.DataFrame(mrows).set_index("variable"), width="stretch")
+                _html_df(pd.DataFrame(mrows).set_index("variable"))
             st.caption("If *market MAE* beats *model MAE* (and 'market closer' > 50%), the "
                        "market is the sharper forecast and deserves weight; if not, the "
                        "model's independence is the edge. Builds as days settle.")
@@ -733,27 +974,29 @@ def render_page(snap, calib, adapter, load_accuracy):
     cached snapshot loader; `adapter` selects the exchange; `load_accuracy` is the
     cached () -> (bt, live) callable for the accuracy expander."""
     st_autorefresh(interval=60_000, key=f"refresh_{adapter.name}")
+    _inject_theme(_seed_theme())
 
-    st.title(f"🌡️  {STATION_ID} Daily High / Low — {adapter.name} ({adapter.exchange})")
+    st.title("Dallas Daily High & Low")
 
     cur = snap.get("current")
     ki = _kalshi_implied(snap["today"]["day"])      # Kalshi market-implied hi/lo (today)
     top = st.columns(6)
     if cur:
-        top[0].metric("Current temp", f"{cur['temp']}°F", help=f"as of {cur['time']}")
+        top[0].metric("Current Temp", f"{cur['temp']}°F",
+                      help=f"as of {_fmt_clock(cur['time'])}")
     _mkt_as_of = ki.get("as_of")
     _mkt_help = ("Today's market-implied expected {x}, from Kalshi's live contract "
                  "ladder (shown on both pages for reference)."
                  + (f" Ladder fetched {_mkt_as_of}." if _mkt_as_of else ""))
-    top[1].metric("Kalshi high (mkt)",
+    top[1].metric("Kalshi High",
                   f"{ki['high']:.1f}°F" if ki.get("high") is not None else "—",
                   help=_mkt_help.format(x="high"))
-    top[2].metric("Kalshi low (mkt)",
+    top[2].metric("Kalshi Low",
                   f"{ki['low']:.1f}°F" if ki.get("low") is not None else "—",
                   help=_mkt_help.format(x="low"))
-    top[3].metric("Updated", snap["updated"].split("T")[1])
+    top[3].metric("Updated", _fmt_clock(snap["updated"], with_seconds=True))
     if calib:
-        top[4].metric("Calib bias (hi/lo)",
+        top[4].metric("Calib Bias (Hi/Lo)",
                       f"{calib['bias']['deterministic']['high']:+.1f}/"
                       f"{calib['bias']['deterministic']['low']:+.1f}°F",
                       help="The raw weather models' average signed error over the last "
@@ -762,7 +1005,7 @@ def render_page(snap, calib, adapter, load_accuracy):
                            "the raw models ran ~1°F too hot on highs, so the model pulls "
                            "its high down by that much (and likewise for the low). Near 0 "
                            "= the models are already well-centered.")
-        top[5].metric("Day-ahead σ (hi/lo)",
+        top[5].metric("Day-Ahead σ (Hi/Lo)",
                       f"{calib['sigma']['high']:.1f}/{calib['sigma']['low']:.1f}°F",
                       help="The model's day-ahead forecast uncertainty — one standard "
                            "deviation (°F), calibrated from how far past forecasts missed. "
@@ -774,16 +1017,19 @@ def render_page(snap, calib, adapter, load_accuracy):
     # Juxtapose the two fetch times so a lagging market reading is visibly stale
     # rather than looking like a live disagreement with the model.
     if _mkt_as_of:
-        st.caption(f"⏱️ Kalshi market as of {_mkt_as_of} · model snapshot "
-                   f"{snap['updated'].split('T')[1]} (both refresh every ~60s).")
+        st.caption(f"Kalshi market as of {_mkt_as_of} · model snapshot "
+                   f"{_fmt_clock(snap['updated'], with_seconds=True)} "
+                   "(both refresh every ~60s).")
 
     day = st.sidebar.radio("Day", ["Today", "Tomorrow"], index=0,
                            key=f"day_{adapter.name}")
     st.sidebar.caption("Tomorrow = pure forecast (no observations yet), so wider. "
                        "Best for the early-morning low before bed.")
 
+    _theme_controls()  # 'Settings' palette picker, grouped with the sidebar controls
+
     safe_pct = st.sidebar.slider(
-        "🛡️ Safe-hold risk floor", min_value=int(adapter.safe_hold_min * 100),
+        "Safe-Hold Risk Floor", min_value=int(adapter.safe_hold_min * 100),
         max_value=95, value=int(adapter.safe_hold_default * 100), step=5,
         format="%d%%", key=f"safe_{adapter.name}",
         help="Minimum model win-probability for the 'Safest hold to $1' box. Higher = "
@@ -806,7 +1052,7 @@ def render_page(snap, calib, adapter, load_accuracy):
     render_variable(cols[1], "Low", pred["low"], "low", pred["day"], adapter,
                     featured=feature_low, safe_min=safe_min, today_iso=today_iso)
 
-    with st.expander("Per-source breakdown"):
+    with st.expander("Per-Source Breakdown"):
         src = snap["sources"][key]
         rows = []
         for group, members in src.items():
@@ -816,9 +1062,13 @@ def render_page(snap, calib, adapter, load_accuracy):
             sdf = pd.DataFrame(rows)
             st.caption(f"{len(sdf)} series across {sdf['group'].nunique()} groups "
                        "(ensemble members aggregated into the distribution above).")
-            st.dataframe(sdf.set_index("source"), width="stretch", height=300)
+            disp = sdf[["source", "group", "high", "low"]].copy()
+            disp.columns = ["Source", "Group", "High", "Low"]
+            for c in ("High", "Low"):
+                disp[c] = disp[c].map(lambda v: "—" if v is None else f"{v:g}")
+            _html_table(disp)
 
-    with st.expander("📊 Model accuracy"):
+    with st.expander("Model Accuracy"):
         if adapter.accuracy_note:
             st.caption(adapter.accuracy_note)
         _render_accuracy(load_accuracy, calib)

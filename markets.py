@@ -55,7 +55,7 @@ ROBINHOOD = MarketAdapter(
         f"“{'Greater than' if var == 'high' else 'Lower than'} T°” contracts"),
     no_market_msg="No live Robinhood market for this day yet.",
     settle_footer=(
-        "⚠️ Live prices scraped from Robinhood’s public event pages "
+        "Live prices scraped from Robinhood’s public event pages "
         "(ForecastEx). High = “Greater than T”, Low = “Lower than T”, "
         "settled on the whole-degree KDFW value (Weather Underground). "
         "Not financial advice."),
@@ -69,10 +69,10 @@ KALSHI = MarketAdapter(
     fetch=_kx_fetch,
     model_prob=lambda probs, c: model.prob_for_strike(
         probs, c["strike_type"], c["floor"], c["cap"]),
-    heading=lambda var: "**Live Kalshi market vs model** — 2°F range buckets",
+    heading=lambda var: "**Live Kalshi Market vs Model** — 2°F Range Buckets",
     no_market_msg="No live Kalshi market for this day yet.",
     settle_footer=(
-        "⚠️ Live prices from Kalshi’s public API. Contracts are 2°F "
+        "Live prices from Kalshi’s public API. Contracts are 2°F "
         "range buckets, settled on the NWS Climatological Report (CLIDFW) — which "
         "can occasionally differ by a degree from Weather Underground. "
         "Not financial advice."),
@@ -82,6 +82,6 @@ KALSHI = MarketAdapter(
     basis_note=("Values on the NWS CLI settlement basis (continuous ASOS daily "
                 "max/min) — what Kalshi resolves on, ~+0.9°F vs the hourly basis "
                 "on highs."),
-    accuracy_note=("📐 Accuracy scored on the NWS CLI settlement basis "
+    accuracy_note=("Accuracy scored on the NWS CLI settlement basis "
                    "(what Kalshi resolves on)."),
 )

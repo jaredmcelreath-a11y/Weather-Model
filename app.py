@@ -18,7 +18,7 @@ import market_view
 import model
 from markets import KALSHI, ROBINHOOD
 
-st.set_page_config(page_title="KDFW Temp Markets", layout="wide")
+st.set_page_config(page_title="Dallas Daily High & Low", layout="wide")
 
 # On Streamlit Cloud, point the forward log at the GitHub-hosted copy maintained
 # by the scheduled Action, so live self-scoring and per-lead sigma persist across
@@ -142,5 +142,5 @@ def kalshi_page():
 # Kalshi/CLI-only. robinhood_page() and its hourly loaders are kept below,
 # unreferenced, so re-listing it here is a one-line revert if ever needed.
 st.navigation([
-    st.Page(kalshi_page, title="Kalshi", icon="📈", default=True),
+    st.Page(kalshi_page, title="Kalshi", default=True),
 ]).run()
