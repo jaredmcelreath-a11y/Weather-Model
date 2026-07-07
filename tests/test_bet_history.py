@@ -85,3 +85,21 @@ def test_summary_and_curve_across_two_settled_bets():
     assert [c["date"] for c in curve] == [date(2026, 6, 23), date(2026, 6, 24)]
     assert round(curve[0]["total"], 2) == 5.80
     assert round(curve[1]["total"], 2) == 0.80        # cumulative
+
+
+def test_equity_curve_aggregates_same_day_bets_into_one_point():
+    # Two bets that both settle on the SAME day collapse into a single curve point
+    # (end-of-day total), instead of two points stacked at the same x.
+    fills = [
+        _fill("t1", "KXHIGHTDAL-26JUN22-B97", "yes", "buy", 10, 0.42, 22),  # +5.80
+        _fill("t2", "KXHIGHTDAL-26JUN23-B99", "yes", "buy", 10, 0.50, 23),  # -5.00
+    ]
+    same_day = datetime(2026, 6, 24, 6, tzinfo=timezone.utc)
+    settlements = {
+        "KXHIGHTDAL-26JUN22-B97": {"result": "yes", "ts": same_day},
+        "KXHIGHTDAL-26JUN23-B99": {"result": "no", "ts": same_day},
+    }
+    curve = bh.equity_curve(bh.build_rows(fills, settlements, META))
+    assert len(curve) == 1
+    assert curve[0]["date"] == date(2026, 6, 24)
+    assert round(curve[0]["total"], 2) == 0.80          # 5.80 + (-5.00), one point

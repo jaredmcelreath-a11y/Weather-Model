@@ -75,12 +75,18 @@ def summary(rows: list[dict]) -> dict:
 
 
 def equity_curve(rows: list[dict]) -> list[dict]:
-    settled = sorted((r for r in rows if r["status"] == "settled"),
-                     key=lambda r: r["settled_ts"])
+    """Cumulative realized P&L, one point per SETTLEMENT DAY (end-of-day running
+    total). Same-day bets are summed into a single point, so the line advances one
+    step per day instead of jumping vertically when several bets settle at once."""
+    daily: dict = {}
+    for r in rows:
+        if r["status"] == "settled":
+            d = r["settled_ts"].date()
+            daily[d] = daily.get(d, 0.0) + r["pnl"]
     out, total = [], 0.0
-    for r in settled:
-        total += r["pnl"]
-        out.append({"date": r["settled_ts"].date(), "total": total})
+    for d in sorted(daily):
+        total += daily[d]
+        out.append({"date": d, "total": total})
     return out
 
 

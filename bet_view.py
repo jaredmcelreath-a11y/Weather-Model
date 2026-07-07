@@ -98,13 +98,13 @@ def render():
         st.caption(f"No Dallas-temp bets found since {bet_history.BETS_START:%b %-d, %Y}.")
         return
 
-    c = st.columns(5)
+    c = st.columns(4)
     c[0].metric("Record (W–L)", f"{summ['wins']}–{summ['losses']}")
     c[1].metric("Win rate", f"{summ['win_rate']:.0f}%")
     c[2].metric("Net P&L", _fmt_pnl(summ["net_pnl"]))
-    c[3].metric("ROI", f"{summ['roi']:+.0f}%")
-    c[4].metric("Bets with model",
-                "—" if summ["with_model_pct"] is None else f"{summ['with_model_pct']:.0f}%")
+    c[3].metric("Total % Gain", f"{summ['roi']:+.0f}%",
+                help="Net realized profit as a percent of the total you've staked — "
+                     "e.g. staked $10 and now hold $30 → +200%.")
 
     if curve:
         st.altair_chart(equity_chart(curve, market_view._chart_colors()["kalshi"]),
@@ -118,7 +118,7 @@ def render():
         disp.append({
             "Date": r["first_ts"].strftime("%b %-d"),
             "Contract": r["label"], "Side": r["side"].upper(),
-            "Entry": market_view.cents(r["entry"]), "Qty": r["qty"],
+            "Entry": market_view.cents(r["entry"]), "Qty": f"{r['qty']:.2f}",
             "Model @ bet": model,
             "Settled": "open" if r["status"] == "open" else r["result"].upper(),
             "P&L": _fmt_pnl(r["pnl"]),
