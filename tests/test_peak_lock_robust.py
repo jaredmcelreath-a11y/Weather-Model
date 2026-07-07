@@ -70,3 +70,16 @@ def test_still_climbing_never_locks():
     # even past the gate, bumpy or not.
     times, temps = _series((6, 53, 72), (9, 53, 84), (15, 53, 94), (17, 53, 95))
     assert model._extreme_locked(times, temps, _DAY, "high", _at(17, 53), bumpy=True) is False
+
+
+def test_lone_high_spike_trusted_only_when_forecast_supports_it():
+    # A lone continuous spike above the corroborated peak is trusted only if the
+    # forecast (shifted to the settlement basis) gave its settled bin >= 5%.
+    forecast_supports = [96, 97, 97, 98, 98, 99, 99, 100, 100, 101]   # ~20% >= 100
+    forecast_tops_99 = [95, 96, 96, 97, 97, 97, 98, 98, 98, 99]       # ~0% >= 105
+    # real brief peak the forecast expected -> trusted (raw 100.4)
+    assert model._trusted_high_max(100.4, 98.6, forecast_supports, 0.0) == 100.4
+    # a glitch far above the forecast -> rejected, falls back to the corroborated peak
+    assert model._trusted_high_max(105.0, 98.6, forecast_tops_99, 0.0) == 98.6
+    # no lone spike above the corroborated peak -> raw value used as-is
+    assert model._trusted_high_max(98.6, 98.6, forecast_tops_99, 0.0) == 98.6

@@ -28,7 +28,7 @@ from config import (BIN_HIGH, BIN_LOW, CACHE_TTL_SECONDS, CALM_WIND_MAX,
                     LEAD_SIGMA_INFLATION, LOW_LOCK_RISE, MAX_CLI_GAP,
                     PEAK_LOCK_DROP, TIMEZONE, bin_labels, lead_bucket)
 from settlement import (covers_extreme, local_day_bounds, observed_so_far,
-                        observed_so_far_robust)
+                        observed_so_far_robust, round_half_up)
 from convective import convective_sigma
 import solar
 from sources import (open_meteo_ensemble, open_meteo_models, nws_forecast,
@@ -43,6 +43,10 @@ _DEFAULT_SIGMA = 2.0       # fallback day-ahead spread when no calibration yet
 _MIN_SIGMA = 1.0           # floor on the day-ahead (pure-forecast) spread
 _SIGMA_FLOOR = 0.7         # fully-locked residual: observation + rounding noise
 _MIN_BANDWIDTH = 0.7       # kernel smoothing bandwidth
+# A lone sub-hourly HIGH spike (above the corroborated peak) is trusted only when the
+# forecast gave its settled bin at least this probability — a plausible brief peak
+# vs a sensor glitch far above the forecast. (The low keeps strict ≥2-corroboration.)
+SPIKE_FORECAST_MIN = 0.05
 
 
 def _norm_cdf(x: float, mu: float, sigma: float) -> float:
@@ -405,6 +409,23 @@ def _offset_bucket(settle_offset, variable, day, calib):
             (settle_offset or {}).get(f"{variable}_std", 0.0))
 
 
+def _trusted_high_max(c_raw, c_robust, fullday, shift):
+    """Which continuous HIGH extreme to trust. A lone spike (`c_raw`, above the
+    corroborated `c_robust`) is accepted only when the forecast (`fullday`, shifted
+    by `shift` to the settlement basis) gave the spike's settled bin at least
+    SPIKE_FORECAST_MIN probability — so a real brief peak counts, but a sensor glitch
+    far above the forecast doesn't. No lone spike (c_raw <= c_robust) → c_raw."""
+    if c_raw is None:
+        return c_robust
+    if c_robust is None or c_raw <= c_robust:
+        return c_raw                       # no lone spike above the corroborated peak
+    if not fullday:
+        return c_robust
+    spike_bin = round_half_up(c_raw)
+    support = sum(1 for s in fullday if round_half_up(s + shift) >= spike_bin) / len(fullday)
+    return c_raw if support >= SPIKE_FORECAST_MIN else c_robust
+
+
 def predict_variable(series, obs_series, day, variable, now, calib,
                      settle_offset=None, live=False):
     """Return a dict describing the predicted distribution for one variable.
@@ -424,6 +445,11 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     # peak-lock wait for a second confirming reading on a convective afternoon.
     bumpy = False
 
+    # Pure-forecast full-day samples (no obs): the reference spread, and the sanity
+    # check for whether a lone continuous high spike is plausible (below).
+    bias = (calib or {}).get("bias", {})
+    fullday, _fw = _collect_samples(series, day, variable, None, None, bias)
+
     # Continuous (sub-hourly) observed extreme for the hard bound only: the live
     # 5-minute feed can catch a brief spike the routine :53 reading missed. Reads
     # are whole-°C, so haircut by half a °C (0.9°F) — the bound only tightens past
@@ -435,17 +461,20 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     if cont_times and now is not None:
         # Spike-robust: the 5-min feed can report a lone reading a whole °C off
         # (a false high/low), which would wrongly tighten the bound and anchor.
-        # High: Kalshi settles on the raw CLI daily max, so trust a lone sub-hourly
-        # spike for the high (min_support=1) — a brief but real peak (e.g. a single
-        # 5-min 100°F reading) is what settles, even when it doesn't persist across
-        # several samples. The low keeps the corroboration guard (default support) so
-        # a lone cold blip on a convective afternoon can't wrongly lock the low.
-        c_max, _ = observed_so_far_robust(cont_times, cont_temps, day, now, min_support=1)
-        _, c_min = observed_so_far_robust(cont_times, cont_temps, day, now)
-        if variable == "high" and c_max is not None:
-            observed_cont = c_max
-            cand = c_max - 0.9
-            observed_bound = cand if observed is None else max(observed, cand)
+        # High: Kalshi settles on the raw CLI daily max, so a lone sub-hourly spike is
+        # trusted (min_support=1) — but only when the forecast gave its settled bin
+        # non-trivial probability (a plausible brief peak, not a sensor glitch); else
+        # fall back to the ≥2-corroborated peak. The low always keeps corroboration so
+        # a lone cold blip on a convective afternoon can't wrongly lock it.
+        c_max_raw, _ = observed_so_far_robust(cont_times, cont_temps, day, now, min_support=1)
+        c_max_rob, c_min = observed_so_far_robust(cont_times, cont_temps, day, now)
+        if variable == "high":
+            shift = (settle_offset or {}).get("high", 0.0)
+            c_max = _trusted_high_max(c_max_raw, c_max_rob, fullday, shift)
+            if c_max is not None:
+                observed_cont = c_max
+                cand = c_max - 0.9
+                observed_bound = cand if observed is None else max(observed, cand)
         elif variable == "low" and c_min is not None:
             observed_cont = c_min
             cand = c_min + 0.9
@@ -470,11 +499,9 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     locked = _extreme_locked(obs_times, obs_temps, day, variable, now, bumpy=bumpy) \
         if now is not None else False
 
-    bias = (calib or {}).get("bias", {})
     # Full-day extremes (ignoring obs) set the reference spread; nowcast-blended
     # samples carry the realized floor/ceiling and forecast anchored to obs_now.
     var_weights = (calib or {}).get("weights", {}).get(variable)
-    fullday, _fw = _collect_samples(series, day, variable, None, None, bias)
     samples, weights = _collect_samples(series, day, variable, now, observed, bias,
                                         obs_now, var_weights, locked=locked)
     if not samples or not fullday:
