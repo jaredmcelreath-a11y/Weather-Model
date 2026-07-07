@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 import altair as alt
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from streamlit_autorefresh import st_autorefresh
 
 import calibration
@@ -111,6 +112,17 @@ def _inject_theme(name):
         "{font-size:0.66rem!important;white-space:nowrap!important;}"
         # keep the page title on one line on phones
         ".stApp h1{font-size:1.7rem!important;}"
+        # show the floating switcher and keep the last content clear of it
+        ".wx-toggle-bar{display:flex!important;}"
+        "[data-testid=\"stMainBlockContainer\"]{padding-bottom:5.5rem!important;}"
+        # pre-JS default: show High until the bridge sets an explicit body class
+        "body:not(.wx-show-high):not(.wx-show-low) "
+        "[data-testid=\"stColumn\"]:has(.st-key-wx_sec_low){display:none!important;}"
+        # explicit selection from the JS bridge (hash or featured default)
+        "body.wx-show-high [data-testid=\"stColumn\"]:has(.st-key-wx_sec_low)"
+        "{display:none!important;}"
+        "body.wx-show-low [data-testid=\"stColumn\"]:has(.st-key-wx_sec_high)"
+        "{display:none!important;}"
         "}\n"
         "[data-testid=\"stCaptionContainer\"],[data-testid=\"stCaptionContainer\"] p"
         "{color:var(--muted)!important;}\n"
@@ -175,6 +187,24 @@ def _inject_theme(name):
         ".wmini .wlabel{font-size:0.72rem;font-weight:700;color:var(--muted);white-space:nowrap;}\n"
         ".wmini .wval{font-size:0.9rem;font-weight:700;color:var(--ink);white-space:nowrap;"
         "margin-top:0.15rem;}\n"
+        # mobile High/Low floating switcher — hidden on desktop; the ≤640px block
+        # below flips it to flex. Styled from the palette vars so it follows the
+        # active theme. Buttons carry data-wx-sel; the JS bridge wires the taps.
+        ".wx-toggle-bar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:1000;"
+        "gap:0.5rem;padding:0.5rem 0.7rem calc(0.5rem + env(safe-area-inset-bottom));"
+        "background:var(--surface);border-top:1px solid var(--border);"
+        "box-shadow:0 -6px 18px rgba(0,0,0,0.35);}\n"
+        ".wx-toggle-btn{flex:1 1 50%;text-align:center;cursor:pointer;user-select:none;"
+        "font-family:'Bitter',serif;font-weight:700;font-size:0.9rem;color:var(--muted);"
+        "background:var(--surface2);border:1px solid var(--border);border-radius:10px;"
+        "padding:0.6rem 0.4rem;white-space:nowrap;}\n"
+        ".wx-toggle-btn b{color:var(--ink);}\n"
+        ".wx-toggle-btn.wx-active{color:var(--bg);background:var(--accent);"
+        "border-color:var(--accent-strong);}\n"
+        ".wx-toggle-btn.wx-active b{color:var(--bg);}\n"
+        # keep the zero-height JS-bridge component from adding vertical space
+        ".st-key-wx_bridge,.st-key-wx_bridge iframe{height:0!important;min-height:0!important;"
+        "margin:0!important;border:0!important;}\n"
         "</style>",
         unsafe_allow_html=True,
     )
@@ -1157,10 +1187,25 @@ def render_page(snap, calib, adapter, load_accuracy):
     feature_low = (key == "tomorrow")
     cols = st.columns(2)
     today_iso = snap["today"]["day"]
-    render_variable(cols[0], "High", pred["high"], "high", pred["day"], adapter,
+    # Keyed wrappers so the mobile CSS can hide the non-selected column via :has().
+    with cols[0]:
+        high_box = st.container(key="wx_sec_high")
+    with cols[1]:
+        low_box = st.container(key="wx_sec_low")
+    render_variable(high_box, "High", pred["high"], "high", pred["day"], adapter,
                     featured=not feature_low, safe_min=safe_min, today_iso=today_iso)
-    render_variable(cols[1], "Low", pred["low"], "low", pred["day"], adapter,
+    render_variable(low_box, "Low", pred["low"], "low", pred["day"], adapter,
                     featured=feature_low, safe_min=safe_min, today_iso=today_iso)
+
+    # Mobile-only floating High/Low switcher (desktop keeps both columns). The bar
+    # is plain HTML; the JS bridge (in a zero-height component) wires the taps and
+    # persists the choice in the URL hash across the 60s refresh. Default follows
+    # the featured section for the selected day.
+    st.markdown(mobile_toggle_bar_html(pred["high"], pred["low"]),
+                unsafe_allow_html=True)
+    with st.container(key="wx_bridge"):
+        components.html(mobile_toggle_bridge_js("low" if feature_low else "high"),
+                        height=0)
 
     with st.expander("Per-Source Breakdown"):
         src = snap["sources"][key]
