@@ -7,8 +7,12 @@ import bet_history as bh
 
 
 def _fill(tid, ticker, side, action, count, price, day, hour=19):
+    # yes/no prices are complementary; `price` is the fill's own-side price.
+    yes_p = price if side == "yes" else round(1 - price, 4)
+    no_p = round(1 - price, 4) if side == "yes" else price
     return {"trade_id": tid, "ticker": ticker, "variable": "high", "side": side,
             "action": action, "count": count, "price": price,
+            "yes_price": yes_p, "no_price": no_p,
             "ts": datetime(2026, 6, day, hour, tzinfo=timezone.utc)}
 
 

@@ -29,13 +29,17 @@ def build_rows(fills: list[dict], settlements: dict, meta: dict) -> list[dict]:
         sells_yes = sum(f["count"] for f in group if f["side"] == "yes" and f["action"] == "sell")
         buys_no = sum(f["count"] for f in group if f["side"] == "no" and f["action"] == "buy")
         sells_no = sum(f["count"] for f in group if f["side"] == "no" and f["action"] == "sell")
-        cash_flow = sum((f["count"] * f["price"]) * (1 if f["action"] == "sell" else -1)
-                        for f in group)
+        # The side you're net-long is whichever you BOUGHT more of. Kalshi records
+        # closing a position via the other outcome (a "sell YES" that actually closes
+        # a NO), so a sell realizes at the DOMINANT side's price, not the fill's own
+        # `side`. Realized P&L = sells (dominant price) + settlement revenue − buys.
+        side = "yes" if buys_yes >= buys_no else "no"
         total_buy = sum(f["count"] * f["price"] for f in group if f["action"] == "buy")
-        total_sell = sum(f["count"] * f["price"] for f in group if f["action"] == "sell")
+        sell_cash = sum(f["count"] * (f["yes_price"] if side == "yes" else f["no_price"])
+                        for f in group if f["action"] == "sell")
+        sell_ct = sum(f["count"] for f in group if f["action"] == "sell")
         n_sell = sum(1 for f in group if f["action"] == "sell")
         net_yes, net_no = buys_yes - sells_yes, buys_no - sells_no
-        side = "yes" if net_yes >= net_no else "no"
         qty = net_yes if side == "yes" else net_no
         buy_cost = sum(f["count"] * f["price"] for f in group
                        if f["side"] == side and f["action"] == "buy")
@@ -43,28 +47,18 @@ def build_rows(fills: list[dict], settlements: dict, meta: dict) -> list[dict]:
                      if f["side"] == side and f["action"] == "buy")
         entry = round(buy_cost / buy_ct, 4) if buy_ct else None
         settle = settlements.get(ticker)
-        # Exit = avg price the side was SOLD at; if held to settlement (no sells),
-        # it "exited" at $1.00 (the side won) or $0.00 (lost); None while still open.
-        sell_proceeds = sum(f["count"] * f["price"] for f in group
-                            if f["side"] == side and f["action"] == "sell")
-        sell_ct = sum(f["count"] for f in group
-                      if f["side"] == side and f["action"] == "sell")
+        settle_rev = settle.get("revenue") if settle else None
+        # Exit = avg realized sell price (dominant side); else the settlement value
+        # $1.00 (side won) / $0.00 (lost) for held-to-settlement; None while open.
         if sell_ct:
-            exit_price = round(sell_proceeds / sell_ct, 4)
+            exit_price = round(sell_cash / sell_ct, 4)
         elif settle:
             exit_price = 1.0 if settle["result"] == side else 0.0
         else:
             exit_price = None
 
-        # NOTE: payout is under active reconciliation. net-count × $1 (below) over-
-        # credits positions sold before settlement; Kalshi's `revenue` field
-        # (kept in `settle_rev` for the diagnostic) undershot badly in production,
-        # so we're gathering raw per-position data before switching. For now use the
-        # net-count payout (stable/positive) and surface both in the debug table.
-        settle_rev = settle.get("revenue") if settle else None
         if settle:
-            payout = net_yes if settle["result"] == "yes" else net_no
-            pnl = cash_flow + payout
+            pnl = sell_cash + (settle_rev or 0.0) - total_buy
             status, result, settled_ts = "settled", settle["result"], settle["ts"]
         else:
             pnl, status, result, settled_ts = None, "open", None, None
@@ -78,7 +72,7 @@ def build_rows(fills: list[dict], settlements: dict, meta: dict) -> list[dict]:
             "status": status, "result": result, "settled_ts": settled_ts,
             "pnl": pnl, "staked": total_buy,
             # diagnostics for spreadsheet reconciliation
-            "sold": total_sell, "n_sell": n_sell, "revenue": settle_rev,
+            "sold": sell_cash, "n_sell": n_sell, "revenue": settle_rev,
         })
     rows.sort(key=lambda r: r["first_ts"], reverse=True)  # newest first
     return rows

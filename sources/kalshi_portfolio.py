@@ -70,14 +70,17 @@ def fills(start: date, fetch=None) -> list[dict]:
                 continue
             seen.add(fid)
             side = f.get("side")
-            # Kalshi fills: count_fp (string, may be fractional) and *_price_dollars
-            # (string, already in dollars — NOT cents).
-            price = f.get("yes_price_dollars") if side == "yes" else f.get("no_price_dollars")
+            # Kalshi fills: count_fp (string, maybe fractional) and *_price_dollars
+            # (string dollars). Keep BOTH side prices — a sell realizes at the
+            # dominant-held side's price, not the fill's own `side` (see build_rows).
+            yes_p = float(f.get("yes_price_dollars") or 0)
+            no_p = float(f.get("no_price_dollars") or 0)
             out.append({
                 "trade_id": fid, "ticker": ticker, "variable": var,
                 "side": side, "action": f.get("action"),
                 "count": float(f.get("count_fp") or 0),
-                "price": float(price or 0), "ts": ts,
+                "price": yes_p if side == "yes" else no_p,
+                "yes_price": yes_p, "no_price": no_p, "ts": ts,
             })
     return out
 

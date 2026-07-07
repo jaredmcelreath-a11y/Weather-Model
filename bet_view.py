@@ -160,32 +160,16 @@ def render():
         st.write("**One raw fill per distinct `action` value** (to see how SELLS are "
                  "encoded — buys showed `action: \"buy\"`):")
         st.json(kalshi_portfolio.raw_fills_by_action() or {"(no fills)": None})
-        st.write("**Per-position breakdown** — `pnl$` is our (buggy) fill reconstruction; "
-                 "`kalshi_pnl$` is Kalshi's OWN realized P&L for that market (the source "
-                 "of truth we should switch to):")
-        kpnl = kalshi_portfolio.positions()   # {ticker: realized_pnl_dollars}
+        st.write("**Per-position breakdown** (bought$ + sold$ realized at the dominant "
+                 "side's price; pnl$ = sold$ + settlement revenue − bought$):")
         diag = [{"ticker": r["ticker"], "side": r["side"], "result": r["result"],
                  "bought$": round(r["staked"], 2), "sold$": round(r["sold"], 2),
-                 "pnl$": round(r["pnl"], 2) if r["pnl"] is not None else None,
-                 "kalshi_pnl$": (round(kpnl[r["ticker"]], 2)
-                                 if r["ticker"] in kpnl else None)}
+                 "n_sell": r["n_sell"],
+                 "kalshi_rev$": round(r["revenue"], 2) if r.get("revenue") is not None else None,
+                 "pnl$": round(r["pnl"], 2) if r["pnl"] is not None else None}
                 for r in rows]
         st.dataframe(pd.DataFrame(diag), use_container_width=True)
         tot = sum(r["pnl"] for r in rows if r["pnl"] is not None)
-        ktot = sum(kpnl.values())
-        st.caption(f"Our fill-reconstructed P&L = ${tot:,.2f}  ·  "
-                   f"**Kalshi's own realized P&L (all {len(kpnl)} markets) = ${ktot:,.2f}**  ·  "
-                   f"your spreadsheet Net P&L = $20.57.")
-
-        # Completeness check: how many fills a single page returns (if it's a round
-        # cap like 100/1000 we're truncating), and every raw fill for the two
-        # problem tickers so we can see whether sells are actually missing.
-        allf = kalshi_portfolio.raw_fills_dump()
-        st.write(f"**Fills in one page (limit 1000): {len(allf)}** — a round number "
-                 "(100/1000) means pagination is truncating.")
-        for tkr in ("KXLOWTDAL-26JUL05-T74", "KXHIGHTDAL-26JUL06-B99.5"):
-            got = [f for f in allf if f.get("ticker") == tkr]
-            st.write(f"**Raw fills for {tkr}** ({len(got)} found):")
-            st.json(got or [f"(none in this page for {tkr})"])
-        st.write("**Raw `/portfolio/positions` response shape** (finding the realized-P&L field):")
-        st.json(kalshi_portfolio.raw_positions_dump())
+        st.caption(f"**Our total realized P&L = ${tot:,.2f}**  ·  compare to your "
+                   "spreadsheet Net P&L of $20.57 (residual ≈ fees, which we don't "
+                   "subtract yet).")
