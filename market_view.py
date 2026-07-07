@@ -625,6 +625,79 @@ def lock_status(d, variable):
             "front before treating it as final.")
 
 
+def mobile_toggle_bar_html(high_d, low_d):
+    """HTML for the mobile-only floating High/Low switcher bar.
+
+    `high_d`/`low_d` are the per-variable snapshot blocks (each a dict with a
+    'consensus' key, or None). Each button carries a data-wx-sel attribute the
+    JS bridge wires up, and shows the day's live consensus so both numbers are
+    visible without tapping. Hidden on desktop via CSS (.wx-toggle-bar default
+    display:none); shown only inside the ≤640px media query."""
+    def _v(d):
+        if d and d.get("consensus") is not None:
+            return f"{d['consensus']}°F"
+        return "—"
+    return (
+        '<div class="wx-toggle-bar">'
+        f'<div class="wx-toggle-btn" data-wx-sel="high">HIGH <b>{_v(high_d)}</b></div>'
+        f'<div class="wx-toggle-btn" data-wx-sel="low">Low <b>{_v(low_d)}</b></div>'
+        '</div>'
+    )
+
+
+def mobile_toggle_bridge_js(default):
+    """JS bridge (for components.html) that makes the floating bar work.
+
+    Runs inside the component's sandboxed-but-same-origin iframe and reaches the
+    parent document (window.parent) — the standard Streamlit client-side hack.
+    On tap it stores the choice in the URL hash (#wxhigh/#wxlow, ignored by
+    Streamlit) and toggles a wx-show-high/wx-show-low class on <body>, which the
+    CSS uses to hide the other column on mobile. With no hash it applies
+    `default` (the featured section), so the choice persists across the 60s
+    auto-refresh and Today/Tomorrow switches. `default` must be 'high' or 'low'."""
+    if default not in ("high", "low"):
+        raise ValueError(f"default must be 'high' or 'low', got {default!r}")
+    return (
+        "<script>\n"
+        "(function(){\n"
+        f'  var DEFAULT = "{default}";\n'
+        "  function apply(pdoc, sel){\n"
+        '    pdoc.body.classList.remove("wx-show-high","wx-show-low");\n'
+        '    pdoc.body.classList.add(sel === "low" ? "wx-show-low" : "wx-show-high");\n'
+        '    var btns = pdoc.querySelectorAll(".wx-toggle-btn");\n'
+        "    for (var i=0;i<btns.length;i++){\n"
+        '      btns[i].classList.toggle("wx-active",'
+        ' btns[i].getAttribute("data-wx-sel")===sel);\n'
+        "    }\n"
+        "  }\n"
+        "  function wire(){\n"
+        "    var pdoc, ploc, phist;\n"
+        "    try { pdoc = window.parent.document; ploc = window.parent.location;"
+        " phist = window.parent.history; }\n"
+        "    catch(e){ return true; }\n"
+        '    var btns = pdoc.querySelectorAll(".wx-toggle-btn");\n'
+        "    if (!btns.length) return false;\n"
+        "    for (var i=0;i<btns.length;i++){\n"
+        "      (function(btn){\n"
+        "        btn.onclick = function(){\n"
+        '          var sel = btn.getAttribute("data-wx-sel");\n'
+        '          try { phist.replaceState(null, "",'
+        ' sel === "low" ? "#wxlow" : "#wxhigh"); } catch(e){}\n'
+        "          apply(pdoc, sel);\n"
+        "        };\n"
+        "      })(btns[i]);\n"
+        "    }\n"
+        '    var h = (ploc.hash || "").replace("#","");\n'
+        '    apply(pdoc, h === "wxlow" ? "low" : (h === "wxhigh" ? "high" : DEFAULT));\n'
+        "    return true;\n"
+        "  }\n"
+        "  var n = 0, t = setInterval(function(){"
+        " if (wire() || ++n > 40) clearInterval(t); }, 50);\n"
+        "})();\n"
+        "</script>"
+    )
+
+
 def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                     safe_min=None, today_iso=None):
     if safe_min is None:
