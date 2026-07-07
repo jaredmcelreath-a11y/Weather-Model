@@ -112,6 +112,18 @@ LOW_LOCK_RISE = 0.8
 HIGH_LOCK_NOON_OFFSET_HOURS = 3.25   # hours after solar noon the peak is treated as in
 HIGH_LOCK_DROP = 0.8                  # °F off the running max, past the gate, to early-lock
 
+# Plateau lock: past the gate, a high that has stopped climbing (holds within this
+# many °F of its running max without a new high — essentially flat, clearing only
+# rounding jitter) is treated as in, so a flat-topped peak locks while the market's
+# still live instead of waiting for the temp to fall. Kept below HIGH_LOCK_DROP so a
+# genuine small ease (not a flat hold) still routes through the early-lock instead.
+HIGH_PLATEAU_MAX = 0.3
+# Persistence guard: only on a *bumpy* afternoon (recent sub-hourly readings jitter
+# more than this std, °F) does the blunt PEAK_LOCK_DROP lock need a second confirming
+# reading — so a lone convective dip before a higher peak can't false-lock. Calm days
+# lock on the first reading exactly as before (no delay).
+HIGH_BUMPY_STD = 1.5
+
 MAX_CLI_GAP = 3.0   # °F; largest CLI-vs-hourly low gap we trust as a live anchor (spike clamp)
 
 # --- Radiational-cooling predictor (overnight low) ---

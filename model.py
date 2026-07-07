@@ -23,7 +23,8 @@ from zoneinfo import ZoneInfo
 import requests
 
 from config import (BIN_HIGH, BIN_LOW, CACHE_TTL_SECONDS, CALM_WIND_MAX,
-                    CLEAR_CLOUD_MAX, HIGH_LOCK_DROP, HIGH_LOCK_NOON_OFFSET_HOURS,
+                    CLEAR_CLOUD_MAX, HIGH_BUMPY_STD, HIGH_LOCK_DROP,
+                    HIGH_LOCK_NOON_OFFSET_HOURS, HIGH_PLATEAU_MAX,
                     LEAD_SIGMA_INFLATION, LOW_LOCK_RISE, MAX_CLI_GAP,
                     PEAK_LOCK_DROP, TIMEZONE, bin_labels, lead_bucket)
 from settlement import (covers_extreme, local_day_bounds, observed_so_far,
@@ -76,7 +77,17 @@ def _past_high_peak_gate(day, now) -> bool:
     return now.astimezone(TZ) >= gate
 
 
-def _extreme_locked(times, temps, day, variable, now, drop=PEAK_LOCK_DROP) -> bool:
+def _retreat_persisted(vals, drop, n=2) -> bool:
+    """True when the last `n` readings are all at least `drop` below the running
+    max — i.e. the retreat has held, not just a single (possibly convective) dip."""
+    if len(vals) < n + 1:
+        return False
+    m = max(vals)
+    return all(m - v >= drop for v in vals[-n:])
+
+
+def _extreme_locked(times, temps, day, variable, now, drop=PEAK_LOCK_DROP,
+                    bumpy=False) -> bool:
     """True once today's extreme has clearly passed.
 
     The high (or low) is treated as set when the latest observation has retreated
@@ -115,14 +126,25 @@ def _extreme_locked(times, temps, day, variable, now, drop=PEAK_LOCK_DROP) -> bo
         # heat ahead of the morning minimum, not a passed daytime peak.
         if vals.index(max(vals)) <= vals.index(min(vals)):
             return False
+        max_i = vals.index(max(vals))
         retreat = max(vals) - cur
-        if retreat >= drop:
+        # Blunt 2°F fallback. On a bumpy (convective) afternoon require the retreat
+        # to persist across a second reading, so a lone dip before a higher peak
+        # can't false-lock; a calm afternoon locks on the first reading as before.
+        if retreat >= drop and (not bumpy or _retreat_persisted(vals, drop)):
             return True
-        # Early lock: past the afternoon the daytime max is in, so a small
-        # confirming retreat (clears obs + rounding jitter) means we're off the
-        # peak. Mirrors the sunrise-gated low lock; nothing sets a new daytime
-        # max after this window, so no convective-style guard is needed.
-        return _past_high_peak_gate(day, now) and retreat >= HIGH_LOCK_DROP
+        # Past the afternoon gate the daytime max is in. Lock when we're off the
+        # peak (small confirming retreat, clears obs/rounding jitter) OR when the
+        # high has plateaued — the max was set at an earlier reading and we're
+        # holding within HIGH_PLATEAU_MAX of it without a new high. The plateau case
+        # locks a flat-topped peak while the market's still live instead of waiting
+        # for it to fall. Nothing sets a new daytime max after this window.
+        if _past_high_peak_gate(day, now):
+            if retreat >= HIGH_LOCK_DROP:
+                return True
+            if max_i < len(vals) - 1 and retreat <= HIGH_PLATEAU_MAX:
+                return True
+        return False
     risen = cur - min(vals)
     if risen >= drop:
         return True
@@ -398,9 +420,9 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     observed = obs_max if variable == "high" else obs_min
     obs_now = _latest_obs(obs_times, obs_temps, day, now) if now is not None else None
 
-    # Once the day's extreme has clearly passed, lock to what was realized.
-    locked = _extreme_locked(obs_times, obs_temps, day, variable, now) \
-        if now is not None else False
+    # 'bumpy' (set from the sub-hourly feed below) makes the high's blunt 2°F
+    # peak-lock wait for a second confirming reading on a convective afternoon.
+    bumpy = False
 
     # Continuous (sub-hourly) observed extreme for the hard bound only: the live
     # 5-minute feed can catch a brief spike the routine :53 reading missed. Reads
@@ -433,6 +455,14 @@ def predict_variable(series, obs_series, day, variable, now, calib,
         if recent:
             tail = sorted(recent[-3:])
             obs_now = tail[len(tail) // 2]
+        # Bumpy afternoon = the recent sub-hourly readings are swinging (convective
+        # clouds) — the signature that a single hourly dip may not be the real peak.
+        if len(recent) >= 4:
+            bumpy = _std(recent[-6:]) > HIGH_BUMPY_STD
+
+    # Once the day's extreme has clearly passed, lock to what was realized.
+    locked = _extreme_locked(obs_times, obs_temps, day, variable, now, bumpy=bumpy) \
+        if now is not None else False
 
     bias = (calib or {}).get("bias", {})
     # Full-day extremes (ignoring obs) set the reference spread; nowcast-blended
