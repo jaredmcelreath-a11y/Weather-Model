@@ -92,3 +92,16 @@ def test_variable_of():
 def test_balance_cents_to_dollars():
     assert kp.balance(fetch=lambda path, params=None: {"balance": 3057}) == 30.57
     assert kp.balance(fetch=lambda path, params=None: {}) is None
+
+
+def test_market_price_mid_of_held_side():
+    m = {"market": {"yes_bid_dollars": "0.60", "yes_ask_dollars": "0.64",
+                    "no_bid_dollars": "0.36", "no_ask_dollars": "0.40",
+                    "last_price_dollars": "0.62"}}
+    fp = lambda t: m
+    assert kp.market_price("KXHIGHTDAL-26JUL07-B98.5", "yes", fetch_public=fp) == 0.62
+    assert kp.market_price("KXHIGHTDAL-26JUL07-B98.5", "no", fetch_public=fp) == 0.38
+
+
+def test_market_price_none_when_no_prices():
+    assert kp.market_price("T", "yes", fetch_public=lambda t: {"market": {}}) is None

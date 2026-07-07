@@ -124,6 +124,33 @@ def market_meta(ticker: str, fetch_public=None) -> dict:
     }
 
 
+def market_price(ticker: str, side: str, fetch_public=None):
+    """Current market value (dollars, ~0-1) of `side` for `ticker` — the bid/ask mid
+    (fallback: last price, side-adjusted), for marking an OPEN position to market.
+    None if unavailable. Read-only; a short TTL so the price is live."""
+    fetch_public = fetch_public or (lambda t: get_json(
+        f"{kalshi_auth.HOST}{kalshi_auth.API_PREFIX}/markets/{t}", ttl=30))
+    m = (fetch_public(ticker) or {}).get("market") or {}
+
+    def _f(x):
+        try:
+            return float(x)
+        except (TypeError, ValueError):
+            return None
+
+    if side == "yes":
+        bid, ask = _f(m.get("yes_bid_dollars")), _f(m.get("yes_ask_dollars"))
+        last = _f(m.get("last_price_dollars"))
+    else:
+        bid, ask = _f(m.get("no_bid_dollars")), _f(m.get("no_ask_dollars"))
+        last = _f(m.get("last_price_dollars"))
+        if last is not None:
+            last = 1 - last                      # last_price is in YES terms
+    if bid is not None and ask is not None:
+        return round((bid + ask) / 2, 4)
+    return bid if bid is not None else (ask if ask is not None else last)
+
+
 
 def balance(fetch=None):
     """Current Kalshi cash balance in DOLLARS (the API returns cents), or None on

@@ -31,6 +31,10 @@ def _load_bets():
     rows = bet_history.build_rows(fills, settlements, meta)
     bet_history.annotate_rows(rows, betting_log.load(), consensus_log.load(),
                               calibration.get())
+    # Mark open positions to market so the Exit column can show what they're worth now.
+    for r in rows:
+        if r["status"] == "open":
+            r["current_value"] = kalshi_portfolio.market_price(r["ticker"], r["side"])
     return (rows, bet_history.summary(rows), bet_history.equity_curve(rows),
             kalshi_portfolio.balance())
 
@@ -136,11 +140,14 @@ def render():
     for r in rows:
         model = _model_cell(r)
         volume = r["qty"] * r["entry"] if r["entry"] is not None else None
+        # Exit: realized sell/settlement price when closed; for an OPEN position, its
+        # current market value (marked to market).
+        exit_val = r.get("current_value") if r["status"] == "open" else r["exit"]
         disp.append({
             "Date": r["first_ts"].strftime("%b %-d"),
             "Contract": r["label"], "Side": r["side"].upper(),
             "Entry": market_view.cents(r["entry"]),
-            "Exit": market_view.cents(r["exit"]),
+            "Exit": market_view.cents(exit_val),
             "Qty": f"{r['qty']:.2f}",
             "Volume": _fmt_usd(volume),
             "Model @ bet": model,
@@ -151,5 +158,6 @@ def render():
     st.caption("Model @ bet = the model's probability for the side you took, its "
                "edge vs your entry (pp), and whether you bet with or against it — "
                "reconstructed from the nearest logged snapshot to your fill (— if "
-               "none). P&L is realized on settlement. Read-only view of your Kalshi "
-               "account; prices in ¢, amounts in $. P&L is net of Kalshi fees.")
+               "none). Exit = your sell/settlement price, or the current market value "
+               "for an open position. P&L is realized on settlement, net of Kalshi "
+               "fees. Read-only view of your Kalshi account; prices in ¢, amounts in $.")
