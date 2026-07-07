@@ -153,6 +153,6 @@ def kalshi_page():
 # Kalshi/CLI-only. robinhood_page() and its hourly loaders are kept below,
 # unreferenced, so re-listing it here is a one-line revert if ever needed.
 st.navigation([
-    st.Page(kalshi_page, title="Kalshi", default=True),
+    st.Page(kalshi_page, title="Forecast", default=True),
     st.Page(bet_view.render, title="My Bets"),
 ]).run()
