@@ -9,9 +9,9 @@ import pandas as pd
 import streamlit as st
 
 import bet_history
+import betting_log
 import calibration
 import consensus_log
-import betting_log
 import market_view
 from sources import kalshi_auth, kalshi_portfolio
 
@@ -47,6 +47,19 @@ def equity_chart(curve, color):
 
 def _fmt_pnl(v):
     return "—" if v is None else (f"+${v:,.2f}" if v >= 0 else f"−${abs(v):,.2f}")
+
+
+def _model_cell(r):
+    """The 'Model @ bet' display string. entry can be None (a resolved side with
+    zero matching BUY fills), which leaves edge/agree unset even though model_prob
+    is present — so probability and edge/agreement are handled independently to
+    avoid a TypeError on `None * 100` crashing the whole page."""
+    if r.get("model_prob") is None:
+        return "—"
+    if r.get("edge") is None:
+        return f"{r['model_prob']*100:.0f}%"
+    return (f"{r['model_prob']*100:.0f}% · {r['edge']*100:+.0f} · "
+            + ("with" if r["agree"] else "against"))
 
 
 def render():
@@ -85,9 +98,7 @@ def render():
 
     disp = []
     for r in rows:
-        model = "—" if r.get("model_prob") is None else (
-            f"{r['model_prob']*100:.0f}% · {r['edge']*100:+.0f} · "
-            + ("with" if r["agree"] else "against"))
+        model = _model_cell(r)
         disp.append({
             "Date": r["first_ts"].strftime("%b %-d"),
             "Contract": r["label"], "Side": r["side"].upper(),

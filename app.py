@@ -45,7 +45,6 @@ if _kal:
     os.environ.setdefault("KALSHI_ACCESS_KEY_ID", _kal.get("access_key_id", ""))
     os.environ.setdefault("KALSHI_PRIVATE_KEY", _kal.get("private_key", ""))
 
-
 # TTL matches the page's 60s autorefresh and the Kalshi market cache (30s) so the
 # model snapshot and the market-implied EV are recomputed on the same cycle — a
 # 120s model cache next to a 30s market cache let the model lag up to ~2 min behind
