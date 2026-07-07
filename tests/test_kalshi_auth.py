@@ -3,6 +3,7 @@ construction are pure; a throwaway RSA key is generated per test and used to
 verify the emitted signature."""
 
 import base64
+from unittest.mock import Mock, patch
 
 import pytest
 from cryptography.hazmat.primitives import hashes, serialization
@@ -59,3 +60,27 @@ def test_load_credentials_missing_raises_without_leaking(monkeypatch):
         ka.load_credentials()
     assert "KALSHI_ACCESS_KEY_ID" in str(e.value)
     assert "secret-key-material" not in str(e.value)  # never leak the value
+
+
+def test_signed_get_issues_read_only_get_with_signed_headers(monkeypatch):
+    _, pem = _keypair()
+    monkeypatch.setenv("KALSHI_ACCESS_KEY_ID", "kid-xyz")
+    monkeypatch.setenv("KALSHI_PRIVATE_KEY", pem)
+
+    mock_resp = Mock()
+    mock_resp.json.return_value = {"ok": True}
+    mock_resp.raise_for_status = Mock()
+
+    with patch("sources.kalshi_auth.requests.get", return_value=mock_resp) as mock_get:
+        result = ka.signed_get("/portfolio/fills", params={"limit": 5})
+
+    assert result == {"ok": True}
+    mock_get.assert_called_once()
+    args, kwargs = mock_get.call_args
+    url = args[0] if args else kwargs["url"]
+    assert url == ka.HOST + ka.API_PREFIX + "/portfolio/fills"
+    assert kwargs["params"] == {"limit": 5}
+    headers = kwargs["headers"]
+    assert "KALSHI-ACCESS-KEY" in headers
+    assert "KALSHI-ACCESS-TIMESTAMP" in headers
+    assert "KALSHI-ACCESS-SIGNATURE" in headers
