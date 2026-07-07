@@ -73,7 +73,16 @@ def render():
                 "The key is read only from secrets and used for read-only requests.")
         return
     except Exception as e:                       # never crash the dashboard
-        st.warning(f"Couldn't load your Kalshi bets right now ({type(e).__name__}). "
+        # Surface the HTTP status + endpoint + Kalshi's error body (never the key —
+        # credentials live in request headers, not the URL/body) so a live auth or
+        # endpoint problem is diagnosable instead of an opaque "HTTPError".
+        detail = ""
+        resp = getattr(e, "response", None)
+        if resp is not None:
+            path = resp.url.split("/trade-api/v2", 1)[-1].split("?", 1)[0]
+            body = (resp.text or "").strip().replace("\n", " ")[:200]
+            detail = f" — {resp.status_code} on {path}: {body}"
+        st.warning(f"Couldn't load your Kalshi bets right now ({type(e).__name__}{detail}). "
                    "The rest of the dashboard is unaffected; try again shortly.")
         return
 

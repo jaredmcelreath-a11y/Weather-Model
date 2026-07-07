@@ -47,8 +47,17 @@ def _iter_pages(fetch, path, items_key):
 def fills(start: date, fetch=None) -> list[dict]:
     fetch = fetch or kalshi_auth.signed_get
     seen, out = set(), []
-    for path in ("/portfolio/fills", "/historical/fills"):
-        for f in _iter_pages(fetch, path, "fills"):
+    # /portfolio holds recent fills (required); /historical holds only
+    # older-than-cutoff fills and is best-effort — if that tier 404s or errors,
+    # skip it rather than failing the whole page (recent bets are all in /portfolio).
+    for path, required in (("/portfolio/fills", True), ("/historical/fills", False)):
+        try:
+            items = list(_iter_pages(fetch, path, "fills"))
+        except Exception:
+            if required:
+                raise
+            continue
+        for f in items:
             ticker = f.get("ticker", "")
             var = variable_of(ticker)
             if var is None:
@@ -74,8 +83,15 @@ def fills(start: date, fetch=None) -> list[dict]:
 def settlements(start: date, fetch=None) -> dict[str, dict]:
     fetch = fetch or kalshi_auth.signed_get
     out: dict[str, dict] = {}
-    for path in ("/portfolio/settlements", "/historical/settlements"):
-        for s in _iter_pages(fetch, path, "settlements"):
+    for path, required in (("/portfolio/settlements", True),
+                           ("/historical/settlements", False)):
+        try:
+            items = list(_iter_pages(fetch, path, "settlements"))
+        except Exception:
+            if required:
+                raise
+            continue
+        for s in items:
             ticker = s.get("ticker", "")
             if variable_of(ticker) is None:
                 continue
