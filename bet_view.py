@@ -175,3 +175,14 @@ def render():
         n_open = sum(1 for r in rows if r["status"] == "open")
         st.caption(f"Our total realized P&L = ${tot:,.2f}  ·  {n_set} settled, "
                    f"{n_open} open  ·  compare to your spreadsheet's Net P&L of $20.57.")
+
+        # Completeness check: how many fills a single page returns (if it's a round
+        # cap like 100/1000 we're truncating), and every raw fill for the two
+        # problem tickers so we can see whether sells are actually missing.
+        allf = kalshi_portfolio.raw_fills_dump()
+        st.write(f"**Fills in one page (limit 1000): {len(allf)}** — a round number "
+                 "(100/1000) means pagination is truncating.")
+        for tkr in ("KXLOWTDAL-26JUL05-T74", "KXHIGHTDAL-26JUL06-B99.5"):
+            got = [f for f in allf if f.get("ticker") == tkr]
+            st.write(f"**Raw fills for {tkr}** ({len(got)} found):")
+            st.json(got or [f"(none in this page for {tkr})"])

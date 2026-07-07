@@ -145,3 +145,13 @@ def raw_fills_by_action(n=100, fetch=None):
         a = str(f.get("action"))
         out.setdefault(a, f)
     return out
+
+
+def raw_fills_dump(limit=1000, fetch=None):
+    """All raw fills from a SINGLE /portfolio/fills page (limit up to 1000), for
+    diagnosing incomplete pagination. Returns the raw list. Read-only."""
+    fetch = fetch or kalshi_auth.signed_get
+    try:
+        return (fetch("/portfolio/fills", {"limit": limit}) or {}).get("fills") or []
+    except Exception:
+        return []
