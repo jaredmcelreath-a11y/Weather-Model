@@ -12,6 +12,7 @@ import os
 
 import streamlit as st
 
+import bet_view
 import calibration
 import forecast_log
 import market_view
@@ -33,6 +34,16 @@ if _gh:
     os.environ.setdefault("FORECAST_LOG_GH_REF", _gh.get("ref", "data"))
     os.environ.setdefault("FORECAST_LOG_GH_TOKEN", _gh.get("token", ""))
 
+# Kalshi read-only API key for the "My Bets" page — seeded from dashboard secrets
+# [kalshi] the same way [github] is above; absent locally/on Cloud without the
+# secret, where bet_view degrades to an enable-note rather than crashing.
+try:
+    _kal = dict(st.secrets["kalshi"]) if "kalshi" in st.secrets else None
+except Exception:
+    _kal = None
+if _kal:
+    os.environ.setdefault("KALSHI_ACCESS_KEY_ID", _kal.get("access_key_id", ""))
+    os.environ.setdefault("KALSHI_PRIVATE_KEY", _kal.get("private_key", ""))
 
 # TTL matches the page's 60s autorefresh and the Kalshi market cache (30s) so the
 # model snapshot and the market-implied EV are recomputed on the same cycle — a
@@ -143,4 +154,5 @@ def kalshi_page():
 # unreferenced, so re-listing it here is a one-line revert if ever needed.
 st.navigation([
     st.Page(kalshi_page, title="Kalshi", default=True),
+    st.Page(bet_view.render, title="My Bets"),
 ]).run()
