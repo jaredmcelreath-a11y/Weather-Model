@@ -29,8 +29,12 @@ def test_bar_handles_missing_blocks():
 
 def test_bridge_embeds_default_and_reaches_parent():
     js = mobile_toggle_bridge_js("low")
-    # default selection is embedded for the no-hash first paint
-    assert '"low"' in js
+    # The default is embedded as the literal DEFAULT constant, for the no-hash
+    # first paint. Asserted on the exact literal — a bare '"low"' also matches
+    # wx-show-low / #wxlow / (h === "wxlow"), so it would pass for ANY default
+    # and guard nothing.
+    assert 'var DEFAULT = "low";' in js
+    assert 'var DEFAULT = "high";' not in js
     # both hash tokens the bar toggles between
     assert "wxhigh" in js and "wxlow" in js
     # reaches the same-origin parent document (the Streamlit component pattern)
@@ -38,6 +42,15 @@ def test_bridge_embeds_default_and_reaches_parent():
     # it's a script block ready for components.html
     assert js.strip().startswith("<script>")
     assert js.strip().endswith("</script>")
+
+
+def test_bridge_embeds_high_default():
+    # The discriminating counterpart: 'high' embeds its own DEFAULT literal and
+    # not the 'low' one — together with the test above this proves the argument
+    # actually drives the emitted default.
+    js = mobile_toggle_bridge_js("high")
+    assert 'var DEFAULT = "high";' in js
+    assert 'var DEFAULT = "low";' not in js
 
 
 def test_bridge_rejects_bad_default():
