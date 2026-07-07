@@ -10,27 +10,34 @@ import sources.kalshi_portfolio as kp
 def _fake_fills_fetch():
     """Returns a fetch(path, params) that pages /portfolio/fills (2 pages) and
     /historical/fills (1 page, with a duplicate trade_id to test dedupe)."""
+    # Real Kalshi fill schema: count_fp (string, may be fractional) and
+    # *_price_dollars (string, already in dollars). fill_id is the unique fill key.
     pages = {
         ("/portfolio/fills", None): {"fills": [
-            {"trade_id": "t1", "ticker": "KXHIGHTDAL-26JUN22-B97",
-             "side": "yes", "action": "buy", "count": 10,
-             "yes_price": 42, "no_price": 58, "created_time": "2026-06-22T19:47:00Z"},
+            {"fill_id": "t1", "trade_id": "t1", "ticker": "KXHIGHTDAL-26JUN22-B97",
+             "side": "yes", "action": "buy", "count_fp": "10",
+             "yes_price_dollars": "0.4200", "no_price_dollars": "0.5800",
+             "created_time": "2026-06-22T19:47:00Z"},
         ], "cursor": "c2"},
         ("/portfolio/fills", "c2"): {"fills": [
-            {"trade_id": "t2", "ticker": "KXLOWTDAL-26JUN22-B77",
-             "side": "no", "action": "buy", "count": 5,
-             "yes_price": 30, "no_price": 70, "created_time": "2026-06-22T05:10:00Z"},
-            {"trade_id": "t3", "ticker": "KXNOTDALLAS-26JUN22",  # off-series, dropped
-             "side": "yes", "action": "buy", "count": 1,
-             "yes_price": 50, "no_price": 50, "created_time": "2026-06-22T12:00:00Z"},
-            {"trade_id": "t4", "ticker": "KXHIGHTDAL-26JUN20-B95",  # before start, dropped
-             "side": "yes", "action": "buy", "count": 2,
-             "yes_price": 20, "no_price": 80, "created_time": "2026-06-20T18:00:00Z"},
+            {"fill_id": "t2", "trade_id": "t2", "ticker": "KXLOWTDAL-26JUN22-B77",
+             "side": "no", "action": "buy", "count_fp": "5",
+             "yes_price_dollars": "0.3000", "no_price_dollars": "0.7000",
+             "created_time": "2026-06-22T05:10:00Z"},
+            {"fill_id": "t3", "ticker": "KXNOTDALLAS-26JUN22",  # off-series, dropped
+             "side": "yes", "action": "buy", "count_fp": "1",
+             "yes_price_dollars": "0.5000", "no_price_dollars": "0.5000",
+             "created_time": "2026-06-22T12:00:00Z"},
+            {"fill_id": "t4", "ticker": "KXHIGHTDAL-26JUN20-B95",  # before start, dropped
+             "side": "yes", "action": "buy", "count_fp": "2",
+             "yes_price_dollars": "0.2000", "no_price_dollars": "0.8000",
+             "created_time": "2026-06-20T18:00:00Z"},
         ], "cursor": ""},
         ("/historical/fills", None): {"fills": [
-            {"trade_id": "t1", "ticker": "KXHIGHTDAL-26JUN22-B97",  # dup of t1, dropped
-             "side": "yes", "action": "buy", "count": 10,
-             "yes_price": 42, "no_price": 58, "created_time": "2026-06-22T19:47:00Z"},
+            {"fill_id": "t1", "trade_id": "t1", "ticker": "KXHIGHTDAL-26JUN22-B97",  # dup, dropped
+             "side": "yes", "action": "buy", "count_fp": "10",
+             "yes_price_dollars": "0.4200", "no_price_dollars": "0.5800",
+             "created_time": "2026-06-22T19:47:00Z"},
         ], "cursor": ""},
     }
 
@@ -46,10 +53,11 @@ def test_fills_pages_merges_filters_and_dedupes():
     assert ids == ["t1", "t2"]                       # off-series/old/dup removed
     t1 = next(f for f in out if f["trade_id"] == "t1")
     assert t1["variable"] == "high"
-    assert t1["price"] == 0.42                        # yes buy -> yes_price/100
+    assert t1["price"] == 0.42                        # yes buy -> yes_price_dollars
+    assert t1["count"] == 10.0                        # count_fp string -> float
     assert t1["ts"] == datetime(2026, 6, 22, 19, 47, tzinfo=timezone.utc)
     t2 = next(f for f in out if f["trade_id"] == "t2")
-    assert t2["price"] == 0.70                        # no buy -> no_price/100
+    assert t2["price"] == 0.70                        # no buy -> no_price_dollars
 
 
 def test_settlements_keyed_by_ticker():

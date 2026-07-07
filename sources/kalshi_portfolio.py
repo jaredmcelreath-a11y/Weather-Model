@@ -65,17 +65,19 @@ def fills(start: date, fetch=None) -> list[dict]:
             ts = _parse_ts(f["created_time"])
             if ts.date() < start:
                 continue
-            tid = f.get("trade_id")
-            if tid in seen:
+            fid = f.get("fill_id") or f.get("trade_id")
+            if fid in seen:
                 continue
-            seen.add(tid)
+            seen.add(fid)
             side = f.get("side")
-            price_c = f.get("yes_price") if side == "yes" else f.get("no_price")
+            # Kalshi fills: count_fp (string, may be fractional) and *_price_dollars
+            # (string, already in dollars — NOT cents).
+            price = f.get("yes_price_dollars") if side == "yes" else f.get("no_price_dollars")
             out.append({
-                "trade_id": tid, "ticker": ticker, "variable": var,
+                "trade_id": fid, "ticker": ticker, "variable": var,
                 "side": side, "action": f.get("action"),
-                "count": int(f.get("count", 0)),
-                "price": (price_c or 0) / 100.0, "ts": ts,
+                "count": float(f.get("count_fp") or 0),
+                "price": float(price or 0), "ts": ts,
             })
     return out
 
@@ -114,14 +116,3 @@ def market_meta(ticker: str, fetch_public=None) -> dict:
         "strike_type": m.get("strike_type"), "variable": variable_of(ticker),
     }
 
-
-def raw_first(path: str, items_key: str, fetch=None):
-    """First RAW item from an authenticated endpoint page — for reconciling
-    Kalshi's actual field names/values against our normalization. Returns None on
-    error/empty. (Read-only GET; no credentials appear in the returned object.)"""
-    fetch = fetch or kalshi_auth.signed_get
-    try:
-        items = (fetch(path, {"limit": 1}) or {}).get(items_key) or []
-    except Exception:
-        return None
-    return items[0] if items else None
