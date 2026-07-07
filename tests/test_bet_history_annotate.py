@@ -50,3 +50,32 @@ def test_annotate_rows_sets_model_fields():
     bh.annotate_rows(rows, BETTING, [], calib={})
     assert rows[0]["model_prob"] is not None
     assert rows[0]["agree"] in (True, False)
+
+
+CONSENSUS_995 = [{"target_date": "2026-06-22", "variable": "high",
+                  "captured_at": "2026-06-22T19:45:00+00:00",
+                  "cli_consensus": 99.5, "sigma_used": 1.0}]
+FILL_TS = datetime(2026, 6, 22, 19, 47, tzinfo=timezone.utc)
+
+
+def test_greater_strike_uses_lower_tail():
+    # N(99.5,1): P(T >= 99) ~ 1 - Phi(98.5) = 1 - Phi(-1) = 0.8413
+    p, edge, agree = bh.model_at_bet(FILL_TS, "high", 99, None, "greater", "yes",
+                                     0.60, CONSENSUS_995, [], calib={})
+    assert 0.80 < p < 0.88
+    assert agree is True                     # 0.84 > 0.60 entry
+
+
+def test_less_strike_uses_upper_cdf():
+    # N(99.5,1): P(T <= 98) ~ Phi(98.5) = Phi(-1) = 0.1587
+    p, edge, agree = bh.model_at_bet(FILL_TS, "high", None, 98, "less", "yes",
+                                     0.40, CONSENSUS_995, [], calib={})
+    assert 0.12 < p < 0.20
+    assert agree is False                    # 0.16 < 0.40 entry
+
+
+def test_entry_none_gives_prob_but_no_edge():
+    p, edge, agree = bh.model_at_bet(FILL_TS, "high", 99, 100, "between", "yes",
+                                     None, CONSENSUS_995, [], calib={})
+    assert p is not None
+    assert edge is None and agree is None
