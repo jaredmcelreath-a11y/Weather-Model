@@ -160,12 +160,15 @@ def render():
         st.write("**One raw fill per distinct `action` value** (to see how SELLS are "
                  "encoded — buys showed `action: \"buy\"`):")
         st.json(kalshi_portfolio.raw_fills_by_action() or {"(no fills)": None})
-        st.write("**Per-position P&L** (one row per market — diff against your sheet):")
-        diag = [{"ticker": r["ticker"], "side": r["side"],
-                 "bought$": round(r["staked"], 2),
-                 "proceeds$": round(r["staked"] + r["pnl"], 2) if r["pnl"] is not None else None,
-                 "pnl$": round(r["pnl"], 2) if r["pnl"] is not None else None,
-                 "status": r["status"], "result": r["result"]} for r in rows]
+        st.write("**Per-position breakdown** (one row per market — diff against your sheet). "
+                 "`bought$`/`sold$` are our fill totals; `kalshi_rev$` is the settlement's "
+                 "revenue field; `n_sell` = how many sell fills we captured:")
+        diag = [{"ticker": r["ticker"], "side": r["side"], "result": r["result"],
+                 "bought$": round(r["staked"], 2), "sold$": round(r["sold"], 2),
+                 "n_sell": r["n_sell"],
+                 "kalshi_rev$": round(r["revenue"], 2) if r.get("revenue") is not None else None,
+                 "pnl$": round(r["pnl"], 2) if r["pnl"] is not None else None}
+                for r in rows]
         st.dataframe(pd.DataFrame(diag), use_container_width=True)
         tot = sum(r["pnl"] for r in rows if r["pnl"] is not None)
         n_set = sum(1 for r in rows if r["status"] == "settled")
