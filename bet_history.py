@@ -57,8 +57,13 @@ def build_rows(fills: list[dict], settlements: dict, meta: dict) -> list[dict]:
         else:
             exit_price = None
 
+        # Fees (per fill + the settlement) come straight out of realized P&L, so the
+        # total matches Kalshi's actual account change (the user's net figure is
+        # fee-inclusive).
+        total_fee = sum(f.get("fee", 0) or 0 for f in group)
         if settle:
-            pnl = sell_cash + (settle_rev or 0.0) - total_buy
+            total_fee += settle.get("fee", 0) or 0
+            pnl = sell_cash + (settle_rev or 0.0) - total_buy - total_fee
             status, result, settled_ts = "settled", settle["result"], settle["ts"]
         else:
             pnl, status, result, settled_ts = None, "open", None, None

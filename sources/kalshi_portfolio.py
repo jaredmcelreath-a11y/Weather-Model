@@ -80,7 +80,8 @@ def fills(start: date, fetch=None) -> list[dict]:
                 "side": side, "action": f.get("action"),
                 "count": float(f.get("count_fp") or 0),
                 "price": yes_p if side == "yes" else no_p,
-                "yes_price": yes_p, "no_price": no_p, "ts": ts,
+                "yes_price": yes_p, "no_price": no_p,
+                "fee": float(f.get("fee_cost") or 0), "ts": ts,
             })
     return out
 
@@ -103,7 +104,8 @@ def settlements(start: date, fetch=None) -> dict[str, dict]:
             rev = s.get("revenue")   # cents -> dollars (actual payout received)
             out[ticker] = {"result": s.get("market_result"),
                            "ts": _parse_ts(s["settled_time"]),
-                           "revenue": (rev / 100.0) if rev is not None else None}
+                           "revenue": (rev / 100.0) if rev is not None else None,
+                           "fee": float(s.get("fee_cost") or 0)}
     return out
 
 
