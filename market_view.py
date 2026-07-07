@@ -736,6 +736,29 @@ def mobile_toggle_bridge_js(default):
     )
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def _open_positions():
+    """The user's OPEN Kalshi positions (Dallas temp), marked to the live bid — for
+    the per-market 'Your Open Contracts' section. Empty on missing creds or any
+    error, so the section simply hides. Read-only (authenticated portfolio feed)."""
+    try:
+        import bet_history
+        from sources import kalshi_portfolio
+        fills = kalshi_portfolio.fills(bet_history.BETS_START)
+        settlements = kalshi_portfolio.settlements(bet_history.BETS_START)
+        meta = {t: kalshi_portfolio.market_meta(t) for t in {f["ticker"] for f in fills}}
+        out = []
+        for r in bet_history.build_rows(fills, settlements, meta):
+            if r["status"] != "open":
+                continue
+            out.append({**r,
+                        "current_value": kalshi_portfolio.market_price(r["ticker"], r["side"]),
+                        "event_date": bet_history._ticker_date(r["ticker"])})
+        return out
+    except Exception:
+        return []
+
+
 def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                     safe_min=None, today_iso=None):
     if safe_min is None:
@@ -913,6 +936,38 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                      "for +20%, else 'hold to settle' (where the spread costs nothing). "
                      "A contract shown in red is too wide-spread to flip — hold it to "
                      f"settlement. Prices in ¢, live from {adapter.name} (refreshes ~30s).")
+
+        # Your open positions in THIS market (variable + day), marked to the live bid,
+        # with the model's current probability for each. Hidden when you hold none here
+        # (or no Kalshi creds). Read-only, from the authenticated portfolio feed.
+        open_here = [p for p in _open_positions()
+                     if p.get("variable") == variable and p.get("event_date") == day_iso]
+        if open_here:
+            obox = st.container(border=True)
+            obox.markdown(f"**Your Open {variable.capitalize()} Contracts**")
+            orows = []
+            for p in open_here:
+                try:
+                    yes_p = adapter.model_prob(probs, p)
+                    side_p = yes_p if p["side"] == "yes" else 1 - yes_p
+                    model_pct = f"{side_p*100:.0f}%"
+                except Exception:
+                    model_pct = "—"
+                cv, en, qy = p.get("current_value"), p.get("entry"), p.get("qty")
+                unreal = (qy * (cv - en)) if (cv is not None and en is not None) else None
+                orows.append({
+                    "Contract": p["label"], "Side": p["side"].upper(),
+                    "Qty": f"{qy:.2f}", "Entry": cents(en), "Now": cents(cv),
+                    "Model %": model_pct,
+                    "Unreal P&L": ("—" if unreal is None else
+                                   (f"+${unreal:,.2f}" if unreal >= 0
+                                    else f"−${abs(unreal):,.2f}")),
+                })
+            _html_table(pd.DataFrame(orows), container=obox)
+            obox.caption("Your currently-held contracts in this market, marked to the "
+                         "live bid. model % = the model's current probability for the "
+                         "side you hold; unreal P&L = qty × (now − entry), not yet "
+                         "realized.")
 
         # Top 3 HOLD-TO-SETTLEMENT trades: the model's best value picks to carry to
         # $1. Scored by edge × return-on-cost EV (geometric mean, edge / sqrt(ask)):
