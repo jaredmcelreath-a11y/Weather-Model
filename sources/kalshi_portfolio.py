@@ -32,9 +32,6 @@ def _iter_pages(fetch, path, items_key):
     """Yield each item across all cursor pages of `path`."""
     cursor = None
     while True:
-        params = {"limit": 200}
-        if cursor:
-            params["cursor"] = cursor
         # tests key the fake on (path, cursor) with no cursor -> None
         page = fetch(path, {"cursor": cursor} if cursor else None)
         for item in page.get(items_key) or []:
