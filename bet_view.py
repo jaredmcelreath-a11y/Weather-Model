@@ -4,9 +4,14 @@ equity curve. Read-only. Fetch failures degrade to a warning, never a crash.
 """
 from __future__ import annotations
 
+import logging
+import traceback
+
 import altair as alt
 import pandas as pd
 import streamlit as st
+
+_log = logging.getLogger("bet_view")
 
 import bet_history
 import betting_log
@@ -73,9 +78,12 @@ def render():
                 "The key is read only from secrets and used for read-only requests.")
         return
     except Exception as e:                       # never crash the dashboard
-        # Surface the HTTP status + endpoint + Kalshi's error body (never the key —
-        # credentials live in request headers, not the URL/body) so a live auth or
-        # endpoint problem is diagnosable instead of an opaque "HTTPError".
+        # Full traceback to the server log (Streamlit Cloud "Manage app" → logs) so a
+        # live failure is diagnosable; the key is never logged (it lives in request
+        # headers, not the traceback/URL/body).
+        _log.error("My Bets load failed:\n%s", traceback.format_exc())
+        # Also surface the HTTP status + endpoint + Kalshi's error body inline when
+        # the exception carries a response (a 4xx/5xx from requests).
         detail = ""
         resp = getattr(e, "response", None)
         if resp is not None:
