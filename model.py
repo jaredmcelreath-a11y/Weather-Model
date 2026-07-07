@@ -435,7 +435,13 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     if cont_times and now is not None:
         # Spike-robust: the 5-min feed can report a lone reading a whole °C off
         # (a false high/low), which would wrongly tighten the bound and anchor.
-        c_max, c_min = observed_so_far_robust(cont_times, cont_temps, day, now)
+        # High: Kalshi settles on the raw CLI daily max, so trust a lone sub-hourly
+        # spike for the high (min_support=1) — a brief but real peak (e.g. a single
+        # 5-min 100°F reading) is what settles, even when it doesn't persist across
+        # several samples. The low keeps the corroboration guard (default support) so
+        # a lone cold blip on a convective afternoon can't wrongly lock the low.
+        c_max, _ = observed_so_far_robust(cont_times, cont_temps, day, now, min_support=1)
+        _, c_min = observed_so_far_robust(cont_times, cont_temps, day, now)
         if variable == "high" and c_max is not None:
             observed_cont = c_max
             cand = c_max - 0.9

@@ -50,6 +50,20 @@ def test_robust_extreme_rejects_lone_spike():
     assert robust_max == 96.8        # the robust max rejects it
 
 
+def test_robust_extreme_min_support_1_trusts_lone_spike():
+    # With min_support=1 (used for the HIGH, since Kalshi settles on the raw CLI max),
+    # a lone real spike IS trusted — a brief 5-min peak is what settles.
+    now = datetime(DAY.year, DAY.month, DAY.day, 16, tzinfo=TZ)
+    vals = [(m, 98.0) for m in range(0, 180, 5)]
+    vals[10] = (vals[10][0], 100.4)                    # a single 5-min peak to 100.4
+    times, temps = _minute_series(vals)
+
+    robust_max, _ = S.observed_so_far_robust(times, temps, DAY, now)              # default (2)
+    lone_max, _ = S.observed_so_far_robust(times, temps, DAY, now, min_support=1)
+    assert robust_max == 98.0            # corroboration guard drops the lone spike
+    assert lone_max == 100.4             # min_support=1 keeps it (raw max)
+
+
 def test_robust_extreme_keeps_corroborated_peak():
     # A real peak — seen in 3 consecutive readings — must survive the filter.
     now = datetime(DAY.year, DAY.month, DAY.day, 16, tzinfo=TZ)
