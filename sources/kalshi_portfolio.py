@@ -128,3 +128,18 @@ def balance(fetch=None):
         return None
     cents = b.get("balance")
     return (cents / 100.0) if cents is not None else None
+
+
+def raw_fills_by_action(n=100, fetch=None):
+    """One raw fill per distinct `action` value across recent fills — to see how
+    sells are encoded (buys showed action='buy'). Read-only; no credentials in it."""
+    fetch = fetch or kalshi_auth.signed_get
+    try:
+        items = (fetch("/portfolio/fills", {"limit": n}) or {}).get("fills") or []
+    except Exception:
+        return {}
+    out = {}
+    for f in items:
+        a = str(f.get("action"))
+        out.setdefault(a, f)
+    return out
