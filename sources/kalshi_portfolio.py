@@ -2,7 +2,10 @@
 
 Pulls the user's fills and settlements for the Dallas temp series (both the recent
 /portfolio tier and the older /historical tier), pages through Kalshi's cursor
-pagination, filters to the series and start date, and normalizes to plain dicts.
+pagination, and normalizes to plain dicts. `fills` filters by series AND start
+date; `settlements` filters by series only (it's keyed by ticker and looked up
+only for tickers already date-filtered via fills) — its `start` param is
+accepted for signature symmetry with `fills`, not used to filter.
 Market metadata (strike range) comes from the PUBLIC markets endpoint (no auth).
 """
 from __future__ import annotations

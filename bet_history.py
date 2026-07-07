@@ -91,23 +91,30 @@ def _phi(x: float, mu: float, sigma: float) -> float:
     return 0.5 * (1.0 + math.erf((x - mu) / (sigma * math.sqrt(2))))
 
 
-def _contract_yes_prob(consensus, sigma, floor, cap, strike_type) -> float:
+def _contract_yes_prob(consensus, sigma, floor, cap, strike_type):
     """Model P(contract settles YES) under N(consensus, sigma), with a ±0.5°F
-    continuity correction (temps settle on integers)."""
+    continuity correction. Returns None when a bound the strike needs is missing."""
     if strike_type == "greater":
+        if floor is None:
+            return None
         return 1.0 - _phi(floor - 0.5, consensus, sigma)
     if strike_type == "less":
+        if cap is None:
+            return None
         return _phi(cap + 0.5, consensus, sigma)
+    if floor is None or cap is None:
+        return None
     return _phi(cap + 0.5, consensus, sigma) - _phi(floor - 0.5, consensus, sigma)
 
 
-def _nearest(fill_ts, variable, betting_rows, consensus_rows, tol_min):
+def _nearest(fill_ts, variable, betting_rows, consensus_rows, tol_min, day):
     """(consensus, sigma_or_None) of the snapshot nearest fill_ts for this
-    (date, variable), preferring betting_log (has sigma); None if none within tol."""
-    day = fill_ts.date().isoformat()
+    (day, variable), preferring betting_log (has sigma); None if none within tol.
+    Snapshots with a None consensus value are skipped."""
     best, best_gap = None, tol_min * 60 + 1
     for r in betting_rows:
-        if r.get("target_date") != day or r.get("variable") != variable:
+        if (r.get("target_date") != day or r.get("variable") != variable
+                or r.get("cli_consensus") is None):
             continue
         gap = abs((datetime.fromisoformat(r["captured_at"]) - fill_ts).total_seconds())
         if gap <= tol_min * 60 and gap < best_gap:
@@ -116,7 +123,7 @@ def _nearest(fill_ts, variable, betting_rows, consensus_rows, tol_min):
         return best
     for r in consensus_rows:
         if (r.get("target_date") != day or r.get("variable") != variable
-                or r.get("basis") != "cli"):
+                or r.get("basis") != "cli" or r.get("consensus") is None):
             continue
         gap = abs((datetime.fromisoformat(r["captured_at"]) - fill_ts).total_seconds())
         if gap <= tol_min * 60 and gap < best_gap:
@@ -125,20 +132,32 @@ def _nearest(fill_ts, variable, betting_rows, consensus_rows, tol_min):
 
 
 def model_at_bet(fill_ts, variable, floor, cap, strike_type, side, entry,
-                 betting_rows, consensus_rows, calib, tol_min=45):
-    snap = _nearest(fill_ts, variable, betting_rows, consensus_rows, tol_min)
-    if snap is None or floor is None and cap is None:
+                 betting_rows, consensus_rows, calib, tol_min=45, target_date=None):
+    day = target_date or fill_ts.date().isoformat()
+    snap = _nearest(fill_ts, variable, betting_rows, consensus_rows, tol_min, day)
+    if snap is None:
         return (None, None, None)
     consensus, sigma = snap
     if sigma is None:
         sigma = ((calib or {}).get("sigma", {}) or {}).get(variable)
-    if not sigma:
+    if not sigma or consensus is None:
         return (None, None, None)
     yes_p = _contract_yes_prob(consensus, sigma, floor, cap, strike_type)
+    if yes_p is None:
+        return (None, None, None)
     yes_p = min(max(yes_p, 0.0), 1.0)
     side_p = yes_p if side == "yes" else 1.0 - yes_p
     edge = side_p - entry if entry is not None else None
     return (side_p, edge, (edge > 0) if edge is not None else None)
+
+
+def _ticker_date(ticker):
+    """Event date (ISO) parsed from a Kalshi ticker like 'KXHIGHTDAL-26JUN22-B97',
+    or None if it can't be parsed."""
+    try:
+        return datetime.strptime(ticker.split("-")[1], "%y%b%d").date().isoformat()
+    except (IndexError, ValueError):
+        return None
 
 
 def annotate_rows(rows, betting_rows, consensus_rows, calib) -> None:
@@ -146,5 +165,6 @@ def annotate_rows(rows, betting_rows, consensus_rows, calib) -> None:
         p, edge, agree = model_at_bet(
             r["first_ts"], r["variable"], r["floor"], r["cap"],
             r["strike_type"], r["side"], r["entry"],
-            betting_rows, consensus_rows, calib)
+            betting_rows, consensus_rows, calib,
+            target_date=_ticker_date(r["ticker"]))
         r["model_prob"], r["edge"], r["agree"] = p, edge, agree

@@ -79,3 +79,35 @@ def test_entry_none_gives_prob_but_no_edge():
                                      None, CONSENSUS_995, [], calib={})
     assert p is not None
     assert edge is None and agree is None
+
+
+def test_none_consensus_snapshot_is_skipped_not_raised():
+    betting = [{"target_date": "2026-06-22", "variable": "high",
+                "captured_at": "2026-06-22T19:45:00+00:00",
+                "cli_consensus": None, "sigma_used": 1.0}]
+    out = bh.model_at_bet(datetime(2026, 6, 22, 19, 47, tzinfo=timezone.utc),
+                          "high", 97, 98, "between", "yes", 0.42,
+                          betting, [], calib={}, target_date="2026-06-22")
+    assert out == (None, None, None)
+
+
+def test_greater_with_missing_floor_returns_none_not_raise():
+    betting = [{"target_date": "2026-06-22", "variable": "high",
+                "captured_at": "2026-06-22T19:45:00+00:00",
+                "cli_consensus": 99.5, "sigma_used": 1.0}]
+    out = bh.model_at_bet(datetime(2026, 6, 22, 19, 47, tzinfo=timezone.utc),
+                          "high", None, None, "greater", "yes", 0.42,
+                          betting, [], calib={}, target_date="2026-06-22")
+    assert out == (None, None, None)
+
+
+def test_annotate_uses_ticker_date_not_utc_fill_date():
+    # fill at 01:00 UTC Jun 23 (= 8pm CDT Jun 22); ticker + snapshot are Jun 22
+    rows = [{"ticker": "KXHIGHTDAL-26JUN22-B97", "variable": "high",
+             "floor": 97, "cap": 98, "strike_type": "between", "side": "yes",
+             "entry": 0.42, "first_ts": datetime(2026, 6, 23, 1, 0, tzinfo=timezone.utc)}]
+    betting = [{"target_date": "2026-06-22", "variable": "high",
+                "captured_at": "2026-06-23T00:55:00+00:00",
+                "cli_consensus": 97.5, "sigma_used": 1.0}]
+    bh.annotate_rows(rows, betting, [], calib={})
+    assert rows[0]["model_prob"] is not None    # matched via ticker date, not UTC fill date

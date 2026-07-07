@@ -22,8 +22,7 @@ def _load_bets():
     Raises KalshiCredentialsError when creds are absent (handled by the caller)."""
     fills = kalshi_portfolio.fills(bet_history.BETS_START)
     settlements = kalshi_portfolio.settlements(bet_history.BETS_START)
-    meta = {f["ticker"]: kalshi_portfolio.market_meta(f["ticker"])
-            for f in fills}
+    meta = {t: kalshi_portfolio.market_meta(t) for t in {f["ticker"] for f in fills}}
     rows = bet_history.build_rows(fills, settlements, meta)
     bet_history.annotate_rows(rows, betting_log.load(), consensus_log.load(),
                               calibration.get())
