@@ -116,3 +116,15 @@ def market_meta(ticker: str, fetch_public=None) -> dict:
         "strike_type": m.get("strike_type"), "variable": variable_of(ticker),
     }
 
+
+
+def balance(fetch=None):
+    """Current Kalshi cash balance in DOLLARS (the API returns cents), or None on
+    error. Read-only GET /portfolio/balance."""
+    fetch = fetch or kalshi_auth.signed_get
+    try:
+        b = fetch("/portfolio/balance", None) or {}
+    except Exception:
+        return None
+    cents = b.get("balance")
+    return (cents / 100.0) if cents is not None else None

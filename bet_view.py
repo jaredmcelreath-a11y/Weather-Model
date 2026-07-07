@@ -23,15 +23,16 @@ from sources import kalshi_auth, kalshi_portfolio
 
 @st.cache_data(ttl=60, show_spinner="Loading your Kalshi bets…")
 def _load_bets():
-    """Fetch + assemble + annotate. Returns (rows, summary, curve). Cached ~60s.
-    Raises KalshiCredentialsError when creds are absent (handled by the caller)."""
+    """Fetch + assemble + annotate. Returns (rows, summary, curve, balance). Cached
+    ~60s. Raises KalshiCredentialsError when creds are absent (handled by caller)."""
     fills = kalshi_portfolio.fills(bet_history.BETS_START)
     settlements = kalshi_portfolio.settlements(bet_history.BETS_START)
     meta = {t: kalshi_portfolio.market_meta(t) for t in {f["ticker"] for f in fills}}
     rows = bet_history.build_rows(fills, settlements, meta)
     bet_history.annotate_rows(rows, betting_log.load(), consensus_log.load(),
                               calibration.get())
-    return rows, bet_history.summary(rows), bet_history.equity_curve(rows)
+    return (rows, bet_history.summary(rows), bet_history.equity_curve(rows),
+            kalshi_portfolio.balance())
 
 
 def equity_chart(curve, color):
@@ -41,7 +42,7 @@ def equity_chart(curve, color):
     df = pd.DataFrame(curve)
     line = (alt.Chart(df).mark_line(point=True, strokeWidth=2.5, color=color)
             .encode(x=alt.X("date:T", title=None),
-                    y=alt.Y("total:Q", title="Account balance ($)",
+                    y=alt.Y("total:Q", title="Trading balance ($)",
                             scale=alt.Scale(zero=False)),
                     tooltip=[alt.Tooltip("date:T", title="date"),
                              alt.Tooltip("total:Q", title="balance", format="$.2f")]))
@@ -77,7 +78,7 @@ def render():
     st.title("My Bets")
 
     try:
-        rows, summ, curve = _load_bets()
+        rows, summ, curve, balance = _load_bets()
     except kalshi_auth.KalshiCredentialsError:
         st.info("Add your Kalshi API key to the app secrets to enable this page — "
                 "a `[kalshi]` section with `access_key_id` and `private_key`. "
@@ -104,11 +105,15 @@ def render():
         st.caption(f"No Dallas-temp bets found since {bet_history.BETS_START:%b %-d, %Y}.")
         return
 
-    c = st.columns(4)
-    c[0].metric("Record (W–L)", f"{summ['wins']}–{summ['losses']}")
-    c[1].metric("Win rate", f"{summ['win_rate']:.0f}%")
-    c[2].metric("Net P&L", _fmt_pnl(summ["net_pnl"]))
-    c[3].metric("Total % Gain", f"{summ['pct_gain']:+.0f}%",
+    c = st.columns(5)
+    c[0].metric("Balance", _fmt_usd(balance),
+                help="Your actual current Kalshi cash balance, live from the API. "
+                     "Unlike the trading chart below, this reflects deposits, "
+                     "withdrawals, and open positions.")
+    c[1].metric("Record (W–L)", f"{summ['wins']}–{summ['losses']}")
+    c[2].metric("Win rate", f"{summ['win_rate']:.0f}%")
+    c[3].metric("Net P&L", _fmt_pnl(summ["net_pnl"]))
+    c[4].metric("Total % Gain", f"{summ['pct_gain']:+.0f}%",
                 help=f"Net realized profit as a percent of your starting bankroll "
                      f"(${bet_history.STARTING_BANKROLL:,.0f}) — e.g. +$20 on a "
                      f"${bet_history.STARTING_BANKROLL:,.0f} start = +200%.")
@@ -116,6 +121,11 @@ def render():
     if curve:
         st.altair_chart(equity_chart(curve, market_view._chart_colors()["kalshi"]),
                         use_container_width=True)
+        st.caption(f"Trading performance only: your ${bet_history.STARTING_BANKROLL:,.0f} "
+                   "starting bankroll plus **realized** P&L on settled bets. This is not "
+                   "your account balance — it excludes deposits, withdrawals, open "
+                   "(unsettled) positions, and fees. See **Balance** above for your "
+                   "actual Kalshi cash.")
     else:
         st.caption("The equity curve appears once a bet settles.")
 

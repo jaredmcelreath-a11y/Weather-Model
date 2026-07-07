@@ -86,3 +86,8 @@ def test_variable_of():
     assert kp.variable_of("KXHIGHTDAL-26JUN22-B97") == "high"
     assert kp.variable_of("KXLOWTDAL-26JUN22-B77") == "low"
     assert kp.variable_of("KXOTHER-1") is None
+
+
+def test_balance_cents_to_dollars():
+    assert kp.balance(fetch=lambda path, params=None: {"balance": 3057}) == 30.57
+    assert kp.balance(fetch=lambda path, params=None: {}) is None
