@@ -160,21 +160,22 @@ def render():
         st.write("**One raw fill per distinct `action` value** (to see how SELLS are "
                  "encoded — buys showed `action: \"buy\"`):")
         st.json(kalshi_portfolio.raw_fills_by_action() or {"(no fills)": None})
-        st.write("**Per-position breakdown** (one row per market — diff against your sheet). "
-                 "`bought$`/`sold$` are our fill totals; `kalshi_rev$` is the settlement's "
-                 "revenue field; `n_sell` = how many sell fills we captured:")
+        st.write("**Per-position breakdown** — `pnl$` is our (buggy) fill reconstruction; "
+                 "`kalshi_pnl$` is Kalshi's OWN realized P&L for that market (the source "
+                 "of truth we should switch to):")
+        kpnl = kalshi_portfolio.positions()   # {ticker: realized_pnl_dollars}
         diag = [{"ticker": r["ticker"], "side": r["side"], "result": r["result"],
                  "bought$": round(r["staked"], 2), "sold$": round(r["sold"], 2),
-                 "n_sell": r["n_sell"],
-                 "kalshi_rev$": round(r["revenue"], 2) if r.get("revenue") is not None else None,
-                 "pnl$": round(r["pnl"], 2) if r["pnl"] is not None else None}
+                 "pnl$": round(r["pnl"], 2) if r["pnl"] is not None else None,
+                 "kalshi_pnl$": (round(kpnl[r["ticker"]], 2)
+                                 if r["ticker"] in kpnl else None)}
                 for r in rows]
         st.dataframe(pd.DataFrame(diag), use_container_width=True)
         tot = sum(r["pnl"] for r in rows if r["pnl"] is not None)
-        n_set = sum(1 for r in rows if r["status"] == "settled")
-        n_open = sum(1 for r in rows if r["status"] == "open")
-        st.caption(f"Our total realized P&L = ${tot:,.2f}  ·  {n_set} settled, "
-                   f"{n_open} open  ·  compare to your spreadsheet's Net P&L of $20.57.")
+        ktot = sum(kpnl.values())
+        st.caption(f"Our fill-reconstructed P&L = ${tot:,.2f}  ·  "
+                   f"**Kalshi's own realized P&L (all {len(kpnl)} markets) = ${ktot:,.2f}**  ·  "
+                   f"your spreadsheet Net P&L = $20.57.")
 
         # Completeness check: how many fills a single page returns (if it's a round
         # cap like 100/1000 we're truncating), and every raw fill for the two

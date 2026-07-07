@@ -155,3 +155,28 @@ def raw_fills_dump(limit=1000, fetch=None):
         return (fetch("/portfolio/fills", {"limit": limit}) or {}).get("fills") or []
     except Exception:
         return []
+
+
+def positions(fetch=None):
+    """Kalshi's OWN realized P&L per market (authoritative — accounts for all the
+    buy/sell/close/settlement mechanics), in dollars: {ticker: realized_pnl}.
+    Read-only GET /portfolio/positions (paged)."""
+    fetch = fetch or kalshi_auth.signed_get
+    out, cursor = {}, None
+    try:
+        while True:
+            params = {"limit": 1000}
+            if cursor:
+                params["cursor"] = cursor
+            page = fetch("/portfolio/positions", params) or {}
+            for mp in page.get("market_positions") or []:
+                t = mp.get("ticker")
+                rp = mp.get("realized_pnl")
+                if t and variable_of(t) is not None and rp is not None:
+                    out[t] = rp / 100.0
+            cursor = page.get("cursor")
+            if not cursor:
+                break
+    except Exception:
+        return out
+    return out
