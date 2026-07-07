@@ -154,7 +154,12 @@ def _member_extreme(times, temps, day, variable, now, observed, obs_now=None,
     """
     start, end = local_day_bounds(day)
     day_vals, remaining = [], []
-    fc_now = None  # member's forecast value at the most recent hour <= now
+    # Bracket the forecast around `now` so the anchor can be interpolated to the
+    # exact time. Snapping fc_now to the last whole hour made it a step function
+    # that jumped at the top of each hour while the observation anchor hadn't yet
+    # updated — collapsing the offset and dropping the projected extreme (the
+    # sawtooth dip visible on the consensus at :00-:01 during the morning climb).
+    lo_t = lo_v = hi_t = hi_v = None
     for t, v in zip(times, temps):
         if v is None:
             continue
@@ -165,10 +170,20 @@ def _member_extreme(times, temps, day, variable, now, observed, obs_now=None,
         if now is not None:
             if t > now:
                 remaining.append(v)
+                if hi_t is None:            # first forecast hour after now
+                    hi_t, hi_v = t, v
             else:
-                fc_now = v  # ascending order -> ends on the latest <= now
+                lo_t, lo_v = t, v           # ascending -> latest hour <= now
     if not day_vals:
         return None
+
+    # Forecast interpolated to `now` (linear between the bracketing hours); falls
+    # back to whichever bound exists at the ends of the forecast window.
+    if lo_v is not None and hi_v is not None and hi_t > lo_t:
+        frac = (now - lo_t).total_seconds() / (hi_t - lo_t).total_seconds()
+        fc_now = lo_v + (hi_v - lo_v) * frac
+    else:
+        fc_now = lo_v if lo_v is not None else hi_v
 
     is_today = now is not None and start <= now < end
     if not is_today:
@@ -407,6 +422,17 @@ def predict_variable(series, obs_series, day, variable, now, calib,
             observed_cont = c_min
             cand = c_min + 0.9
             observed_bound = cand if observed is None else min(observed, cand)
+        # Anchor the nowcast to the live sub-hourly reading (median of the last few,
+        # to shrug off a lone whole-°C spike) so the forecast offset tracks the real
+        # temperature continuously. The hourly :53-stepped anchor only updated once
+        # an hour, which — against the now-interpolated forecast — left a residual
+        # intraday ramp; the continuous anchor flattens it.
+        d_start, d_end = local_day_bounds(day)
+        recent = [v for t, v in zip(cont_times, cont_temps)
+                  if v is not None and d_start <= t.astimezone(TZ) <= now < d_end]
+        if recent:
+            tail = sorted(recent[-3:])
+            obs_now = tail[len(tail) // 2]
 
     bias = (calib or {}).get("bias", {})
     # Full-day extremes (ignoring obs) set the reference spread; nowcast-blended
