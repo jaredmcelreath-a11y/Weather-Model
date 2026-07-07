@@ -187,3 +187,5 @@ def render():
             got = [f for f in allf if f.get("ticker") == tkr]
             st.write(f"**Raw fills for {tkr}** ({len(got)} found):")
             st.json(got or [f"(none in this page for {tkr})"])
+        st.write("**Raw `/portfolio/positions` response shape** (finding the realized-P&L field):")
+        st.json(kalshi_portfolio.raw_positions_dump())

@@ -180,3 +180,27 @@ def positions(fetch=None):
     except Exception:
         return out
     return out
+
+
+def raw_positions_dump(fetch=None):
+    """Raw /portfolio/positions response shape under a few param variants, to find
+    the right key/field for realized P&L on settled markets. Read-only."""
+    fetch = fetch or kalshi_auth.signed_get
+    out = {}
+    variants = [{"limit": 5},
+                {"limit": 5, "settlement_status": "all"},
+                {"limit": 5, "settlement_status": "settled"}]
+    for params in variants:
+        key = str(params)
+        try:
+            r = fetch("/portfolio/positions", params) or {}
+        except Exception as e:
+            resp = getattr(e, "response", None)
+            out[key] = f"ERROR {type(e).__name__}" + (
+                f" {resp.status_code}: {(resp.text or '')[:120]}" if resp is not None else "")
+            continue
+        mp = r.get("market_positions") or []
+        out[key] = {"top_keys": list(r.keys()),
+                    "n_market_positions": len(mp),
+                    "first_two": mp[:2]}
+    return out
