@@ -112,11 +112,15 @@ def _inject_theme(name):
         "{font-size:0.66rem!important;white-space:nowrap!important;}"
         # keep the page title on one line on phones
         ".stApp h1{font-size:1.7rem!important;}"
-        # show the sticky top switcher; its keyed wrapper pins to the viewport top
-        # as you scroll the section (z-index sits over Streamlit's floating header)
-        ".wx-toggle-bar{display:flex!important;}"
-        ".st-key-wx_toggle_wrap{display:block!important;position:sticky;top:0;"
-        "z-index:1000000;margin:0 0 0.4rem;}"
+        # pin the switcher to the viewport top. position:sticky doesn't hold inside
+        # Streamlit's nested block DOM (it just scrolls away), so use position:fixed
+        # — sat just below Streamlit's opaque header (~2.5rem, the app's existing top
+        # trim) so the header's ⋮ menu stays reachable. Content is pushed down (main
+        # container padding-top) to clear the fixed bar.
+        ".wx-toggle-bar{display:flex!important;position:fixed;top:2.5rem;left:0;"
+        "right:0;z-index:1000000;}"
+        ".st-key-wx_toggle_wrap{display:block!important;margin:0;}"
+        "[data-testid=\"stMainBlockContainer\"]{padding-top:5.5rem!important;}"
         # pre-JS default: show High until the bridge sets an explicit body class
         "body:not(.wx-show-high):not(.wx-show-low) "
         "[data-testid=\"stColumn\"]:has(.st-key-wx_sec_low){display:none!important;}"
