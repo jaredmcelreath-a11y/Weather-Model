@@ -54,6 +54,7 @@ def test_build_rows_pnl_with_a_partial_sell():
     assert r["side"] == "yes"
     assert r["qty"] == 6                      # net YES after the sell (10 - 4)
     assert r["entry"] == 0.42                 # avg BUY price of the yes side (4.20/10)
+    assert r["exit"] == 0.50                  # avg SELL price of the yes side
     assert round(r["staked"], 2) == 4.20      # buy cost of the yes side
     # cash_flow = 2.00 (sell) - 4.20 (buy) = -2.20; payout = net_yes 6 x $1 = 6.00
     assert round(r["pnl"], 2) == 3.80
@@ -81,10 +82,12 @@ def test_summary_and_curve_across_two_settled_bets():
     assert s["win_rate"] == 50.0
     assert round(s["net_pnl"], 2) == 0.80             # +5.80 - 5.00
     assert round(s["staked"], 2) == 9.20              # 4.20 + 5.00
+    assert round(s["pct_gain"], 1) == 8.0             # net 0.80 / $10 bankroll
     curve = bh.equity_curve(rows)
     assert [c["date"] for c in curve] == [date(2026, 6, 23), date(2026, 6, 24)]
-    assert round(curve[0]["total"], 2) == 5.80
-    assert round(curve[1]["total"], 2) == 0.80        # cumulative
+    # curve tracks account BALANCE from the $10 starting bankroll
+    assert round(curve[0]["total"], 2) == 15.80       # 10 + 5.80
+    assert round(curve[1]["total"], 2) == 10.80       # 10 + 5.80 - 5.00
 
 
 def test_equity_curve_aggregates_same_day_bets_into_one_point():
@@ -102,4 +105,4 @@ def test_equity_curve_aggregates_same_day_bets_into_one_point():
     curve = bh.equity_curve(bh.build_rows(fills, settlements, META))
     assert len(curve) == 1
     assert curve[0]["date"] == date(2026, 6, 24)
-    assert round(curve[0]["total"], 2) == 0.80          # 5.80 + (-5.00), one point
+    assert round(curve[0]["total"], 2) == 10.80         # 10 + (5.80 - 5.00), one point

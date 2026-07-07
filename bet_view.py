@@ -35,22 +35,28 @@ def _load_bets():
 
 
 def equity_chart(curve, color):
-    """Stock-chart-style line of cumulative P&L (x=date, y=total) on a transparent
-    background so it follows the palette, with a zero baseline rule."""
+    """Stock-chart-style line of account balance (x=date, y=total) starting from the
+    bankroll, on a transparent background so it follows the palette, with a dashed
+    break-even rule at the starting bankroll."""
     df = pd.DataFrame(curve)
     line = (alt.Chart(df).mark_line(point=True, strokeWidth=2.5, color=color)
             .encode(x=alt.X("date:T", title=None),
-                    y=alt.Y("total:Q", title="Cumulative P&L ($)"),
+                    y=alt.Y("total:Q", title="Account balance ($)",
+                            scale=alt.Scale(zero=False)),
                     tooltip=[alt.Tooltip("date:T", title="date"),
-                             alt.Tooltip("total:Q", title="total", format="$.2f")]))
-    zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(
+                             alt.Tooltip("total:Q", title="balance", format="$.2f")]))
+    base = alt.Chart(pd.DataFrame({"y": [bet_history.STARTING_BANKROLL]})).mark_rule(
         strokeDash=[4, 4], opacity=0.5).encode(y="y:Q")
-    return ((zero + line).properties(height=260, background="transparent")
+    return ((base + line).properties(height=260, background="transparent")
             .configure_view(fill=None, strokeWidth=0))
 
 
 def _fmt_pnl(v):
     return "—" if v is None else (f"+${v:,.2f}" if v >= 0 else f"−${abs(v):,.2f}")
+
+
+def _fmt_usd(v):
+    return "—" if v is None else f"${v:,.2f}"
 
 
 def _model_cell(r):
@@ -102,9 +108,10 @@ def render():
     c[0].metric("Record (W–L)", f"{summ['wins']}–{summ['losses']}")
     c[1].metric("Win rate", f"{summ['win_rate']:.0f}%")
     c[2].metric("Net P&L", _fmt_pnl(summ["net_pnl"]))
-    c[3].metric("Total % Gain", f"{summ['roi']:+.0f}%",
-                help="Net realized profit as a percent of the total you've staked — "
-                     "e.g. staked $10 and now hold $30 → +200%.")
+    c[3].metric("Total % Gain", f"{summ['pct_gain']:+.0f}%",
+                help=f"Net realized profit as a percent of your starting bankroll "
+                     f"(${bet_history.STARTING_BANKROLL:,.0f}) — e.g. +$20 on a "
+                     f"${bet_history.STARTING_BANKROLL:,.0f} start = +200%.")
 
     if curve:
         st.altair_chart(equity_chart(curve, market_view._chart_colors()["kalshi"]),
@@ -115,10 +122,14 @@ def render():
     disp = []
     for r in rows:
         model = _model_cell(r)
+        volume = r["qty"] * r["entry"] if r["entry"] is not None else None
         disp.append({
             "Date": r["first_ts"].strftime("%b %-d"),
             "Contract": r["label"], "Side": r["side"].upper(),
-            "Entry": market_view.cents(r["entry"]), "Qty": f"{r['qty']:.2f}",
+            "Entry": market_view.cents(r["entry"]),
+            "Exit": market_view.cents(r["exit"]),
+            "Qty": f"{r['qty']:.2f}",
+            "Volume": _fmt_usd(volume),
             "Model @ bet": model,
             "Settled": "open" if r["status"] == "open" else r["result"].upper(),
             "P&L": _fmt_pnl(r["pnl"]),

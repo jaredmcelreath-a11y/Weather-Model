@@ -11,6 +11,10 @@ import math
 from datetime import date, datetime
 
 BETS_START = date(2026, 6, 22)
+# Starting bankroll ($): the equity curve's baseline and the "Total % Gain"
+# denominator (net realized profit as a percent of this). Change this one value if
+# the real starting figure differs.
+STARTING_BANKROLL = 10.0
 
 
 def build_rows(fills: list[dict], settlements: dict, meta: dict) -> list[dict]:
@@ -35,6 +39,13 @@ def build_rows(fills: list[dict], settlements: dict, meta: dict) -> list[dict]:
         buy_ct = sum(f["count"] for f in group
                      if f["side"] == side and f["action"] == "buy")
         entry = round(buy_cost / buy_ct, 4) if buy_ct else None
+        # Exit = avg price the position's side was SOLD at (None when held to
+        # settlement — no sells).
+        sell_proceeds = sum(f["count"] * f["price"] for f in group
+                            if f["side"] == side and f["action"] == "sell")
+        sell_ct = sum(f["count"] for f in group
+                      if f["side"] == side and f["action"] == "sell")
+        exit_price = round(sell_proceeds / sell_ct, 4) if sell_ct else None
 
         settle = settlements.get(ticker)
         if settle:
@@ -48,7 +59,7 @@ def build_rows(fills: list[dict], settlements: dict, meta: dict) -> list[dict]:
             "ticker": ticker, "label": m.get("label", ticker),
             "variable": m.get("variable"), "floor": m.get("floor"),
             "cap": m.get("cap"), "strike_type": m.get("strike_type"),
-            "side": side, "entry": entry, "qty": qty,
+            "side": side, "entry": entry, "exit": exit_price, "qty": qty,
             "first_ts": min(f["ts"] for f in group),
             "status": status, "result": result, "settled_ts": settled_ts,
             "pnl": pnl, "staked": buy_cost,
@@ -70,6 +81,9 @@ def summary(rows: list[dict]) -> dict:
         "win_rate": (100.0 * wins / len(settled)) if settled else 0.0,
         "net_pnl": net_pnl, "staked": staked,
         "roi": (100.0 * net_pnl / staked) if staked else 0.0,
+        # Account growth: net realized profit as a percent of the starting bankroll
+        # (e.g. +$20 on a $10 start = +200%).
+        "pct_gain": 100.0 * net_pnl / STARTING_BANKROLL if STARTING_BANKROLL else 0.0,
         "with_model_pct": (100.0 * with_model / len(annotated)) if annotated else None,
     }
 
@@ -83,7 +97,7 @@ def equity_curve(rows: list[dict]) -> list[dict]:
         if r["status"] == "settled":
             d = r["settled_ts"].date()
             daily[d] = daily.get(d, 0.0) + r["pnl"]
-    out, total = [], 0.0
+    out, total = [], STARTING_BANKROLL   # curve tracks account balance, not P&L from 0
     for d in sorted(daily):
         total += daily[d]
         out.append({"date": d, "total": total})
