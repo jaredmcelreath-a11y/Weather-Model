@@ -113,3 +113,15 @@ def market_meta(ticker: str, fetch_public=None) -> dict:
         "floor": m.get("floor_strike"), "cap": m.get("cap_strike"),
         "strike_type": m.get("strike_type"), "variable": variable_of(ticker),
     }
+
+
+def raw_first(path: str, items_key: str, fetch=None):
+    """First RAW item from an authenticated endpoint page — for reconciling
+    Kalshi's actual field names/values against our normalization. Returns None on
+    error/empty. (Read-only GET; no credentials appear in the returned object.)"""
+    fetch = fetch or kalshi_auth.signed_get
+    try:
+        items = (fetch(path, {"limit": 1}) or {}).get(items_key) or []
+    except Exception:
+        return None
+    return items[0] if items else None

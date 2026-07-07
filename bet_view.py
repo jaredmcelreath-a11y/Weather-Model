@@ -129,3 +129,14 @@ def render():
                "reconstructed from the nearest logged snapshot to your fill (— if "
                "none). P&L is realized on settlement. Read-only view of your Kalshi "
                "account; prices in ¢, amounts in $.")
+
+    # TEMPORARY field-name reconciliation aid — remove once normalization is confirmed.
+    with st.expander("🔧 Debug — raw Kalshi fields (temporary; safe to share)"):
+        st.caption("The first raw fill + settlement objects from your account, to "
+                   "reconcile field names/values. No credentials appear here.")
+        st.write("**Raw fill:**")
+        st.json(kalshi_portfolio.raw_first("/portfolio/fills", "fills")
+                or {"(no fills returned)": None})
+        st.write("**Raw settlement:**")
+        st.json(kalshi_portfolio.raw_first("/portfolio/settlements", "settlements")
+                or {"(no settlements returned)": None})
