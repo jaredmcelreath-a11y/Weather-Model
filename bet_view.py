@@ -112,7 +112,10 @@ def render():
                      "withdrawals, and open positions.")
     c[1].metric("Record (W–L)", f"{summ['wins']}–{summ['losses']}")
     c[2].metric("Win rate", f"{summ['win_rate']:.0f}%")
-    c[3].metric("Net P&L", _fmt_pnl(summ["net_pnl"]))
+    c[3].metric("Avg % Return", f"{summ['roi']:+.0f}%",
+                help="Stake-weighted average return across your settled bets — total "
+                     "realized profit ÷ total staked. Buying near-certain contracts at "
+                     "high prices (e.g. 97¢) yields small per-trade returns even on wins.")
     c[4].metric("Total % Gain", f"{summ['pct_gain']:+.0f}%",
                 help=f"Net realized profit as a percent of your starting bankroll "
                      f"(${bet_history.STARTING_BANKROLL:,.0f}) — e.g. +$20 on a "

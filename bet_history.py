@@ -39,15 +39,20 @@ def build_rows(fills: list[dict], settlements: dict, meta: dict) -> list[dict]:
         buy_ct = sum(f["count"] for f in group
                      if f["side"] == side and f["action"] == "buy")
         entry = round(buy_cost / buy_ct, 4) if buy_ct else None
-        # Exit = avg price the position's side was SOLD at (None when held to
-        # settlement — no sells).
+        settle = settlements.get(ticker)
+        # Exit = avg price the side was SOLD at; if held to settlement (no sells),
+        # it "exited" at $1.00 (the side won) or $0.00 (lost); None while still open.
         sell_proceeds = sum(f["count"] * f["price"] for f in group
                             if f["side"] == side and f["action"] == "sell")
         sell_ct = sum(f["count"] for f in group
                       if f["side"] == side and f["action"] == "sell")
-        exit_price = round(sell_proceeds / sell_ct, 4) if sell_ct else None
+        if sell_ct:
+            exit_price = round(sell_proceeds / sell_ct, 4)
+        elif settle:
+            exit_price = 1.0 if settle["result"] == side else 0.0
+        else:
+            exit_price = None
 
-        settle = settlements.get(ticker)
         if settle:
             payout = net_yes if settle["result"] == "yes" else net_no
             pnl = cash_flow + payout

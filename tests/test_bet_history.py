@@ -29,6 +29,7 @@ def test_build_rows_settled_win_pnl_and_fields():
     r = rows[0]
     assert r["side"] == "yes" and r["qty"] == 10 and r["entry"] == 0.42
     assert r["status"] == "settled" and r["result"] == "yes"
+    assert r["exit"] == 1.0                            # held to settlement, won -> $1
     # 10 bought @0.42 -> cash_flow -4.20; settled yes -> payout +10; pnl +5.80
     assert round(r["pnl"], 2) == 5.80
 
@@ -39,6 +40,7 @@ def test_build_rows_settled_loss_pnl():
                    {"result": "no", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc)}}
     r = bh.build_rows(fills, settlements, META)[0]
     assert round(r["pnl"], 2) == -4.20                # lost the stake
+    assert r["exit"] == 0.0                            # held to settlement, lost -> $0
 
 
 def test_build_rows_pnl_with_a_partial_sell():
