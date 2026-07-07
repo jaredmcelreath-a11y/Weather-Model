@@ -41,6 +41,24 @@ def test_build_rows_settled_loss_pnl():
     assert round(r["pnl"], 2) == -4.20                # lost the stake
 
 
+def test_build_rows_pnl_with_a_partial_sell():
+    fills = [
+        _fill("t1", "KXHIGHTDAL-26JUN22-B97", "yes", "buy", 10, 0.42, 22),
+        _fill("t2", "KXHIGHTDAL-26JUN22-B97", "yes", "sell", 4, 0.50, 22),
+    ]
+    settlements = {"KXHIGHTDAL-26JUN22-B97":
+                   {"result": "yes", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc)}}
+    rows = bh.build_rows(fills, settlements, META)
+    assert len(rows) == 1
+    r = rows[0]
+    assert r["side"] == "yes"
+    assert r["qty"] == 6                      # net YES after the sell (10 - 4)
+    assert r["entry"] == 0.42                 # avg BUY price of the yes side (4.20/10)
+    assert round(r["staked"], 2) == 4.20      # buy cost of the yes side
+    # cash_flow = 2.00 (sell) - 4.20 (buy) = -2.20; payout = net_yes 6 x $1 = 6.00
+    assert round(r["pnl"], 2) == 3.80
+
+
 def test_open_bet_has_no_pnl_and_is_excluded_from_curve():
     fills = [_fill("t1", "KXHIGHTDAL-26JUN23-B99", "yes", "buy", 4, 0.30, 23)]
     rows = bh.build_rows(fills, {}, META)
