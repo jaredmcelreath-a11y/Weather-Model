@@ -7,7 +7,8 @@ separate pass (annotate_rows) so assembly stays model-free.
 """
 from __future__ import annotations
 
-from datetime import date
+import math
+from datetime import date, datetime
 
 BETS_START = date(2026, 6, 22)
 
@@ -81,3 +82,69 @@ def equity_curve(rows: list[dict]) -> list[dict]:
         total += r["pnl"]
         out.append({"date": r["settled_ts"].date(), "total": total})
     return out
+
+
+def _phi(x: float, mu: float, sigma: float) -> float:
+    """Normal CDF Φ((x−mu)/sigma) via erf (no scipy dependency)."""
+    if sigma <= 0:
+        return 1.0 if x >= mu else 0.0
+    return 0.5 * (1.0 + math.erf((x - mu) / (sigma * math.sqrt(2))))
+
+
+def _contract_yes_prob(consensus, sigma, floor, cap, strike_type) -> float:
+    """Model P(contract settles YES) under N(consensus, sigma), with a ±0.5°F
+    continuity correction (temps settle on integers)."""
+    if strike_type == "greater":
+        return 1.0 - _phi(floor - 0.5, consensus, sigma)
+    if strike_type == "less":
+        return _phi(cap + 0.5, consensus, sigma)
+    return _phi(cap + 0.5, consensus, sigma) - _phi(floor - 0.5, consensus, sigma)
+
+
+def _nearest(fill_ts, variable, betting_rows, consensus_rows, tol_min):
+    """(consensus, sigma_or_None) of the snapshot nearest fill_ts for this
+    (date, variable), preferring betting_log (has sigma); None if none within tol."""
+    day = fill_ts.date().isoformat()
+    best, best_gap = None, tol_min * 60 + 1
+    for r in betting_rows:
+        if r.get("target_date") != day or r.get("variable") != variable:
+            continue
+        gap = abs((datetime.fromisoformat(r["captured_at"]) - fill_ts).total_seconds())
+        if gap <= tol_min * 60 and gap < best_gap:
+            best, best_gap = (r["cli_consensus"], r.get("sigma_used")), gap
+    if best is not None:
+        return best
+    for r in consensus_rows:
+        if (r.get("target_date") != day or r.get("variable") != variable
+                or r.get("basis") != "cli"):
+            continue
+        gap = abs((datetime.fromisoformat(r["captured_at"]) - fill_ts).total_seconds())
+        if gap <= tol_min * 60 and gap < best_gap:
+            best, best_gap = (r["consensus"], None), gap
+    return best
+
+
+def model_at_bet(fill_ts, variable, floor, cap, strike_type, side, entry,
+                 betting_rows, consensus_rows, calib, tol_min=45):
+    snap = _nearest(fill_ts, variable, betting_rows, consensus_rows, tol_min)
+    if snap is None or floor is None and cap is None:
+        return (None, None, None)
+    consensus, sigma = snap
+    if sigma is None:
+        sigma = ((calib or {}).get("sigma", {}) or {}).get(variable)
+    if not sigma:
+        return (None, None, None)
+    yes_p = _contract_yes_prob(consensus, sigma, floor, cap, strike_type)
+    yes_p = min(max(yes_p, 0.0), 1.0)
+    side_p = yes_p if side == "yes" else 1.0 - yes_p
+    edge = side_p - entry if entry is not None else None
+    return (side_p, edge, (edge > 0) if edge is not None else None)
+
+
+def annotate_rows(rows, betting_rows, consensus_rows, calib) -> None:
+    for r in rows:
+        p, edge, agree = model_at_bet(
+            r["first_ts"], r["variable"], r["floor"], r["cap"],
+            r["strike_type"], r["side"], r["entry"],
+            betting_rows, consensus_rows, calib)
+        r["model_prob"], r["edge"], r["agree"] = p, edge, agree
