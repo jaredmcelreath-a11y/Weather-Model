@@ -117,10 +117,10 @@ def _inject_theme(name):
         # — sat just below Streamlit's opaque header (~2.5rem, the app's existing top
         # trim) so the header's ⋮ menu stays reachable. Content is pushed down (main
         # container padding-top) to clear the fixed bar.
-        ".wx-toggle-bar{display:flex!important;position:fixed;top:2.5rem;left:0;"
+        ".wx-toggle-bar{display:flex!important;position:fixed;top:3rem;left:0;"
         "right:0;z-index:1000000;}"
         ".st-key-wx_toggle_wrap{display:block!important;margin:0;}"
-        "[data-testid=\"stMainBlockContainer\"]{padding-top:5.5rem!important;}"
+        "[data-testid=\"stMainBlockContainer\"]{padding-top:6rem!important;}"
         # pre-JS default: show High until the bridge sets an explicit body class
         "body:not(.wx-show-high):not(.wx-show-low) "
         "[data-testid=\"stColumn\"]:has(.st-key-wx_sec_low){display:none!important;}"
