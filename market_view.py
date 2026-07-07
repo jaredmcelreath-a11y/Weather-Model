@@ -112,15 +112,11 @@ def _inject_theme(name):
         "{font-size:0.66rem!important;white-space:nowrap!important;}"
         # keep the page title on one line on phones
         ".stApp h1{font-size:1.7rem!important;}"
-        # show the floating switcher and keep the last content clear of it
+        # show the sticky top switcher; its keyed wrapper pins to the viewport top
+        # as you scroll the section (z-index sits over Streamlit's floating header)
         ".wx-toggle-bar{display:flex!important;}"
-        "[data-testid=\"stMainBlockContainer\"]{padding-bottom:5.5rem!important;}"
-        # Community Cloud reflows its app toolbar (the 'Manage app' button) to the
-        # bottom-right on phones, landing on top of the Low toggle. Hide it on
-        # mobile only — desktop keeps it (top-right), and the app is still managed
-        # from the Streamlit dashboard. Exact-match testid so the per-chart
-        # stElementToolbar hover controls are untouched.
-        "[data-testid=\"stToolbar\"]{display:none!important;}"
+        ".st-key-wx_toggle_wrap{display:block!important;position:sticky;top:0;"
+        "z-index:1000000;margin:0 0 0.4rem;}"
         # pre-JS default: show High until the bridge sets an explicit body class
         "body:not(.wx-show-high):not(.wx-show-low) "
         "[data-testid=\"stColumn\"]:has(.st-key-wx_sec_low){display:none!important;}"
@@ -196,10 +192,12 @@ def _inject_theme(name):
         # mobile High/Low floating switcher — hidden on desktop; the ≤640px block
         # below flips it to flex. Styled from the palette vars so it follows the
         # active theme. Buttons carry data-wx-sel; the JS bridge wires the taps.
-        ".wx-toggle-bar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:1000;"
-        "gap:0.5rem;padding:0.5rem 0.7rem calc(0.5rem + env(safe-area-inset-bottom));"
-        "background:var(--surface);border-top:1px solid var(--border);"
-        "box-shadow:0 -6px 18px rgba(0,0,0,0.35);}\n"
+        ".wx-toggle-bar{display:none;gap:0.5rem;padding:0.5rem 0.7rem;"
+        "background:var(--surface);border-bottom:1px solid var(--border);"
+        "box-shadow:0 4px 14px rgba(0,0,0,0.28);}\n"
+        # the sticky wrapper is an empty container on desktop — hide it so it adds
+        # no vertical gap (the media query flips it to a sticky block on mobile)
+        ".st-key-wx_toggle_wrap{display:none;}\n"
         ".wx-toggle-btn{flex:1 1 50%;text-align:center;cursor:pointer;user-select:none;"
         "font-family:'Bitter',serif;font-weight:700;font-size:0.9rem;color:var(--muted);"
         "background:var(--surface2);border:1px solid var(--border);border-radius:10px;"
@@ -1191,8 +1189,24 @@ def render_page(snap, calib, adapter, load_accuracy):
     st.subheader(f"{day} — {pred['day']}")
     # Feature the low on Tomorrow (the user's primary before-bed bet).
     feature_low = (key == "tomorrow")
-    cols = st.columns(2)
     today_iso = snap["today"]["day"]
+
+    # Mobile-only High/Low switcher, rendered ABOVE the two sections so its wrapper
+    # can pin to the top of the viewport as you scroll (desktop hides it and shows
+    # both columns). The bar is plain HTML; the JS bridge (zero-height component)
+    # wires the taps and persists the choice in the URL hash across the 60s refresh.
+    # Default follows the featured section for the day. The wrapper MUST be a keyed
+    # st.container: its parent is then the tall main block, so position:sticky can
+    # travel down the page — a bare st.markdown wrapper is only as tall as the bar,
+    # which would confine the sticky element and stop it from pinning.
+    with st.container(key="wx_toggle_wrap"):
+        st.markdown(mobile_toggle_bar_html(pred["high"], pred["low"]),
+                    unsafe_allow_html=True)
+    with st.container(key="wx_bridge"):
+        components.html(mobile_toggle_bridge_js("low" if feature_low else "high"),
+                        height=0)
+
+    cols = st.columns(2)
     # Keyed wrappers so the mobile CSS can hide the non-selected column via :has().
     with cols[0]:
         high_box = st.container(key="wx_sec_high")
@@ -1202,16 +1216,6 @@ def render_page(snap, calib, adapter, load_accuracy):
                     featured=not feature_low, safe_min=safe_min, today_iso=today_iso)
     render_variable(low_box, "Low", pred["low"], "low", pred["day"], adapter,
                     featured=feature_low, safe_min=safe_min, today_iso=today_iso)
-
-    # Mobile-only floating High/Low switcher (desktop keeps both columns). The bar
-    # is plain HTML; the JS bridge (in a zero-height component) wires the taps and
-    # persists the choice in the URL hash across the 60s refresh. Default follows
-    # the featured section for the selected day.
-    st.markdown(mobile_toggle_bar_html(pred["high"], pred["low"]),
-                unsafe_allow_html=True)
-    with st.container(key="wx_bridge"):
-        components.html(mobile_toggle_bridge_js("low" if feature_low else "high"),
-                        height=0)
 
     with st.expander("Per-Source Breakdown"):
         src = snap["sources"][key]
