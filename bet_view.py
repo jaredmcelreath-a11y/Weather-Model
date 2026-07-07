@@ -79,7 +79,7 @@ def _model_cell(r):
 
 def render():
     market_view._inject_theme(market_view._seed_theme())
-    st.title("My Bets")
+    st.title("History")
 
     try:
         rows, summ, curve, balance = _load_bets()
