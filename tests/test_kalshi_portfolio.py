@@ -65,11 +65,12 @@ def test_settlements_keyed_by_ticker():
         if path == "/portfolio/settlements":
             return {"settlements": [
                 {"ticker": "KXHIGHTDAL-26JUN22-B97", "market_result": "yes",
-                 "settled_time": "2026-06-23T06:00:00Z"}], "cursor": ""}
+                 "settled_time": "2026-06-23T06:00:00Z", "revenue": 1892}], "cursor": ""}
         return {"settlements": [], "cursor": ""}
     s = kp.settlements(date(2026, 6, 22), fetch=fetch)
     assert s["KXHIGHTDAL-26JUN22-B97"]["result"] == "yes"
     assert s["KXHIGHTDAL-26JUN22-B97"]["ts"] == datetime(2026, 6, 23, 6, 0, tzinfo=timezone.utc)
+    assert s["KXHIGHTDAL-26JUN22-B97"]["revenue"] == 18.92     # 1892 cents -> dollars
 
 
 def test_market_meta_parses_public_market():

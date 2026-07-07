@@ -23,7 +23,8 @@ META = {
 def test_build_rows_settled_win_pnl_and_fields():
     fills = [_fill("t1", "KXHIGHTDAL-26JUN22-B97", "yes", "buy", 10, 0.42, 22)]
     settlements = {"KXHIGHTDAL-26JUN22-B97":
-                   {"result": "yes", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc)}}
+                   {"result": "yes", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc),
+                    "revenue": 10.0}}                     # held 10 YES -> $10 payout
     rows = bh.build_rows(fills, settlements, META)
     assert len(rows) == 1
     r = rows[0]
@@ -37,7 +38,8 @@ def test_build_rows_settled_win_pnl_and_fields():
 def test_build_rows_settled_loss_pnl():
     fills = [_fill("t1", "KXHIGHTDAL-26JUN22-B97", "yes", "buy", 10, 0.42, 22)]
     settlements = {"KXHIGHTDAL-26JUN22-B97":
-                   {"result": "no", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc)}}
+                   {"result": "no", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc),
+                    "revenue": 0.0}}                      # held YES, lost -> $0 payout
     r = bh.build_rows(fills, settlements, META)[0]
     assert round(r["pnl"], 2) == -4.20                # lost the stake
     assert r["exit"] == 0.0                            # held to settlement, lost -> $0
@@ -49,7 +51,8 @@ def test_build_rows_pnl_with_a_partial_sell():
         _fill("t2", "KXHIGHTDAL-26JUN22-B97", "yes", "sell", 4, 0.50, 22),
     ]
     settlements = {"KXHIGHTDAL-26JUN22-B97":
-                   {"result": "yes", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc)}}
+                   {"result": "yes", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc),
+                    "revenue": 6.0}}                      # 6 YES held to settlement -> $6
     rows = bh.build_rows(fills, settlements, META)
     assert len(rows) == 1
     r = rows[0]
@@ -75,8 +78,8 @@ def test_summary_and_curve_across_two_settled_bets():
         _fill("t2", "KXHIGHTDAL-26JUN23-B99", "yes", "buy", 10, 0.50, 23),  # -5.00 (loss)
     ]
     settlements = {
-        "KXHIGHTDAL-26JUN22-B97": {"result": "yes", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc)},
-        "KXHIGHTDAL-26JUN23-B99": {"result": "no", "ts": datetime(2026, 6, 24, 6, tzinfo=timezone.utc)},
+        "KXHIGHTDAL-26JUN22-B97": {"result": "yes", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc), "revenue": 10.0},
+        "KXHIGHTDAL-26JUN23-B99": {"result": "no", "ts": datetime(2026, 6, 24, 6, tzinfo=timezone.utc), "revenue": 0.0},
     }
     rows = bh.build_rows(fills, settlements, META)
     s = bh.summary(rows)
@@ -101,8 +104,8 @@ def test_equity_curve_aggregates_same_day_bets_into_one_point():
     ]
     same_day = datetime(2026, 6, 24, 6, tzinfo=timezone.utc)
     settlements = {
-        "KXHIGHTDAL-26JUN22-B97": {"result": "yes", "ts": same_day},
-        "KXHIGHTDAL-26JUN23-B99": {"result": "no", "ts": same_day},
+        "KXHIGHTDAL-26JUN22-B97": {"result": "yes", "ts": same_day, "revenue": 10.0},
+        "KXHIGHTDAL-26JUN23-B99": {"result": "no", "ts": same_day, "revenue": 0.0},
     }
     curve = bh.equity_curve(bh.build_rows(fills, settlements, META))
     assert len(curve) == 1

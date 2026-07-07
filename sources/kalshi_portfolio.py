@@ -97,8 +97,10 @@ def settlements(start: date, fetch=None) -> dict[str, dict]:
             ticker = s.get("ticker", "")
             if variable_of(ticker) is None:
                 continue
+            rev = s.get("revenue")   # cents -> dollars (actual payout received)
             out[ticker] = {"result": s.get("market_result"),
-                           "ts": _parse_ts(s["settled_time"])}
+                           "ts": _parse_ts(s["settled_time"]),
+                           "revenue": (rev / 100.0) if rev is not None else None}
     return out
 
 

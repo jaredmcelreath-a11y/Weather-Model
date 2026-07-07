@@ -31,6 +31,7 @@ def build_rows(fills: list[dict], settlements: dict, meta: dict) -> list[dict]:
         sells_no = sum(f["count"] for f in group if f["side"] == "no" and f["action"] == "sell")
         cash_flow = sum((f["count"] * f["price"]) * (1 if f["action"] == "sell" else -1)
                         for f in group)
+        total_buy = sum(f["count"] * f["price"] for f in group if f["action"] == "buy")
         net_yes, net_no = buys_yes - sells_yes, buys_no - sells_no
         side = "yes" if net_yes >= net_no else "no"
         qty = net_yes if side == "yes" else net_no
@@ -54,7 +55,12 @@ def build_rows(fills: list[dict], settlements: dict, meta: dict) -> list[dict]:
             exit_price = None
 
         if settle:
-            payout = net_yes if settle["result"] == "yes" else net_no
+            # Payout = Kalshi's own settlement revenue (the actual $ received for the
+            # contracts held at settlement); fall back to our net-count × $1 only if
+            # the revenue field is absent. Using revenue avoids over-crediting when a
+            # position was partly sold before settlement.
+            payout = (settle["revenue"] if settle.get("revenue") is not None
+                      else (net_yes if settle["result"] == "yes" else net_no))
             pnl = cash_flow + payout
             status, result, settled_ts = "settled", settle["result"], settle["ts"]
         else:
@@ -67,7 +73,7 @@ def build_rows(fills: list[dict], settlements: dict, meta: dict) -> list[dict]:
             "side": side, "entry": entry, "exit": exit_price, "qty": qty,
             "first_ts": min(f["ts"] for f in group),
             "status": status, "result": result, "settled_ts": settled_ts,
-            "pnl": pnl, "staked": buy_cost,
+            "pnl": pnl, "staked": total_buy,
         })
     rows.sort(key=lambda r: r["first_ts"], reverse=True)  # newest first
     return rows
