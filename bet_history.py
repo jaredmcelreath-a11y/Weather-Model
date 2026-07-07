@@ -38,7 +38,6 @@ def build_rows(fills: list[dict], settlements: dict, meta: dict) -> list[dict]:
         sell_cash = sum(f["count"] * (f["yes_price"] if side == "yes" else f["no_price"])
                         for f in group if f["action"] == "sell")
         sell_ct = sum(f["count"] for f in group if f["action"] == "sell")
-        n_sell = sum(1 for f in group if f["action"] == "sell")
         net_yes, net_no = buys_yes - sells_yes, buys_no - sells_no
         qty = net_yes if side == "yes" else net_no
         buy_cost = sum(f["count"] * f["price"] for f in group
@@ -76,8 +75,6 @@ def build_rows(fills: list[dict], settlements: dict, meta: dict) -> list[dict]:
             "first_ts": min(f["ts"] for f in group),
             "status": status, "result": result, "settled_ts": settled_ts,
             "pnl": pnl, "staked": total_buy,
-            # diagnostics for spreadsheet reconciliation
-            "sold": sell_cash, "n_sell": n_sell, "revenue": settle_rev,
         })
     rows.sort(key=lambda r: r["first_ts"], reverse=True)  # newest first
     return rows

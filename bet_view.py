@@ -152,24 +152,4 @@ def render():
                "edge vs your entry (pp), and whether you bet with or against it — "
                "reconstructed from the nearest logged snapshot to your fill (— if "
                "none). P&L is realized on settlement. Read-only view of your Kalshi "
-               "account; prices in ¢, amounts in $.")
-
-    # TEMPORARY reconciliation aid vs the user's manual spreadsheet — remove once
-    # the P&L discrepancy is resolved.
-    with st.expander("🔧 Debug — reconcile vs spreadsheet (temporary; safe to share)"):
-        st.write("**One raw fill per distinct `action` value** (to see how SELLS are "
-                 "encoded — buys showed `action: \"buy\"`):")
-        st.json(kalshi_portfolio.raw_fills_by_action() or {"(no fills)": None})
-        st.write("**Per-position breakdown** (bought$ + sold$ realized at the dominant "
-                 "side's price; pnl$ = sold$ + settlement revenue − bought$):")
-        diag = [{"ticker": r["ticker"], "side": r["side"], "result": r["result"],
-                 "bought$": round(r["staked"], 2), "sold$": round(r["sold"], 2),
-                 "n_sell": r["n_sell"],
-                 "kalshi_rev$": round(r["revenue"], 2) if r.get("revenue") is not None else None,
-                 "pnl$": round(r["pnl"], 2) if r["pnl"] is not None else None}
-                for r in rows]
-        st.dataframe(pd.DataFrame(diag), use_container_width=True)
-        tot = sum(r["pnl"] for r in rows if r["pnl"] is not None)
-        st.caption(f"**Our total realized P&L = ${tot:,.2f}**  ·  compare to your "
-                   "spreadsheet Net P&L of $20.57 (residual ≈ fees, which we don't "
-                   "subtract yet).")
+               "account; prices in ¢, amounts in $. P&L is net of Kalshi fees.")
