@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import traceback
+from datetime import date
 
 import altair as alt
 import pandas as pd
@@ -31,11 +32,13 @@ def _load_bets():
     rows = bet_history.build_rows(fills, settlements, meta)
     bet_history.annotate_rows(rows, betting_log.load(), consensus_log.load(),
                               calibration.get())
-    # Mark open positions to market so the Exit column can show what they're worth now.
+    # Mark open positions to market so the Exit/P&L columns and the live curve point
+    # reflect what they're worth right now (updates each ~60s cache cycle as bids move).
     for r in rows:
         if r["status"] == "open":
             r["current_value"] = kalshi_portfolio.market_price(r["ticker"], r["side"])
-    return (rows, bet_history.summary(rows), bet_history.equity_curve(rows),
+    return (rows, bet_history.summary(rows),
+            bet_history.equity_curve_live(rows, date.today()),
             kalshi_portfolio.balance())
 
 
@@ -128,10 +131,11 @@ def render():
     if curve:
         st.altair_chart(equity_chart(curve, market_view._chart_colors()["kalshi"]),
                         use_container_width=True)
-        st.caption(f"Trading performance only: your ${bet_history.STARTING_BANKROLL:,.0f} "
-                   "starting bankroll plus **realized** P&L on settled bets. This is not "
-                   "your account balance — it excludes deposits, withdrawals, open "
-                   "(unsettled) positions, and fees. See **Balance** above for your "
+        st.caption(f"Trading performance: your ${bet_history.STARTING_BANKROLL:,.0f} "
+                   "starting bankroll plus realized P&L on settled bets, and a final "
+                   "**live** point that adds open positions' current unrealized P&L — so "
+                   "the last point moves with the market. Not your account balance (it "
+                   "excludes deposits, withdrawals, and fees); see **Balance** above for "
                    "actual Kalshi cash.")
     else:
         st.caption("The equity curve appears once a bet settles.")
@@ -143,6 +147,16 @@ def render():
         # Exit: realized sell/settlement price when closed; for an OPEN position, its
         # current market value (marked to market).
         exit_val = r.get("current_value") if r["status"] == "open" else r["exit"]
+        # P&L: realized once closed; for an OPEN position, the LIVE unrealized P&L
+        # (qty × (now − entry)) as a terracotta placeholder until it settles/sells.
+        if r["status"] == "open":
+            cv, en, qy = r.get("current_value"), r["entry"], r["qty"]
+            u = qy * (cv - en) if (cv is not None and en is not None) else None
+            pnl_cell = ("—" if u is None else
+                        f'<span style="color:#C97B5E;font-weight:600">'
+                        f'~{"+" if u >= 0 else "−"}${abs(u):,.2f}</span>')
+        else:
+            pnl_cell = _fmt_pnl(r["pnl"])
         disp.append({
             "Date": r["first_ts"].strftime("%b %-d"),
             "Contract": r["label"], "Side": r["side"].upper(),
@@ -152,12 +166,14 @@ def render():
             "Volume": _fmt_usd(volume),
             "Model @ bet": model,
             "Settled": "open" if r["status"] == "open" else r["result"].upper(),
-            "P&L": _fmt_pnl(r["pnl"]),
+            "P&L": pnl_cell,
         })
     market_view._html_table(pd.DataFrame(disp))
     st.caption("Model @ bet = the model's probability for the side you took, its "
                "edge vs your entry (pp), and whether you bet with or against it — "
                "reconstructed from the nearest logged snapshot to your fill (— if "
                "none). Exit = your sell/settlement price, or the current market value "
-               "for an open position. P&L is realized on settlement, net of Kalshi "
-               "fees. Read-only view of your Kalshi account; prices in ¢, amounts in $.")
+               "for an open position. P&L is realized (net of Kalshi fees) once "
+               "closed; open positions show their live unrealized P&L in terracotta "
+               "(the `~` values) until they settle or you sell. Read-only view of your "
+               "Kalshi account; prices in ¢, amounts in $.")

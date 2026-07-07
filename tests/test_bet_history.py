@@ -115,3 +115,37 @@ def test_equity_curve_aggregates_same_day_bets_into_one_point():
     assert len(curve) == 1
     assert curve[0]["date"] == date(2026, 6, 24)
     assert round(curve[0]["total"], 2) == 10.80         # 10 + (5.80 - 5.00), one point
+
+
+def test_open_unrealized_and_live_curve_point():
+    fills = [
+        _fill("t1", "KXHIGHTDAL-26JUN22-B97", "yes", "buy", 10, 0.42, 22),   # settled +5.80
+        _fill("t2", "KXHIGHTDAL-26JUN23-B99", "yes", "buy", 5, 0.40, 23),    # open
+    ]
+    settlements = {"KXHIGHTDAL-26JUN22-B97":
+                   {"result": "yes", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc),
+                    "revenue": 10.0}}
+    rows = bh.build_rows(fills, settlements, META)
+    for r in rows:
+        if r["status"] == "open":
+            r["current_value"] = 0.60                 # entry 0.40, qty 5 -> +$1.00 unreal
+    assert round(bh.open_unrealized(rows), 2) == 1.00
+    # realized Jun 23 balance = 15.80; live point today (Jun 24) adds +1.00 -> 16.80
+    curve = bh.equity_curve_live(rows, date(2026, 6, 24))
+    assert curve[-1]["date"] == date(2026, 6, 24)
+    assert round(curve[-1]["total"], 2) == 16.80
+
+
+def test_equity_curve_live_folds_into_today_realized_point():
+    fills = [_fill("t1", "KXHIGHTDAL-26JUN22-B97", "yes", "buy", 10, 0.42, 22),
+             _fill("t2", "KXHIGHTDAL-26JUN23-B99", "yes", "buy", 5, 0.40, 23)]
+    settlements = {"KXHIGHTDAL-26JUN22-B97":
+                   {"result": "yes", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc),
+                    "revenue": 10.0}}
+    rows = bh.build_rows(fills, settlements, META)
+    for r in rows:
+        if r["status"] == "open":
+            r["current_value"] = 0.60
+    curve = bh.equity_curve_live(rows, date(2026, 6, 23))   # today == the settled date
+    assert len(curve) == 1
+    assert curve[0]["date"] == date(2026, 6, 23) and round(curve[0]["total"], 2) == 16.80

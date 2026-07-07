@@ -116,6 +116,30 @@ def equity_curve(rows: list[dict]) -> list[dict]:
     return out
 
 
+def open_unrealized(rows: list[dict]) -> float:
+    """Total live unrealized P&L of OPEN positions: qty × (current market value −
+    entry). Rows must carry `current_value` (the live bid); rows without it are
+    skipped."""
+    return sum(r["qty"] * (r["current_value"] - r["entry"]) for r in rows
+               if r["status"] == "open" and r.get("current_value") is not None
+               and r["entry"] is not None)
+
+
+def equity_curve_live(rows: list[dict], today) -> list[dict]:
+    """The realized `equity_curve`, extended with a final LIVE point at `today` that
+    adds open positions' current unrealized P&L — so the line reflects live
+    mark-to-market and moves as bids change. If `today` already has a realized point,
+    the unrealized is folded into it rather than duplicating the x."""
+    curve = equity_curve(rows)
+    unreal = open_unrealized(rows)
+    if not curve and not unreal:
+        return curve
+    if curve and curve[-1]["date"] == today:
+        return curve[:-1] + [{"date": today, "total": curve[-1]["total"] + unreal}]
+    base = curve[-1]["total"] if curve else STARTING_BANKROLL
+    return curve + [{"date": today, "total": base + unreal}]
+
+
 def _phi(x: float, mu: float, sigma: float) -> float:
     """Normal CDF Φ((x−mu)/sigma) via erf (no scipy dependency)."""
     if sigma <= 0:
