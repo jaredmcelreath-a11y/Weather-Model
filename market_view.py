@@ -115,6 +115,12 @@ def _inject_theme(name):
         # show the floating switcher and keep the last content clear of it
         ".wx-toggle-bar{display:flex!important;}"
         "[data-testid=\"stMainBlockContainer\"]{padding-bottom:5.5rem!important;}"
+        # Community Cloud reflows its app toolbar (the 'Manage app' button) to the
+        # bottom-right on phones, landing on top of the Low toggle. Hide it on
+        # mobile only — desktop keeps it (top-right), and the app is still managed
+        # from the Streamlit dashboard. Exact-match testid so the per-chart
+        # stElementToolbar hover controls are untouched.
+        "[data-testid=\"stToolbar\"]{display:none!important;}"
         # pre-JS default: show High until the bridge sets an explicit body class
         "body:not(.wx-show-high):not(.wx-show-low) "
         "[data-testid=\"stColumn\"]:has(.st-key-wx_sec_low){display:none!important;}"
