@@ -456,7 +456,10 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     # the hourly observed on a genuine spike, never on quantization noise. Fed to
     # the hard bound (not the sample floor) so it can't double-count the CLI offset.
     observed_bound = observed
-    observed_cont = None  # raw sub-hourly extreme (CLI/Kalshi basis), for display
+    observed_cont = None  # sub-hourly extreme that DRIVES the bound/anchor (guarded)
+    observed_cont_display = None  # sub-hourly extreme to SHOW (the raw dip/peak the
+    # feed touched) — mirrors the high's spike on the low so the shown number doesn't
+    # contradict the consensus; never feeds prediction (display-only).
     cont_times, cont_temps = obs_series.get("obs_continuous", (None, None))
     if cont_times and now is not None:
         # Spike-robust: the 5-min feed can report a lone reading a whole °C off
@@ -466,17 +469,19 @@ def predict_variable(series, obs_series, day, variable, now, calib,
         # non-trivial probability (a plausible brief peak, not a sensor glitch); else
         # fall back to the ≥2-corroborated peak. The low always keeps corroboration so
         # a lone cold blip on a convective afternoon can't wrongly lock it.
-        c_max_raw, _ = observed_so_far_robust(cont_times, cont_temps, day, now, min_support=1)
+        c_max_raw, c_min_raw = observed_so_far_robust(cont_times, cont_temps, day, now, min_support=1)
         c_max_rob, c_min = observed_so_far_robust(cont_times, cont_temps, day, now)
         if variable == "high":
             shift = (settle_offset or {}).get("high", 0.0)
             c_max = _trusted_high_max(c_max_raw, c_max_rob, fullday, shift)
             if c_max is not None:
                 observed_cont = c_max
+                observed_cont_display = c_max  # high already shows its trusted spike
                 cand = c_max - 0.9
                 observed_bound = cand if observed is None else max(observed, cand)
         elif variable == "low" and c_min is not None:
-            observed_cont = c_min
+            observed_cont = c_min           # behavior: guarded (≥2-corroborated) min
+            observed_cont_display = c_min_raw if c_min_raw is not None else c_min  # show the raw dip
             cand = c_min + 0.9
             observed_bound = cand if observed is None else min(observed, cand)
         # Anchor the nowcast to the live sub-hourly reading (median of the last few,
@@ -658,6 +663,7 @@ def predict_variable(series, obs_series, day, variable, now, calib,
         "n_samples": len(samples),
         "observed_so_far": observed,
         "observed_continuous": observed_cont,
+        "observed_continuous_display": observed_cont_display,
         "cooling_applied": cooling_applied,
         "peak_locked": locked,
         "convective_widened": convective_widened,

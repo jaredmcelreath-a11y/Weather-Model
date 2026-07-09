@@ -537,3 +537,45 @@ def test_fetch_actual_cli_default_omits_ttl_for_archive_callers(monkeypatch):
     day = date(2026, 6, 8)
     station_history.fetch_actual_cli(day, day)
     assert "ttl" not in captured["kwargs"]
+
+
+# --- Display of the continuous sub-hourly extreme (2026-07-09) -----------------
+# The low's spike-guard (min_support=2) drops a lone dip so it can't wrongly anchor
+# the settlement. But the DISPLAYED "observed continuous" number should still show
+# the dip the feed actually touched (mirroring the high, which shows its spike) —
+# otherwise the shown number contradicts the consensus. Display-only: the behavior
+# value (`observed_continuous`, which drives the bound/anchor) stays the guarded one.
+
+def _obs_lone_low_dip(day):
+    """Morning obs sitting at 82°F with a single 15-min continuous dip to 80°F
+    (lone: no neighbor within 0.7°F, so the ≥2-corroboration guard rejects it)."""
+    base = datetime(day.year, day.month, day.day, tzinfo=_TZ)
+    hourly = [86, 84, 83, 82, 82, 82, 82, 82, 82]     # hours 0..8, hourly min 82
+    ot = [base + timedelta(hours=h) for h in range(len(hourly))]
+    ct, cv = [], []
+    dip_at = base + timedelta(hours=6, minutes=15)
+    for k in range(len(hourly) * 4):                   # every 15 min through 08:45
+        t = base + timedelta(minutes=15 * k)
+        val = hourly[min(k // 4, len(hourly) - 1)]
+        cv.append(80.0 if t == dip_at else val)
+        ct.append(t)
+    return {"obs": (ot, hourly), "obs_continuous": (ct, cv)}
+
+
+def test_low_display_shows_lone_dip_while_behavior_uses_guarded_min():
+    day = date(2030, 7, 1)
+    now = datetime(day.year, day.month, day.day, 8, tzinfo=_TZ)
+    r = model.predict_variable(_series(day), _obs_lone_low_dip(day), day, "low", now, None)
+    # Behavior anchors on the corroborated (guarded) min — the lone 80 is rejected.
+    assert r["observed_continuous"] == 82.0
+    # Display shows the sub-hourly dip the feed actually touched.
+    assert r["observed_continuous_display"] == 80.0
+
+
+def test_high_display_matches_behavior_when_no_lone_spike():
+    # No lone spike (continuous mirrors hourly) -> display == behavior for the high.
+    day = date(2030, 7, 1)
+    now = datetime(day.year, day.month, day.day, 17, tzinfo=_TZ)
+    off = {"high": 1.0, "high_std": 2.0, "low": 0.0, "low_std": 0.0}
+    r = model.predict_variable(_series(day), _obs(day, _LOCKED_HIGH, True), day, "high", now, None, off)
+    assert r["observed_continuous_display"] == r["observed_continuous"]

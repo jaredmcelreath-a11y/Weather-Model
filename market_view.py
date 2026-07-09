@@ -796,7 +796,7 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
             # Kalshi settles on the continuous (sub-hourly) CLI extreme, which can
             # run a touch hotter/colder than the routine hourly reading. Show it
             # alongside on the Kalshi page so the caption matches Kalshi's screen.
-            cont = d.get("observed_continuous")
+            cont = d.get("observed_continuous_display", d.get("observed_continuous"))
             if adapter.basis == "cli" and cont is not None:
                 obs_line += f"  ·  {cont:.1f}°F (continuous, Kalshi basis)"
             st.caption(obs_line)
