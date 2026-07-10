@@ -130,7 +130,10 @@ def render():
         st.caption(f"No Dallas-temp bets found since {bet_history.BETS_START:%b %-d, %Y}.")
         return
 
-    c = st.columns(5)
+    # keyed 'top_metrics' so the same mobile CSS grids these 2-per-row (like the Forecast
+    # page) instead of stacking; columns created in the container, filled just after.
+    with st.container(key="top_metrics"):
+        c = st.columns(6)
     _mc = market_view.metric_card
     c[0].markdown(_mc("Balance", _fmt_usd(balance),
                       "Your actual current Kalshi cash balance, live from the API. "
@@ -139,12 +142,16 @@ def render():
     c[1].markdown(_mc("Record (W–L)", f"{summ['wins']}–{summ['losses']}"),
                   unsafe_allow_html=True)
     c[2].markdown(_mc("Win rate", f"{summ['win_rate']:.0f}%"), unsafe_allow_html=True)
-    c[3].markdown(_mc("Avg % Return", f"{summ['roi']:+.0f}%",
+    c[3].markdown(_mc("Avg % Return", f"{summ['roi']:+.2f}%",
                       "Stake-weighted average return across your settled bets — total "
                       "realized profit ÷ total staked. Buying near-certain contracts at "
                       "high prices (e.g. 97¢) yields small per-trade returns even on wins."),
                   unsafe_allow_html=True)
-    c[4].markdown(_mc("Total % Gain", f"{summ['pct_gain']:+.0f}%",
+    c[4].markdown(_mc("Avg % / Trade", f"{summ['avg_trade_return']:+.2f}%",
+                      "Simple (unweighted) average of each settled trade's own percent "
+                      "return — every trade counts equally, unlike the stake-weighted "
+                      "Avg % Return."), unsafe_allow_html=True)
+    c[5].markdown(_mc("Total % Gain", f"{summ['pct_gain']:+.0f}%",
                       f"Net realized profit as a percent of your starting bankroll "
                       f"(${bet_history.STARTING_BANKROLL:,.0f}) — e.g. +$20 on a "
                       f"${bet_history.STARTING_BANKROLL:,.0f} start = +200%."),

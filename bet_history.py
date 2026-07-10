@@ -88,11 +88,16 @@ def summary(rows: list[dict]) -> dict:
     staked = sum(r["staked"] for r in settled)
     annotated = [r for r in settled if r.get("agree") is not None]
     with_model = sum(1 for r in annotated if r["agree"])
+    # Simple (unweighted) mean of each trade's own % return — every settled trade counts
+    # equally, unlike `roi` which is stake-weighted (total profit / total staked).
+    per_trade = [100.0 * r["pnl"] / r["staked"] for r in settled if r["staked"]]
+    avg_trade_return = (sum(per_trade) / len(per_trade)) if per_trade else 0.0
     return {
         "n_settled": len(settled), "wins": wins, "losses": losses,
         "win_rate": (100.0 * wins / len(settled)) if settled else 0.0,
         "net_pnl": net_pnl, "staked": staked,
         "roi": (100.0 * net_pnl / staked) if staked else 0.0,
+        "avg_trade_return": avg_trade_return,
         # Account growth: net realized profit as a percent of the starting bankroll
         # (e.g. +$20 on a $10 start = +200%).
         "pct_gain": 100.0 * net_pnl / STARTING_BANKROLL if STARTING_BANKROLL else 0.0,

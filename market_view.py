@@ -119,7 +119,7 @@ def _inject_theme(name):
         # (8px insets) so it always stays fully on-screen, whichever box you tap.
         ".st-key-top_metrics .wxqt,[class*=\"st-key-mini_\"] .wxqt"
         "{position:fixed!important;left:8px!important;right:8px!important;bottom:auto!important;"
-        "top:5.7rem!important;width:auto!important;max-width:none!important;}"
+        "top:6.4rem!important;width:auto!important;max-width:none!important;}"
         # keep the page title on one line on phones
         ".stApp h1{font-size:1.7rem!important;}"
         # pin the switcher to the viewport top. position:sticky doesn't hold inside

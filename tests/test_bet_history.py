@@ -94,6 +94,10 @@ def test_summary_and_curve_across_two_settled_bets():
     assert round(s["net_pnl"], 2) == 0.80             # +5.80 - 5.00
     assert round(s["staked"], 2) == 9.20              # 4.20 + 5.00
     assert round(s["pct_gain"], 1) == 8.0             # net 0.80 / $10 bankroll
+    # unweighted per-trade mean: (+5.80/4.20 - 5.00/5.00)/2 = (+138.1% - 100%)/2 ≈ +19.0%,
+    # distinct from the stake-weighted roi (0.80/9.20 ≈ +8.7%)
+    assert round(s["avg_trade_return"], 1) == 19.0
+    assert round(s["roi"], 1) == 8.7
     curve = bh.equity_curve(rows)
     # Dated by WEATHER day (from the ticker), not the next-morning settlement.
     assert [c["date"] for c in curve] == [date(2026, 6, 22), date(2026, 6, 23)]
