@@ -130,6 +130,28 @@ def render():
         st.caption(f"No Dallas-temp bets found since {bet_history.BETS_START:%b %-d, %Y}.")
         return
 
+    # === TEMP DEBUG (remove after diagnosing early-sold classification) ============
+    with st.expander("🔧 debug: raw fills"):
+        try:
+            from collections import defaultdict as _dd
+            from sources import kalshi_portfolio as _kp
+            _byt = _dd(list)
+            for _f in _kp.fills(bet_history.BETS_START):
+                _byt[_f["ticker"]].append(_f)
+            for _tk, _g in _byt.items():
+                _by = sum(f["count"] for f in _g if f["side"] == "yes" and f["action"] == "buy")
+                _sy = sum(f["count"] for f in _g if f["side"] == "yes" and f["action"] == "sell")
+                _bn = sum(f["count"] for f in _g if f["side"] == "no" and f["action"] == "buy")
+                _sn = sum(f["count"] for f in _g if f["side"] == "no" and f["action"] == "sell")
+                st.write(f"**{_tk}** — buys_yes={_by} sells_yes={_sy} buys_no={_bn} "
+                         f"sells_no={_sn} | net_yes={_by - _sy} net_no={_bn - _sn}")
+                st.write([{k: f.get(k) for k in
+                           ("action", "side", "count", "price", "yes_price", "no_price")}
+                          for f in _g])
+        except Exception as _e:
+            st.write("debug error:", repr(_e))
+    # === END TEMP DEBUG =============================================================
+
     # keyed 'top_metrics' so the same mobile CSS grids these 2-per-row (like the Forecast
     # page) instead of stacking; columns created in the container, filled just after.
     with st.container(key="top_metrics"):
