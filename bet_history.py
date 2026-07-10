@@ -101,14 +101,18 @@ def summary(rows: list[dict]) -> dict:
 
 
 def equity_curve(rows: list[dict]) -> list[dict]:
-    """Cumulative realized P&L, one point per SETTLEMENT DAY (end-of-day running
-    total). Same-day bets are summed into a single point, so the line advances one
-    step per day instead of jumping vertically when several bets settle at once."""
+    """Cumulative realized P&L, one point per WEATHER (target) DAY — the day each
+    market is *about*, parsed from its ticker. Kalshi temp markets settle the NEXT
+    morning (~1-2am, after the final CLI), so bucketing by settlement time plotted each
+    day's result one day late — a loss on your bets for a given day landed on the next
+    day's point. Same-day bets sum into a single point (the line steps once per day)."""
     daily: dict = {}
     for r in rows:
-        if r["status"] == "settled":
-            d = r["settled_ts"].date()
-            daily[d] = daily.get(d, 0.0) + r["pnl"]
+        if r["status"] != "settled":
+            continue
+        td = _ticker_date(r["ticker"])
+        d = date.fromisoformat(td) if td else r["settled_ts"].date()   # fallback if unparsable
+        daily[d] = daily.get(d, 0.0) + r["pnl"]
     out, total = [], STARTING_BANKROLL   # curve tracks account balance, not P&L from 0
     for d in sorted(daily):
         total += daily[d]
@@ -126,16 +130,14 @@ def open_unrealized(rows: list[dict]) -> float:
 
 
 def equity_curve_live(rows: list[dict], today) -> list[dict]:
-    """The realized `equity_curve`, extended with a final LIVE point at `today` that
-    adds open positions' current unrealized P&L — so the line reflects live
-    mark-to-market and moves as bids change. If `today` already has a realized point,
-    the unrealized is folded into it rather than duplicating the x."""
+    """The realized `equity_curve`, extended with a final LIVE point at `today` carrying
+    today's still-open positions' unrealized P&L — so the last point moves with the
+    market. Today's weather settles tomorrow, so this is always a distinct point after
+    the realized weather-day points; it only appears when there's open exposure."""
     curve = equity_curve(rows)
     unreal = open_unrealized(rows)
-    if not curve and not unreal:
+    if not unreal:
         return curve
-    if curve and curve[-1]["date"] == today:
-        return curve[:-1] + [{"date": today, "total": curve[-1]["total"] + unreal}]
     base = curve[-1]["total"] if curve else STARTING_BANKROLL
     return curve + [{"date": today, "total": base + unreal}]
 

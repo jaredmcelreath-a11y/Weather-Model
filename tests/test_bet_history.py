@@ -21,6 +21,8 @@ META = {
                                "strike_type": "between", "variable": "high"},
     "KXHIGHTDAL-26JUN23-B99": {"label": "99 to 100", "floor": 99, "cap": 100,
                                "strike_type": "between", "variable": "high"},
+    "KXHIGHTDAL-26JUN22-B99": {"label": "99 to 100", "floor": 99, "cap": 100,
+                               "strike_type": "between", "variable": "high"},
 }
 
 
@@ -93,27 +95,38 @@ def test_summary_and_curve_across_two_settled_bets():
     assert round(s["staked"], 2) == 9.20              # 4.20 + 5.00
     assert round(s["pct_gain"], 1) == 8.0             # net 0.80 / $10 bankroll
     curve = bh.equity_curve(rows)
-    assert [c["date"] for c in curve] == [date(2026, 6, 23), date(2026, 6, 24)]
+    # Dated by WEATHER day (from the ticker), not the next-morning settlement.
+    assert [c["date"] for c in curve] == [date(2026, 6, 22), date(2026, 6, 23)]
     # curve tracks account BALANCE from the $10 starting bankroll
     assert round(curve[0]["total"], 2) == 15.80       # 10 + 5.80
     assert round(curve[1]["total"], 2) == 10.80       # 10 + 5.80 - 5.00
 
 
+def test_curve_dates_by_weather_day_not_settlement_day():
+    # A bet for Jun 22 weather settles the morning of Jun 23; it must plot on Jun 22.
+    fills = [_fill("t1", "KXHIGHTDAL-26JUN22-B97", "yes", "buy", 10, 0.50, 22)]  # loss
+    settlements = {"KXHIGHTDAL-26JUN22-B97":
+                   {"result": "no", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc),
+                    "revenue": 0.0}}
+    curve = bh.equity_curve(bh.build_rows(fills, settlements, META))
+    assert curve[0]["date"] == date(2026, 6, 22)      # weather day, NOT settlement day Jun 23
+    assert round(curve[0]["total"], 2) == 5.00        # 10 bankroll - 5.00 loss (goes DOWN)
+
+
 def test_equity_curve_aggregates_same_day_bets_into_one_point():
-    # Two bets that both settle on the SAME day collapse into a single curve point
-    # (end-of-day total), instead of two points stacked at the same x.
+    # Two bets for the SAME weather day collapse into a single curve point (end-of-day
+    # total), instead of two points stacked at the same x.
     fills = [
         _fill("t1", "KXHIGHTDAL-26JUN22-B97", "yes", "buy", 10, 0.42, 22),  # +5.80
-        _fill("t2", "KXHIGHTDAL-26JUN23-B99", "yes", "buy", 10, 0.50, 23),  # -5.00
+        _fill("t2", "KXHIGHTDAL-26JUN22-B99", "yes", "buy", 10, 0.50, 22),  # -5.00
     ]
-    same_day = datetime(2026, 6, 24, 6, tzinfo=timezone.utc)
     settlements = {
-        "KXHIGHTDAL-26JUN22-B97": {"result": "yes", "ts": same_day, "revenue": 10.0},
-        "KXHIGHTDAL-26JUN23-B99": {"result": "no", "ts": same_day, "revenue": 0.0},
+        "KXHIGHTDAL-26JUN22-B97": {"result": "yes", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc), "revenue": 10.0},
+        "KXHIGHTDAL-26JUN22-B99": {"result": "no", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc), "revenue": 0.0},
     }
     curve = bh.equity_curve(bh.build_rows(fills, settlements, META))
     assert len(curve) == 1
-    assert curve[0]["date"] == date(2026, 6, 24)
+    assert curve[0]["date"] == date(2026, 6, 22)
     assert round(curve[0]["total"], 2) == 10.80         # 10 + (5.80 - 5.00), one point
 
 
@@ -130,22 +143,20 @@ def test_open_unrealized_and_live_curve_point():
         if r["status"] == "open":
             r["current_value"] = 0.60                 # entry 0.40, qty 5 -> +$1.00 unreal
     assert round(bh.open_unrealized(rows), 2) == 1.00
-    # realized Jun 23 balance = 15.80; live point today (Jun 24) adds +1.00 -> 16.80
+    # realized Jun 22 (weather-day) balance = 15.80; live point today (Jun 24) adds +1.00 -> 16.80
     curve = bh.equity_curve_live(rows, date(2026, 6, 24))
     assert curve[-1]["date"] == date(2026, 6, 24)
     assert round(curve[-1]["total"], 2) == 16.80
 
 
-def test_equity_curve_live_folds_into_today_realized_point():
-    fills = [_fill("t1", "KXHIGHTDAL-26JUN22-B97", "yes", "buy", 10, 0.42, 22),
-             _fill("t2", "KXHIGHTDAL-26JUN23-B99", "yes", "buy", 5, 0.40, 23)]
+def test_equity_curve_live_no_today_point_without_open_exposure():
+    # With no open positions, the live curve is just the realized weather-day points —
+    # it does not tack on a flat point at `today`.
+    fills = [_fill("t1", "KXHIGHTDAL-26JUN22-B97", "yes", "buy", 10, 0.42, 22)]
     settlements = {"KXHIGHTDAL-26JUN22-B97":
                    {"result": "yes", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc),
                     "revenue": 10.0}}
     rows = bh.build_rows(fills, settlements, META)
-    for r in rows:
-        if r["status"] == "open":
-            r["current_value"] = 0.60
-    curve = bh.equity_curve_live(rows, date(2026, 6, 23))   # today == the settled date
-    assert len(curve) == 1
-    assert curve[0]["date"] == date(2026, 6, 23) and round(curve[0]["total"], 2) == 16.80
+    curve = bh.equity_curve_live(rows, date(2026, 6, 24))
+    assert [c["date"] for c in curve] == [date(2026, 6, 22)]
+    assert round(curve[0]["total"], 2) == 15.80
