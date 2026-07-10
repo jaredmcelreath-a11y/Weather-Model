@@ -164,3 +164,34 @@ def test_equity_curve_live_no_today_point_without_open_exposure():
     curve = bh.equity_curve_live(rows, date(2026, 6, 24))
     assert [c["date"] for c in curve] == [date(2026, 6, 22)]
     assert round(curve[0]["total"], 2) == 15.80
+
+
+def test_closed_by_early_sell_is_realized_not_open():
+    # Bought 10 @ $0.50, sold all 10 @ $0.70, market NOT settled yet -> realized +$2.00,
+    # classified 'closed' (not a perpetual 'open' bet) and counted in the totals + curve.
+    fills = [
+        _fill("t1", "KXHIGHTDAL-26JUN22-B97", "yes", "buy", 10, 0.50, 22),
+        _fill("t2", "KXHIGHTDAL-26JUN22-B97", "yes", "sell", 10, 0.70, 22),
+    ]
+    rows = bh.build_rows(fills, {}, META)          # no settlements
+    r = rows[0]
+    assert r["status"] == "closed" and r["qty"] == 10
+    assert round(r["pnl"], 2) == 2.00              # 7.00 sell - 5.00 buy
+    s = bh.summary(rows)
+    assert s["n_settled"] == 1 and s["wins"] == 1
+    assert round(s["net_pnl"], 2) == 2.00
+    assert round(s["roi"], 1) == 40.0              # 2.00 / 5.00 staked
+    curve = bh.equity_curve(rows)                  # realized -> appears on the curve
+    assert [c["date"] for c in curve] == [date(2026, 6, 22)]
+    assert round(curve[0]["total"], 2) == 12.00    # 10 bankroll + 2.00
+
+
+def test_partial_open_position_still_open():
+    # Bought 10, sold only 4, no settlement -> still net-long 6, stays OPEN (no realized
+    # P&L yet), so the early-sell rule must not fire on a partial exit.
+    fills = [
+        _fill("t1", "KXHIGHTDAL-26JUN22-B97", "yes", "buy", 10, 0.50, 22),
+        _fill("t2", "KXHIGHTDAL-26JUN22-B97", "yes", "sell", 4, 0.70, 22),
+    ]
+    rows = bh.build_rows(fills, {}, META)
+    assert rows[0]["status"] == "open" and rows[0]["pnl"] is None

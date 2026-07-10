@@ -64,6 +64,15 @@ def build_rows(fills: list[dict], settlements: dict, meta: dict) -> list[dict]:
             total_fee += settle.get("fee", 0) or 0
             pnl = sell_cash + (settle_rev or 0.0) - total_buy - total_fee
             status, result, settled_ts = "settled", settle["result"], settle["ts"]
+        elif buy_ct and qty == 0:
+            # Closed early by selling the whole position before the market settled: the
+            # P&L is realized from the sells (nothing was held to settlement). Without
+            # this it showed as a perpetual OPEN bet and its profit was missing from the
+            # totals (Total % Gain / roi under-counted).
+            pnl = sell_cash - total_buy - total_fee
+            status, result = "closed", None
+            settled_ts = max(f["ts"] for f in group if f["action"] == "sell")
+            qty = buy_ct   # net is 0 once closed; show the size actually traded
         else:
             pnl, status, result, settled_ts = None, "open", None, None
 
@@ -81,7 +90,8 @@ def build_rows(fills: list[dict], settlements: dict, meta: dict) -> list[dict]:
 
 
 def summary(rows: list[dict]) -> dict:
-    settled = [r for r in rows if r["status"] == "settled"]
+    # 'settled' here = every REALIZED bet — held to settlement OR closed early by selling.
+    settled = [r for r in rows if r["status"] in ("settled", "closed")]
     wins = sum(1 for r in settled if r["pnl"] > 0)
     losses = sum(1 for r in settled if r["pnl"] <= 0)
     net_pnl = sum(r["pnl"] for r in settled)
@@ -113,7 +123,7 @@ def equity_curve(rows: list[dict]) -> list[dict]:
     day's point. Same-day bets sum into a single point (the line steps once per day)."""
     daily: dict = {}
     for r in rows:
-        if r["status"] != "settled":
+        if r["status"] not in ("settled", "closed"):   # realized: settled or sold-out
             continue
         td = _ticker_date(r["ticker"])
         d = date.fromisoformat(td) if td else r["settled_ts"].date()   # fallback if unparsable
