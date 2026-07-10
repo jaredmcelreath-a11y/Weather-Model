@@ -129,6 +129,10 @@ def _inject_theme(name):
         # container padding-top) to clear the fixed bar.
         ".wx-toggle-bar{display:flex!important;position:fixed;top:3rem;left:0;"
         "right:0;z-index:1000000;}"
+        # hide the sticky High/Low bar while the sidebar menu is open, so it doesn't sit
+        # on top of the menu (the bar's z-index is above the sidebar overlay).
+        ".stApp:has([data-testid=\"stSidebar\"][aria-expanded=\"true\"]) .wx-toggle-bar"
+        "{display:none!important;}"
         ".st-key-wx_toggle_wrap{display:block!important;margin:0;}"
         "[data-testid=\"stMainBlockContainer\"]{padding-top:6rem!important;}"
         # pre-JS default: show High until the bridge sets an explicit body class
@@ -230,7 +234,7 @@ def _inject_theme(name):
         ".wxcard{background:var(--surface);border:1px solid var(--border);border-radius:12px;"
         "padding:0.7rem 0.9rem 0.8rem;text-align:center;position:relative;margin-bottom:0.65rem;}\n"
         ".wxcard-l{font-weight:700;color:var(--muted);font-size:0.76rem;margin-bottom:0.1rem;}\n"
-        ".wxcard-v{font-size:1.55rem;color:var(--ink);overflow-wrap:anywhere;}\n"
+        ".wxcard-v{font-size:1.55rem;color:var(--ink);white-space:nowrap;}\n"
         ".wxq{position:absolute;top:5px;right:7px;width:16px;height:16px;line-height:15px;"
         "border-radius:50%;background:var(--surface2);border:1px solid var(--border);"
         "color:var(--muted);font-size:11px;font-weight:700;text-align:center;cursor:pointer;"
@@ -245,6 +249,10 @@ def _inject_theme(name):
         "opacity:0;visibility:hidden;transition:opacity 0.12s;pointer-events:none;}\n"
         ".wxq:hover ~ .wxqt,.wxq:focus ~ .wxqt,.wxcard:focus-within .wxqt"
         "{opacity:1;visibility:visible;}\n"
+        # desktop: the leftmost top-metrics card (Current Temp / Balance) would extend its
+        # tooltip left into the sidebar/screen edge — anchor that one to extend right.
+        ".st-key-top_metrics [data-testid=\"stColumn\"]:first-child .wxqt"
+        "{left:6px;right:auto;}\n"
         "</style>",
         unsafe_allow_html=True,
     )
