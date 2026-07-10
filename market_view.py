@@ -114,6 +114,12 @@ def _inject_theme(name):
         "[class*=\"st-key-mini_\"] .wxcard{padding:0.5rem 0.4rem 0.55rem!important;}"
         "[class*=\"st-key-mini_\"] .wxcard-v{font-size:1.1rem!important;}"
         "[class*=\"st-key-mini_\"] .wxcard-l{font-size:0.66rem!important;white-space:nowrap!important;}"
+        # On phones these metrics sit in multi-column grids, where a card-relative tooltip
+        # runs off the left/right screen edge. Pin it to a fixed full-width bottom sheet
+        # (8px insets) so it always stays fully on-screen, whichever box you tap.
+        ".st-key-top_metrics .wxqt,[class*=\"st-key-mini_\"] .wxqt"
+        "{position:fixed!important;left:8px!important;right:8px!important;top:auto!important;"
+        "bottom:14px!important;width:auto!important;max-width:none!important;}"
         # keep the page title on one line on phones
         ".stApp h1{font-size:1.7rem!important;}"
         # pin the switcher to the viewport top. position:sticky doesn't hold inside
@@ -222,19 +228,23 @@ def _inject_theme(name):
         # phones; this bubble opens on hover OR a single tap (focusable), and its panel is
         # width-capped + right-anchored so it wraps instead of clipping.
         ".wxcard{background:var(--surface);border:1px solid var(--border);border-radius:12px;"
-        "padding:0.7rem 0.9rem 0.8rem;text-align:center;position:relative;}\n"
+        "padding:0.7rem 0.9rem 0.8rem;text-align:center;position:relative;margin-bottom:0.65rem;}\n"
         ".wxcard-l{font-weight:700;color:var(--muted);font-size:0.76rem;margin-bottom:0.1rem;}\n"
         ".wxcard-v{font-size:1.55rem;color:var(--ink);overflow-wrap:anywhere;}\n"
         ".wxq{position:absolute;top:5px;right:7px;width:16px;height:16px;line-height:15px;"
         "border-radius:50%;background:var(--surface2);border:1px solid var(--border);"
         "color:var(--muted);font-size:11px;font-weight:700;text-align:center;cursor:pointer;"
-        "user-select:none;outline:none;}\n"
-        ".wxq .wxqt{position:absolute;top:135%;right:0;z-index:1000;width:max-content;"
-        "max-width:min(260px,80vw);white-space:normal;text-align:left;background:var(--surface);"
-        "color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:0.5rem 0.65rem;"
+        "user-select:none;outline:none;z-index:2;}\n"
+        # tooltip positioned relative to the CARD (default: below the ?, right-anchored so
+        # it extends left within a full-width card). On the phone multi-column grids it's
+        # switched to a fixed full-width bottom sheet (below) so it can never clip an edge.
+        ".wxqt{position:absolute;top:28px;right:6px;z-index:1000;width:max-content;"
+        "max-width:min(240px,74vw);white-space:normal;text-align:left;background:var(--surface);"
+        "color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:0.55rem 0.7rem;"
         "font-size:0.72rem;font-weight:500;line-height:1.35;box-shadow:0 6px 18px rgba(0,0,0,0.28);"
-        "opacity:0;visibility:hidden;transition:opacity 0.12s;}\n"
-        ".wxq:hover .wxqt,.wxq:focus .wxqt,.wxq:focus-within .wxqt{opacity:1;visibility:visible;}\n"
+        "opacity:0;visibility:hidden;transition:opacity 0.12s;pointer-events:none;}\n"
+        ".wxq:hover ~ .wxqt,.wxq:focus ~ .wxqt,.wxcard:focus-within .wxqt"
+        "{opacity:1;visibility:visible;}\n"
         "</style>",
         unsafe_allow_html=True,
     )
@@ -248,8 +258,10 @@ def metric_card(label, value, help_text=None):
     import html as _h
     q = ""
     if help_text:
-        q = (f'<span class="wxq" tabindex="0" role="button" aria-label="{_h.escape(str(label))} info">'
-             f'?<span class="wxqt">{_h.escape(str(help_text))}</span></span>')
+        # tooltip is a SIBLING of the ? (not nested) so it can be positioned relative to
+        # the card, letting the anchor flip per screen-position so it never clips.
+        q = (f'<span class="wxq" tabindex="0" role="button" aria-label="{_h.escape(str(label))} info">?</span>'
+             f'<span class="wxqt">{_h.escape(str(help_text))}</span>')
     return (f'<div class="wxcard">{q}'
             f'<div class="wxcard-l">{_h.escape(str(label))}</div>'
             f'<div class="wxcard-v">{_h.escape(str(value))}</div></div>')
