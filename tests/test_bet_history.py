@@ -195,3 +195,18 @@ def test_partial_open_position_still_open():
     ]
     rows = bh.build_rows(fills, {}, META)
     assert rows[0]["status"] == "open" and rows[0]["pnl"] is None
+
+
+def test_cross_side_sell_close_is_realized():
+    # Kalshi records closing a YES position as a SELL on the NO side (the real fill schema).
+    # Net-held must subtract ALL sells, not just same-side, so the position goes flat.
+    fills = [
+        _fill("t1", "KXHIGHTDAL-26JUN22-B97", "yes", "buy", 3.24, 0.60, 22),
+        _fill("t2", "KXHIGHTDAL-26JUN22-B97", "no", "sell", 3.24, 0.01, 22),
+    ]
+    rows = bh.build_rows(fills, {}, META)
+    r = rows[0]
+    assert r["status"] == "closed" and round(r["qty"], 2) == 3.24
+    # realized at the dominant (yes) 0.99 price: 3.24*0.99 - 3.24*0.60 = +1.26
+    assert round(r["pnl"], 2) == 1.26
+    assert round(bh.summary(rows)["net_pnl"], 2) == 1.26

@@ -38,12 +38,15 @@ def build_rows(fills: list[dict], settlements: dict, meta: dict) -> list[dict]:
         sell_cash = sum(f["count"] * (f["yes_price"] if side == "yes" else f["no_price"])
                         for f in group if f["action"] == "sell")
         sell_ct = sum(f["count"] for f in group if f["action"] == "sell")
-        net_yes, net_no = buys_yes - sells_yes, buys_no - sells_no
-        qty = net_yes if side == "yes" else net_no
         buy_cost = sum(f["count"] * f["price"] for f in group
                        if f["side"] == side and f["action"] == "buy")
         buy_ct = sum(f["count"] for f in group
                      if f["side"] == side and f["action"] == "buy")
+        # Net contracts still held = dominant-side buys minus ALL sells. Kalshi records a
+        # close on the OPPOSITE outcome (a YES position is closed via a 'sell NO'), so a
+        # sell must reduce the position even though its own `side` differs from what you
+        # hold — subtracting only same-side sells left a sold-out position looking open.
+        qty = buy_ct - sell_ct
         entry = round(buy_cost / buy_ct, 4) if buy_ct else None
         settle = settlements.get(ticker)
         settle_rev = settle.get("revenue") if settle else None
@@ -64,7 +67,7 @@ def build_rows(fills: list[dict], settlements: dict, meta: dict) -> list[dict]:
             total_fee += settle.get("fee", 0) or 0
             pnl = sell_cash + (settle_rev or 0.0) - total_buy - total_fee
             status, result, settled_ts = "settled", settle["result"], settle["ts"]
-        elif buy_ct and qty == 0:
+        elif buy_ct and abs(qty) < 1e-6:
             # Closed early by selling the whole position before the market settled: the
             # P&L is realized from the sells (nothing was held to settlement). Without
             # this it showed as a perpetual OPEN bet and its profit was missing from the
