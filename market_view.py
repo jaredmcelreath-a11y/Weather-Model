@@ -110,6 +110,10 @@ def _inject_theme(name):
         "[class*=\"st-key-mini_\"] [data-testid=\"stMetricLabel\"]{padding:0 0.65rem!important;}"
         "[class*=\"st-key-mini_\"] [data-testid=\"stMetricLabel\"] *"
         "{font-size:0.66rem!important;white-space:nowrap!important;}"
+        # same font-shrink for the custom metric cards (the mini trio) so they fit the row
+        "[class*=\"st-key-mini_\"] .wxcard{padding:0.5rem 0.4rem 0.55rem!important;}"
+        "[class*=\"st-key-mini_\"] .wxcard-v{font-size:1.1rem!important;}"
+        "[class*=\"st-key-mini_\"] .wxcard-l{font-size:0.66rem!important;white-space:nowrap!important;}"
         # keep the page title on one line on phones
         ".stApp h1{font-size:1.7rem!important;}"
         # pin the switcher to the viewport top. position:sticky doesn't hold inside
@@ -813,17 +817,19 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
         # keyed so a mobile CSS rule keeps these three on one row (not stacked)
         with st.container(key=f"mini_{variable}"):
             c1, c2, c3 = st.columns(3)
-        c1.metric("Consensus", f"{d['consensus']}°F")
-        c2.metric("Spread", f"{d['sigma_used']}°F (±1σ)",
-                  help="One standard deviation of the model's forecast — its error "
-                       "bars. About 68% of outcomes should land within ±this of the "
-                       "consensus, ~95% within ±2σ. Wider = more uncertain; this is "
-                       "what turns the consensus into contract probabilities. It gets "
-                       "inflated for day-ahead forecasts until the scoring log matures.")
+        c1.markdown(metric_card("Consensus", f"{d['consensus']}°F"), unsafe_allow_html=True)
+        c2.markdown(metric_card("Spread", f"{d['sigma_used']}°F (±1σ)",
+                    "One standard deviation of the model's forecast — its error "
+                    "bars. About 68% of outcomes should land within ±this of the "
+                    "consensus, ~95% within ±2σ. Wider = more uncertain; this is "
+                    "what turns the consensus into contract probabilities. It gets "
+                    "inflated for day-ahead forecasts until the scoring log matures."),
+                    unsafe_allow_html=True)
         locked_pct = int(d.get("resolved", 1 - d["locked_ratio"]) * 100)
-        c3.metric("Resolved", f"{locked_pct}%",
-                  help="How much of the day's uncertainty is already settled by "
-                       "observations. 100% ≈ the extreme has happened.")
+        c3.markdown(metric_card("Resolved", f"{locked_pct}%",
+                    "How much of the day's uncertainty is already settled by "
+                    "observations. 100% ≈ the extreme has happened."),
+                    unsafe_allow_html=True)
         if d["observed_so_far"] is not None:
             obs_line = f"Observed so far: {d['observed_so_far']:.1f}°F (hourly, hard bound)"
             # Kalshi settles on the continuous (sub-hourly) CLI extreme, which can
@@ -1217,36 +1223,38 @@ def render_page(snap, calib, adapter, load_accuracy):
         if ch and ch.get("time") != cur.get("time"):
             _cur_help += (f" Latest routine hourly (:53 METAR): "
                           f"{ch['temp']}°F at {_fmt_clock(ch['time'])}.")
-        top[0].metric("Current Temp", f"{cur['temp']}°F", help=_cur_help)
+        top[0].markdown(metric_card("Current Temp", f"{cur['temp']}°F", _cur_help),
+                        unsafe_allow_html=True)
     _mkt_as_of = ki.get("as_of")
     _mkt_help = ("Today's market-implied expected {x}, from Kalshi's live contract "
                  "ladder (shown on both pages for reference)."
                  + (f" Ladder fetched {_mkt_as_of}." if _mkt_as_of else ""))
-    top[1].metric("Updated", _fmt_clock(snap["updated"], with_seconds=True))
-    top[2].metric("Kalshi High",
-                  f"{ki['high']:.1f}°F" if ki.get("high") is not None else "—",
-                  help=_mkt_help.format(x="high"))
-    top[3].metric("Kalshi Low",
-                  f"{ki['low']:.1f}°F" if ki.get("low") is not None else "—",
-                  help=_mkt_help.format(x="low"))
+    top[1].markdown(metric_card("Updated", _fmt_clock(snap["updated"], with_seconds=True)),
+                    unsafe_allow_html=True)
+    top[2].markdown(metric_card("Kalshi High",
+                    f"{ki['high']:.1f}°F" if ki.get("high") is not None else "—",
+                    _mkt_help.format(x="high")), unsafe_allow_html=True)
+    top[3].markdown(metric_card("Kalshi Low",
+                    f"{ki['low']:.1f}°F" if ki.get("low") is not None else "—",
+                    _mkt_help.format(x="low")), unsafe_allow_html=True)
     if calib:
-        top[4].metric("Calib Bias",
-                      f"{calib['bias']['deterministic']['high']:+.1f}/"
-                      f"{calib['bias']['deterministic']['low']:+.1f}°F",
-                      help="Shown as high/low. The raw weather models' average signed error over the last "
-                           f"{calib.get('n_days', '~45')} settled days, which the model "
-                           "subtracts out before forecasting. A −1.0°F high bias means "
-                           "the raw models ran ~1°F too hot on highs, so the model pulls "
-                           "its high down by that much (and likewise for the low). Near 0 "
-                           "= the models are already well-centered.")
-        top[5].metric("Day-Ahead σ",
-                      f"{calib['sigma']['high']:.1f}/{calib['sigma']['low']:.1f}°F",
-                      help="Shown as high/low. The model's day-ahead forecast uncertainty — one standard "
-                           "deviation (°F), calibrated from how far past forecasts missed. "
-                           "Roughly 68% of outcomes land within ±this of consensus, ~95% "
-                           "within ±2×. It's the baseline spread for a ~24h-out forecast; "
-                           "tomorrow runs wider and today collapses below it as live "
-                           "observations lock the extreme in.")
+        top[4].markdown(metric_card("Calib Bias",
+                        f"{calib['bias']['deterministic']['high']:+.1f}/"
+                        f"{calib['bias']['deterministic']['low']:+.1f}°F",
+                        "Shown as high/low. The raw weather models' average signed error over the last "
+                        f"{calib.get('n_days', '~45')} settled days, which the model "
+                        "subtracts out before forecasting. A −1.0°F high bias means "
+                        "the raw models ran ~1°F too hot on highs, so the model pulls "
+                        "its high down by that much (and likewise for the low). Near 0 "
+                        "= the models are already well-centered."), unsafe_allow_html=True)
+        top[5].markdown(metric_card("Day-Ahead σ",
+                        f"{calib['sigma']['high']:.1f}/{calib['sigma']['low']:.1f}°F",
+                        "Shown as high/low. The model's day-ahead forecast uncertainty — one standard "
+                        "deviation (°F), calibrated from how far past forecasts missed. "
+                        "Roughly 68% of outcomes land within ±this of consensus, ~95% "
+                        "within ±2×. It's the baseline spread for a ~24h-out forecast; "
+                        "tomorrow runs wider and today collapses below it as live "
+                        "observations lock the extreme in."), unsafe_allow_html=True)
 
     # Juxtapose the two fetch times so a lagging market reading is visibly stale
     # rather than looking like a live disagreement with the model.
