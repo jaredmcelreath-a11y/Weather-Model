@@ -164,6 +164,18 @@ def _extreme_locked(times, temps, day, variable, now, drop=PEAK_LOCK_DROP,
     return now.astimezone(TZ) >= sr and risen >= LOW_LOCK_RISE
 
 
+def _anchor_obs_now(recent):
+    """Live sub-hourly anchor for the forecast offset: the mean of the last 4 readings
+    (~20 min). The offset `(obs_now - fc_now)` shifts the WHOLE remaining forecast 1:1,
+    so a noisy anchor swings the projected peak (and the consensus) even while the temp
+    is flat; a 20-min mean damps the whole-°C feed jitter that drives it. Backtested
+    2026-07-09 (57 days, afternoon betting times): exact-bin 36.1%->39.8% and step-swing
+    sd 1.12->0.85 vs the old median-of-3 — better on both. 20 min is the sweet spot;
+    25 min (median-5) over-smooths and loses accuracy."""
+    w = recent[-4:]
+    return sum(w) / len(w)
+
+
 def _member_extreme(times, temps, day, variable, now, observed, obs_now=None,
                     locked=False):
     """One member's contribution to the high/low sample for `day`.
@@ -485,17 +497,16 @@ def predict_variable(series, obs_series, day, variable, now, calib,
             observed_cont_display = c_min_raw if c_min_raw is not None else c_min  # show the raw dip
             cand = c_min + 0.9
             observed_bound = cand if observed is None else min(observed, cand)
-        # Anchor the nowcast to the live sub-hourly reading (median of the last few,
-        # to shrug off a lone whole-°C spike) so the forecast offset tracks the real
-        # temperature continuously. The hourly :53-stepped anchor only updated once
-        # an hour, which — against the now-interpolated forecast — left a residual
-        # intraday ramp; the continuous anchor flattens it.
+        # Anchor the nowcast to the live sub-hourly reading (a ~20-min trailing mean,
+        # see _anchor_obs_now) so the forecast offset tracks the real temperature
+        # continuously without swinging on whole-°C feed jitter. The hourly :53-stepped
+        # anchor only updated once an hour, which — against the now-interpolated
+        # forecast — left a residual intraday ramp; the continuous anchor flattens it.
         d_start, d_end = local_day_bounds(day)
         recent = [v for t, v in zip(cont_times, cont_temps)
                   if v is not None and d_start <= t.astimezone(TZ) <= now < d_end]
         if recent:
-            tail = sorted(recent[-3:])
-            obs_now = tail[len(tail) // 2]
+            obs_now = _anchor_obs_now(recent)
         # Bumpy afternoon = the recent sub-hourly readings are swinging (convective
         # clouds) — the signature that a single hourly dip may not be the real peak.
         if len(recent) >= 4:

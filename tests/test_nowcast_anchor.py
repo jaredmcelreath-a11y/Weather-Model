@@ -55,3 +55,12 @@ def test_anchor_interpolates_between_hours():
     got = model._member_extreme(times, temps, _DAY, "high",
                                 _at(10, 30), observed=interp_1030, obs_now=interp_1030)
     assert abs(got - 99.0) < 0.3, got
+
+
+def test_anchor_obs_now_is_a_20min_mean_that_dampens_a_spike():
+    """The offset anchor is the mean of the last 4 (~20 min), so a lone whole-degC
+    spike is diluted rather than taken at face value (which swung the projected peak)."""
+    assert model._anchor_obs_now([95, 95, 95, 95]) == 95
+    assert model._anchor_obs_now([95, 95, 95, 99]) == 96.0     # a +4 spike -> +1 anchor
+    assert model._anchor_obs_now([80, 80, 95, 95, 95, 95]) == 95   # only the last 4
+    assert model._anchor_obs_now([90, 92]) == 91.0                 # fewer than 4 -> mean of all
