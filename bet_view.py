@@ -139,23 +139,23 @@ def render():
                       "Your actual current Kalshi cash balance, live from the API. "
                       "Unlike the trading chart below, this reflects deposits, "
                       "withdrawals, and open positions."), unsafe_allow_html=True)
-    c[1].markdown(_mc("Record (W–L)", f"{summ['wins']}–{summ['losses']}"),
-                  unsafe_allow_html=True)
-    c[2].markdown(_mc("Win rate", f"{summ['win_rate']:.0f}%"), unsafe_allow_html=True)
-    c[3].markdown(_mc("Avg % Return", f"{summ['roi']:+.2f}%",
-                      "Stake-weighted average return across your settled bets — total "
-                      "realized profit ÷ total staked. Buying near-certain contracts at "
-                      "high prices (e.g. 97¢) yields small per-trade returns even on wins."),
-                  unsafe_allow_html=True)
-    c[4].markdown(_mc("Avg % / Trade", f"{summ['avg_trade_return']:+.2f}%",
-                      "Simple (unweighted) average of each settled trade's own percent "
-                      "return — every trade counts equally, unlike the stake-weighted "
-                      "Avg % Return."), unsafe_allow_html=True)
-    c[5].markdown(_mc("Total % Gain", f"{summ['pct_gain']:+.0f}%",
+    c[1].markdown(_mc("Total % Gain", f"{summ['pct_gain']:+.0f}%",
                       f"Net realized profit as a percent of your starting bankroll "
                       f"(${bet_history.STARTING_BANKROLL:,.0f}) — e.g. +$20 on a "
                       f"${bet_history.STARTING_BANKROLL:,.0f} start = +200%."),
                   unsafe_allow_html=True)
+    c[2].markdown(_mc("Record (W–L)", f"{summ['wins']}–{summ['losses']}"),
+                  unsafe_allow_html=True)
+    c[3].markdown(_mc("Win rate", f"{summ['win_rate']:.0f}%"), unsafe_allow_html=True)
+    c[4].markdown(_mc("Avg % Return", f"{summ['roi']:+.2f}%",
+                      "Stake-weighted average return across your settled bets — total "
+                      "realized profit ÷ total staked. Buying near-certain contracts at "
+                      "high prices (e.g. 97¢) yields small per-trade returns even on wins."),
+                  unsafe_allow_html=True)
+    c[5].markdown(_mc("Avg % / Trade", f"{summ['avg_trade_return']:+.2f}%",
+                      "Simple (unweighted) average of each settled trade's own percent "
+                      "return — every trade counts equally, unlike the stake-weighted "
+                      "Avg % Return."), unsafe_allow_html=True)
 
     if curve:
         st.altair_chart(equity_chart(curve, market_view._chart_colors()["kalshi"]),
