@@ -787,7 +787,7 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                        "consensus, ~95% within ±2σ. Wider = more uncertain; this is "
                        "what turns the consensus into contract probabilities. It gets "
                        "inflated for day-ahead forecasts until the scoring log matures.")
-        locked_pct = int((1 - d["locked_ratio"]) * 100)
+        locked_pct = int(d.get("resolved", 1 - d["locked_ratio"]) * 100)
         c3.metric("Resolved", f"{locked_pct}%",
                   help="How much of the day's uncertainty is already settled by "
                        "observations. 100% ≈ the extreme has happened.")

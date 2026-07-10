@@ -28,7 +28,8 @@ from config import (BIN_HIGH, BIN_LOW, CACHE_TTL_SECONDS, CALM_WIND_MAX,
                     LEAD_SIGMA_INFLATION, LOW_LOCK_RISE, MAX_CLI_GAP,
                     PEAK_LOCK_DROP, TIMEZONE, bin_labels, lead_bucket)
 from settlement import (covers_extreme, local_day_bounds, observed_so_far,
-                        observed_so_far_robust, round_half_up)
+                        observed_so_far_robust, round_half_up,
+                        _HIGH_WINDOW, _LOW_WINDOW)
 from convective import convective_sigma
 import solar
 from sources import (open_meteo_ensemble, open_meteo_models, nws_forecast,
@@ -580,6 +581,7 @@ def predict_variable(series, obs_series, day, variable, now, calib,
                 if trust:
                     settle_shift = gap
                     settle_gap_std = 0.0
+    fullday_mean = sum(fullday) / len(fullday)  # unshifted (hourly-basis) forecast center
     if settle_shift:
         samples = [s + settle_shift for s in samples]
         fullday = [s + settle_shift for s in fullday]
@@ -588,6 +590,26 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     sigma_day_ahead = _day_ahead_sigma(fullday, calib_sigma)
     fullday_sd = _std(fullday)
     locked_ratio = min(1.0, _std(samples) / fullday_sd) if fullday_sd > 1e-6 else 0.0
+
+    # Monotonic "Resolved" for display (distinct from locked_ratio, which scales
+    # sigma). Built from ONLY monotonic inputs so it never falls through the day:
+    #   * the hard bound — observed_so_far only ratchets (up for the high, down for the
+    #     low), so Phi((observed - mean)/sigma) = the pure-forecast mass already ruled
+    #     out only ever grows; and
+    #   * time through the extreme's window — so a peak landing near the forecast still
+    #     resolves toward 100% as the window closes.
+    # Deliberately NOT tied to `locked`: that flag flickers (a late peak that exceeds an
+    # early false-lock un-locks it), which is exactly what dropped Resolved mid-day. The
+    # noisy `locked_ratio` (momentary ensemble agreement) is not used here either.
+    resolved = 0.0
+    if observed is not None and now is not None and fullday_sd > 1e-6:
+        below = _norm_cdf(observed, fullday_mean, fullday_sd)
+        collapse = below if variable == "high" else 1.0 - below
+        w0, w1 = _HIGH_WINDOW if variable == "high" else _LOW_WINDOW
+        lt = now.astimezone(TZ)
+        hr = lt.hour + lt.minute / 60.0
+        tprog = min(1.0, max(0.0, (hr - w0) / (w1 - w0)))
+        resolved = 1.0 - (1.0 - collapse) * (1.0 - tprog)
 
     # Lead-aware spread: an empirical per-lead sigma from the forward log wins
     # when available; otherwise inflate the day-ahead sigma by the interim factor
@@ -660,6 +682,7 @@ def predict_variable(series, obs_series, day, variable, now, calib,
         "sample_spread": round(_std(samples), 1),
         "sigma_used": round(sigma, 1),
         "locked_ratio": round(locked_ratio, 2),
+        "resolved": round(resolved, 2),
         "n_samples": len(samples),
         "observed_so_far": observed,
         "observed_continuous": observed_cont,
