@@ -131,20 +131,24 @@ def render():
         return
 
     c = st.columns(5)
-    c[0].metric("Balance", _fmt_usd(balance),
-                help="Your actual current Kalshi cash balance, live from the API. "
-                     "Unlike the trading chart below, this reflects deposits, "
-                     "withdrawals, and open positions.")
-    c[1].metric("Record (W–L)", f"{summ['wins']}–{summ['losses']}")
-    c[2].metric("Win rate", f"{summ['win_rate']:.0f}%")
-    c[3].metric("Avg % Return", f"{summ['roi']:+.0f}%",
-                help="Stake-weighted average return across your settled bets — total "
-                     "realized profit ÷ total staked. Buying near-certain contracts at "
-                     "high prices (e.g. 97¢) yields small per-trade returns even on wins.")
-    c[4].metric("Total % Gain", f"{summ['pct_gain']:+.0f}%",
-                help=f"Net realized profit as a percent of your starting bankroll "
-                     f"(${bet_history.STARTING_BANKROLL:,.0f}) — e.g. +$20 on a "
-                     f"${bet_history.STARTING_BANKROLL:,.0f} start = +200%.")
+    _mc = market_view.metric_card
+    c[0].markdown(_mc("Balance", _fmt_usd(balance),
+                      "Your actual current Kalshi cash balance, live from the API. "
+                      "Unlike the trading chart below, this reflects deposits, "
+                      "withdrawals, and open positions."), unsafe_allow_html=True)
+    c[1].markdown(_mc("Record (W–L)", f"{summ['wins']}–{summ['losses']}"),
+                  unsafe_allow_html=True)
+    c[2].markdown(_mc("Win rate", f"{summ['win_rate']:.0f}%"), unsafe_allow_html=True)
+    c[3].markdown(_mc("Avg % Return", f"{summ['roi']:+.0f}%",
+                      "Stake-weighted average return across your settled bets — total "
+                      "realized profit ÷ total staked. Buying near-certain contracts at "
+                      "high prices (e.g. 97¢) yields small per-trade returns even on wins."),
+                  unsafe_allow_html=True)
+    c[4].markdown(_mc("Total % Gain", f"{summ['pct_gain']:+.0f}%",
+                      f"Net realized profit as a percent of your starting bankroll "
+                      f"(${bet_history.STARTING_BANKROLL:,.0f}) — e.g. +$20 on a "
+                      f"${bet_history.STARTING_BANKROLL:,.0f} start = +200%."),
+                  unsafe_allow_html=True)
 
     if curve:
         st.altair_chart(equity_chart(curve, market_view._chart_colors()["kalshi"]),

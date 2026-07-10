@@ -213,9 +213,42 @@ def _inject_theme(name):
         # keep the zero-height JS-bridge component from adding vertical space
         ".st-key-wx_bridge,.st-key-wx_bridge iframe{height:0!important;min-height:0!important;"
         "margin:0!important;border:0!important;}\n"
+        # Custom metric card + hover/tap tooltip. Streamlit's native help= tooltip is
+        # hover-only (needs a long-press on touch) and its box runs off the right edge on
+        # phones; this bubble opens on hover OR a single tap (focusable), and its panel is
+        # width-capped + right-anchored so it wraps instead of clipping.
+        ".wxcard{background:var(--surface);border:1px solid var(--border);border-radius:12px;"
+        "padding:0.7rem 0.9rem 0.8rem;text-align:center;position:relative;}\n"
+        ".wxcard-l{font-weight:700;color:var(--muted);font-size:0.76rem;margin-bottom:0.1rem;}\n"
+        ".wxcard-v{font-size:1.55rem;color:var(--ink);overflow-wrap:anywhere;}\n"
+        ".wxq{position:absolute;top:5px;right:7px;width:16px;height:16px;line-height:15px;"
+        "border-radius:50%;background:var(--surface2);border:1px solid var(--border);"
+        "color:var(--muted);font-size:11px;font-weight:700;text-align:center;cursor:pointer;"
+        "user-select:none;outline:none;}\n"
+        ".wxq .wxqt{position:absolute;top:135%;right:0;z-index:1000;width:max-content;"
+        "max-width:min(260px,80vw);white-space:normal;text-align:left;background:var(--surface);"
+        "color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:0.5rem 0.65rem;"
+        "font-size:0.72rem;font-weight:500;line-height:1.35;box-shadow:0 6px 18px rgba(0,0,0,0.28);"
+        "opacity:0;visibility:hidden;transition:opacity 0.12s;}\n"
+        ".wxq:hover .wxqt,.wxq:focus .wxqt,.wxq:focus-within .wxqt{opacity:1;visibility:visible;}\n"
         "</style>",
         unsafe_allow_html=True,
     )
+
+
+def metric_card(label, value, help_text=None):
+    """A metric box as custom HTML (matches the stMetric look) with an optional info
+    bubble that opens on hover OR a single tap and never clips off the right edge —
+    Streamlit's native `help=` tooltip can't do tap-to-open on touch. Render with
+    `col.markdown(metric_card(...), unsafe_allow_html=True)`."""
+    import html as _h
+    q = ""
+    if help_text:
+        q = (f'<span class="wxq" tabindex="0" role="button" aria-label="{_h.escape(str(label))} info">'
+             f'?<span class="wxqt">{_h.escape(str(help_text))}</span></span>')
+    return (f'<div class="wxcard">{q}'
+            f'<div class="wxcard-l">{_h.escape(str(label))}</div>'
+            f'<div class="wxcard-v">{_h.escape(str(value))}</div></div>')
 
 
 def _chart_colors():
