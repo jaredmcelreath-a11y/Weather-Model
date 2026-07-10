@@ -45,17 +45,35 @@ def _load_bets():
 def equity_chart(curve, color):
     """Stock-chart-style line of account balance (x=date, y=total) starting from the
     bankroll, on a transparent background so it follows the palette, with a dashed
-    break-even rule at the starting bankroll."""
+    break-even rule at the starting bankroll. Tap/click a point to pin its readout —
+    mobile-friendly, since touch devices don't fire the hover events Vega tooltips need
+    (same tap-to-pin pattern as the consensus chart)."""
     df = pd.DataFrame(curve)
-    line = (alt.Chart(df).mark_line(point=True, strokeWidth=2.5, color=color)
-            .encode(x=alt.X("date:T", title=None),
-                    y=alt.Y("total:Q", title="Trading balance ($)",
-                            scale=alt.Scale(zero=False)),
-                    tooltip=[alt.Tooltip("date:T", title="date"),
-                             alt.Tooltip("total:Q", title="balance", format="$.2f")]))
-    base = alt.Chart(pd.DataFrame({"y": [bet_history.STARTING_BANKROLL]})).mark_rule(
+    labels = df.assign(label=df.apply(
+        lambda r: f"{pd.to_datetime(r['date']).strftime('%b %-d')}\n${r['total']:.2f}",
+        axis=1))
+    enc = alt.Chart(df).encode(
+        x=alt.X("date:T", title=None),
+        y=alt.Y("total:Q", title="Trading balance ($)", scale=alt.Scale(zero=False)))
+    line = enc.mark_line(strokeWidth=2.5, color=color)
+
+    pick = alt.selection_point(on="click", nearest=True, fields=["date"],
+                               empty=False, clear="dblclick")
+    dots = enc.mark_point(filled=True, opacity=1, color=color).encode(
+        size=alt.condition(pick, alt.value(150), alt.value(60)),
+        tooltip=[alt.Tooltip("date:T", title="date"),
+                 alt.Tooltip("total:Q", title="balance", format="$.2f")],
+    ).add_params(pick)
+    # Pinned readout for the tapped point, anchored top-left so it never clips off the
+    # right edge; one line per field (lineBreak) keeps the full readout in view.
+    pinned = alt.Chart(labels).mark_text(
+        align="left", baseline="top", x=6, y=4, fontSize=13, fontWeight="bold",
+        lineBreak="\n", lineHeight=15, color=color,
+    ).encode(text="label:N").transform_filter(pick)
+
+    rule = alt.Chart(pd.DataFrame({"y": [bet_history.STARTING_BANKROLL]})).mark_rule(
         strokeDash=[4, 4], opacity=0.5).encode(y="y:Q")
-    return ((base + line).properties(height=260, background="transparent")
+    return ((rule + line + dots + pinned).properties(height=260, background="transparent")
             .configure_view(fill=None, strokeWidth=0))
 
 

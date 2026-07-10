@@ -27,10 +27,13 @@ def test_equity_chart_encodes_date_and_total():
     curve = [{"date": date(2026, 6, 23), "total": 5.8},
              {"date": date(2026, 6, 24), "total": 0.8}]
     spec = bet_view.equity_chart(curve, color="#7FD3A2").to_dict()
-    # equity_chart layers a zero-baseline rule under the P&L line, so per
-    # Vega-Lite the x/y encodings live on the individual layers, not hoisted
-    # to the top level. x is the date field, y is the cumulative total field
-    # on the line layer (the last layer, drawn on top of the zero rule).
-    line_encoding = spec["layer"][-1]["encoding"]
-    assert line_encoding["x"]["field"] == "date"
-    assert line_encoding["y"]["field"] == "total"
+    # equity_chart layers a zero-baseline rule, the balance line, tappable dots, and a
+    # pinned tap-to-read label. The date/total encoding lives on the line + dots layers
+    # (the rule and the pixel-anchored text label don't carry an x field).
+    dated = [L for L in spec["layer"]
+             if L.get("encoding", {}).get("x", {}).get("field") == "date"]
+    assert dated, "expected a layer encoding date on x"
+    assert dated[0]["encoding"]["y"]["field"] == "total"
+    # a click selection drives the tap-to-pin readout (mobile: no hover needed)
+    assert any(isinstance(p.get("select"), dict) and p["select"].get("on") == "click"
+               for p in spec.get("params", []))
