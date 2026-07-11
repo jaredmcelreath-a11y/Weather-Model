@@ -975,19 +975,16 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                     continue
                 vol = (h_win * (1 - h_win)) ** 0.5 or 1e-9
                 holds.append((h_edge / vol, c["label"], h_side, h_win, h_ask, h_edge))
-            # Spread + exit plan for the recommended side: flip for +20% only when
-            # the bid-ask spread is tight enough to reach it, else hold to settle.
-            spread = plan = "—"
+            # Spread on the recommended side (the round-trip cost if you ever sell early).
+            spread = "—"
             if edge_yes >= edge_no and edge_yes > 0.03:
                 signal = f"BUY YES +{edge_yes*100:.0f}"
                 picks.append((c["label"], "YES", p, ya, edge_yes, yb))
                 spread = cents(spread_c(ya, yb))
-                plan = exit_plan(ya, yb)
             elif edge_no > 0.03:
                 signal = f"BUY NO +{edge_no*100:.0f}"
                 picks.append((c["label"], "NO", 1 - p, na, edge_no, nb))
                 spread = cents(spread_c(na, nb))
-                plan = exit_plan(na, nb)
             else:
                 signal = "—"
             rows.append({
@@ -998,18 +995,12 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                 "Spread": spread,
                 "Last": cents(c["last"]),
                 "Signal": signal,
-                "Exit Plan": plan,
             })
-        _html_table(pd.DataFrame(rows), buy_cols=("Signal",),
-                    hold_col="Exit Plan", hold_val="hold to settle", container=mbox)
+        _html_table(pd.DataFrame(rows), buy_cols=("Signal",), container=mbox)
         mbox.caption("model % = model's YES probability for that contract. "
                      "signal = buy side with >3pp edge vs the ask. "
-                     "spread = ask − bid on the signal's side: how far the bid must "
-                     "climb just to break even on a flip. "
-                     "exit plan = 'flip @ X' when the spread is tight enough to sell "
-                     "for +20%, else 'hold to settle' (where the spread costs nothing). "
-                     "A contract shown in red is too wide-spread to flip — hold it to "
-                     f"settlement. Prices in ¢, live from {adapter.name} (refreshes ~30s).")
+                     "spread = ask − bid on the signal's side (the round-trip cost if you "
+                     f"ever sell early). Prices in ¢, live from {adapter.name} (refreshes ~30s).")
 
         # Your open positions in THIS market (variable + day), marked to the live bid,
         # with the model's current probability for each. Hidden when you hold none here
