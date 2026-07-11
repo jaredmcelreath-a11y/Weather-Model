@@ -120,6 +120,8 @@ def _inject_theme(name):
         ".st-key-top_metrics .wxqt,[class*=\"st-key-mini_\"] .wxqt"
         "{position:fixed!important;left:8px!important;right:8px!important;bottom:auto!important;"
         "top:7rem!important;width:auto!important;max-width:none!important;}"
+        # the History page has no High/Low bar to clear, so its tooltip sits nearer the top
+        ".stApp:not(:has(.wx-toggle-bar)) .st-key-top_metrics .wxqt{top:3.5rem!important;}"
         # keep the page title on one line on phones
         ".stApp h1{font-size:1.7rem!important;}"
         # pin the switcher to the viewport top. position:sticky doesn't hold inside
