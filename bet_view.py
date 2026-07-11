@@ -258,8 +258,8 @@ def render():
                            unsafe_allow_html=True)
             market_view._html_table(pd.DataFrame([{
                 label_col: e["label"].strftime(datefmt),
-                "% Gain": f"{e['pct'] * 100:+.1f}%",
                 "Portfolio %": f"{e['port_pct'] * 100:+.1f}%",
+                "% Gain": f"{e['pct'] * 100:+.1f}%",
                 "Gain": _fmt_pnl(e["gain"]),
                 total_col: _fmt_usd(e["total"]),
             } for e in reversed(entries)]))   # most recent period first
