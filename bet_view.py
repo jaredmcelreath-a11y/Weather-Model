@@ -200,9 +200,9 @@ def render():
             "Qty": f"{r['qty']:.2f}",
             "Volume": _fmt_usd(volume),
             "Model @ bet": model,
-            "Settled": ("open" if r["status"] == "open"
-                        else "sold" if r["status"] == "closed"
-                        else r["result"].upper()),
+            "Settled": ("Open" if r["status"] == "open"
+                        else "Sold" if r["status"] == "closed"
+                        else r["result"].capitalize()),
             "P&L": pnl_cell,
         })
     with st.expander("Trade history", expanded=True):
