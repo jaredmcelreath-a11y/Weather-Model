@@ -92,27 +92,42 @@ def build_rows(fills: list[dict], settlements: dict, meta: dict) -> list[dict]:
     return rows
 
 
+def _pnl_mtm(r: dict):
+    """A bet's P&L: realized once settled/sold, else marked to market from its live
+    `current_value` (None if an open bet has no live price yet)."""
+    if r["status"] in ("settled", "closed"):
+        return r["pnl"]
+    if r.get("current_value") is not None and r["entry"] is not None:
+        return r["qty"] * (r["current_value"] - r["entry"])
+    return None
+
+
 def summary(rows: list[dict]) -> dict:
-    # 'settled' here = every REALIZED bet — held to settlement OR closed early by selling.
-    settled = [r for r in rows if r["status"] in ("settled", "closed")]
-    wins = sum(1 for r in settled if r["pnl"] > 0)
-    losses = sum(1 for r in settled if r["pnl"] <= 0)
-    net_pnl = sum(r["pnl"] for r in settled)
-    staked = sum(r["staked"] for r in settled)
-    annotated = [r for r in settled if r.get("agree") is not None]
+    # Realized = held to settlement OR closed early by selling. Wins/losses/win-rate are
+    # realized-only (an open bet hasn't won or lost yet). The %-gain figures, however, are
+    # marked to market — they include open positions' live unrealized P&L (gain OR loss),
+    # so they move with the market like Kalshi's portfolio total.
+    realized = [r for r in rows if r["status"] in ("settled", "closed")]
+    wins = sum(1 for r in realized if r["pnl"] > 0)
+    losses = sum(1 for r in realized if r["pnl"] <= 0)
+    graded = [r for r in rows if _pnl_mtm(r) is not None]   # realized + open marked-to-market
+    net_pnl = sum(_pnl_mtm(r) for r in graded)
+    staked = sum(r["staked"] for r in graded)
+    annotated = [r for r in realized if r.get("agree") is not None]
     with_model = sum(1 for r in annotated if r["agree"])
-    # Simple (unweighted) mean of each trade's own % return — every settled trade counts
-    # equally, unlike `roi` which is stake-weighted (total profit / total staked).
-    per_trade = [100.0 * r["pnl"] / r["staked"] for r in settled if r["staked"]]
+    # Simple (unweighted) mean of each bet's own % return — every bet counts equally,
+    # unlike `roi` which is stake-weighted (total profit / total staked).
+    per_trade = [100.0 * _pnl_mtm(r) / r["staked"] for r in graded if r["staked"]]
     avg_trade_return = (sum(per_trade) / len(per_trade)) if per_trade else 0.0
     return {
-        "n_settled": len(settled), "wins": wins, "losses": losses,
-        "win_rate": (100.0 * wins / len(settled)) if settled else 0.0,
-        "net_pnl": net_pnl, "staked": staked,
+        "n_settled": len(realized), "wins": wins, "losses": losses,
+        "win_rate": (100.0 * wins / len(realized)) if realized else 0.0,
+        "net_pnl": net_pnl, "realized_pnl": sum(r["pnl"] for r in realized),
+        "staked": staked,
         "roi": (100.0 * net_pnl / staked) if staked else 0.0,
         "avg_trade_return": avg_trade_return,
-        # Account growth: net realized profit as a percent of the starting bankroll
-        # (e.g. +$20 on a $10 start = +200%).
+        # Account growth: profit (realized + open marked to market) as a percent of the
+        # starting bankroll (e.g. +$20 on a $10 start = +200%).
         "pct_gain": 100.0 * net_pnl / STARTING_BANKROLL if STARTING_BANKROLL else 0.0,
         "with_model_pct": (100.0 * with_model / len(annotated)) if annotated else None,
     }

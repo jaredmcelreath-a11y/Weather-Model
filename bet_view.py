@@ -37,9 +37,13 @@ def _load_bets():
     for r in rows:
         if r["status"] == "open":
             r["current_value"] = kalshi_portfolio.market_price(r["ticker"], r["side"])
+    # Portfolio value = cash + the live market value of open positions (qty × current
+    # bid), matching Kalshi's portfolio total — so it doesn't drop when you place a bet.
+    open_mv = sum(r["qty"] * r["current_value"] for r in rows
+                  if r["status"] == "open" and r.get("current_value") is not None)
+    portfolio = (kalshi_portfolio.balance() or 0.0) + open_mv
     return (rows, bet_history.summary(rows),
-            bet_history.equity_curve_live(rows, date.today()),
-            kalshi_portfolio.balance())
+            bet_history.equity_curve_live(rows, date.today()), portfolio)
 
 
 def equity_chart(curve, color):
@@ -130,56 +134,34 @@ def render():
         st.caption(f"No Dallas-temp bets found since {bet_history.BETS_START:%b %-d, %Y}.")
         return
 
-    # === TEMP DEBUG (remove after diagnosing the remaining gap) ====================
-    with st.expander("🔧 debug: classification + open fills"):
-        try:
-            from collections import defaultdict as _dd
-            from sources import kalshi_portfolio as _kp
-            _bk = bet_history.STARTING_BANKROLL
-            _real = sum(r["pnl"] for r in rows
-                        if r["status"] in ("settled", "closed") and r["pnl"] is not None)
-            st.write(f"realized ${_real:.2f} = {100 * _real / _bk:.1f}%  |  "
-                     f"open={sum(1 for r in rows if r['status'] == 'open')} "
-                     f"closed={sum(1 for r in rows if r['status'] == 'closed')} "
-                     f"settled={sum(1 for r in rows if r['status'] == 'settled')}")
-            _fbt = _dd(list)
-            for _f in _kp.fills(bet_history.BETS_START):
-                _fbt[_f["ticker"]].append(_f)
-            for r in rows:
-                if r["status"] == "open":
-                    st.write(f"**OPEN** {r['ticker']} qty={r['qty']:.2f} staked=${r['staked']:.2f}")
-                    st.write([{k: f.get(k) for k in ("action", "side", "count", "price")}
-                              for f in _fbt.get(r["ticker"], [])])
-        except Exception as _e:
-            st.write("debug error:", repr(_e))
-    # === END TEMP DEBUG =============================================================
 
     # keyed 'top_metrics' so the same mobile CSS grids these 2-per-row (like the Forecast
     # page) instead of stacking; columns created in the container, filled just after.
     with st.container(key="top_metrics"):
         c = st.columns(6)
     _mc = market_view.metric_card
-    c[0].markdown(_mc("Balance", _fmt_usd(balance),
-                      "Your actual current Kalshi cash balance, live from the API. "
-                      "Unlike the trading chart below, this reflects deposits, "
-                      "withdrawals, and open positions."), unsafe_allow_html=True)
+    c[0].markdown(_mc("Portfolio", _fmt_usd(balance),
+                      "Your live Kalshi portfolio value — cash plus the current market "
+                      "value of open positions (marked to market), matching Kalshi's "
+                      "portfolio total. It doesn't drop when you place a bet, and it moves "
+                      "as bids change."), unsafe_allow_html=True)
     c[1].markdown(_mc("Total % Gain", f"{summ['pct_gain']:+.0f}%",
-                      f"Net realized profit as a percent of your starting bankroll "
-                      f"(${bet_history.STARTING_BANKROLL:,.0f}) — e.g. +$20 on a "
-                      f"${bet_history.STARTING_BANKROLL:,.0f} start = +200%."),
+                      f"Total profit — realized plus open positions marked to market "
+                      f"(their live gain/loss) — as a percent of your starting bankroll "
+                      f"(${bet_history.STARTING_BANKROLL:,.0f}). Moves with the market."),
                   unsafe_allow_html=True)
     c[2].markdown(_mc("Record (W–L)", f"{summ['wins']}–{summ['losses']}"),
                   unsafe_allow_html=True)
     c[3].markdown(_mc("Win rate", f"{summ['win_rate']:.0f}%"), unsafe_allow_html=True)
     c[4].markdown(_mc("Avg % Return", f"{summ['roi']:+.2f}%",
-                      "Stake-weighted average return across your settled bets — total "
-                      "realized profit ÷ total staked. Buying near-certain contracts at "
-                      "high prices (e.g. 97¢) yields small per-trade returns even on wins."),
+                      "Stake-weighted return — total profit (realized + open marked to "
+                      "market) ÷ total staked. Buying near-certain contracts at high "
+                      "prices (e.g. 97¢) yields small per-trade returns even on wins."),
                   unsafe_allow_html=True)
     c[5].markdown(_mc("Avg % / Trade", f"{summ['avg_trade_return']:+.2f}%",
-                      "Simple (unweighted) average of each settled trade's own percent "
-                      "return — every trade counts equally, unlike the stake-weighted "
-                      "Avg % Return."), unsafe_allow_html=True)
+                      "Simple (unweighted) average of each bet's own percent return "
+                      "(realized, or open marked to market) — every bet counts equally, "
+                      "unlike the stake-weighted Avg % Return."), unsafe_allow_html=True)
 
     if curve:
         st.altair_chart(equity_chart(curve, market_view._chart_colors()["kalshi"]),
@@ -187,9 +169,9 @@ def render():
         st.caption(f"Trading performance: your ${bet_history.STARTING_BANKROLL:,.0f} "
                    "starting bankroll plus realized P&L on settled bets, and a final "
                    "**live** point that adds open positions' current unrealized P&L — so "
-                   "the last point moves with the market. Not your account balance (it "
-                   "excludes deposits, withdrawals, and fees); see **Balance** above for "
-                   "actual Kalshi cash.")
+                   "the last point moves with the market. Not your account value (it "
+                   "excludes deposits, withdrawals, and fees); see **Portfolio** above for "
+                   "your live Kalshi total.")
     else:
         st.caption("The equity curve appears once a bet settles.")
 

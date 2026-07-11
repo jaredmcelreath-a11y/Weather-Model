@@ -210,3 +210,24 @@ def test_cross_side_sell_close_is_realized():
     # realized at the dominant (yes) 0.99 price: 3.24*0.99 - 3.24*0.60 = +1.26
     assert round(r["pnl"], 2) == 1.26
     assert round(bh.summary(rows)["net_pnl"], 2) == 1.26
+
+
+def test_summary_marks_open_positions_to_market():
+    # A settled win (+5.80) plus an OPEN position marked to market (+1.00 unrealized).
+    fills = [
+        _fill("t1", "KXHIGHTDAL-26JUN22-B97", "yes", "buy", 10, 0.42, 22),   # settled +5.80
+        _fill("t2", "KXHIGHTDAL-26JUN23-B99", "yes", "buy", 5, 0.40, 23),    # open
+    ]
+    settlements = {"KXHIGHTDAL-26JUN22-B97":
+                   {"result": "yes", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc),
+                    "revenue": 10.0}}
+    rows = bh.build_rows(fills, settlements, META)
+    for r in rows:
+        if r["status"] == "open":
+            r["current_value"] = 0.60          # entry 0.40 × qty 5 -> +$1.00 unrealized
+    s = bh.summary(rows)
+    assert round(s["net_pnl"], 2) == 6.80      # realized 5.80 + open MTM 1.00
+    assert round(s["realized_pnl"], 2) == 5.80
+    assert round(s["pct_gain"], 0) == 68       # 6.80 / $10 bankroll
+    # win/loss + record stay realized-only (the open bet hasn't won or lost yet)
+    assert s["wins"] == 1 and s["losses"] == 0 and s["n_settled"] == 1
