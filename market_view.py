@@ -254,6 +254,11 @@ def _inject_theme(name):
         # with no way to dismiss it.
         ".wxq:focus ~ .wxqt,.wxcard:focus-within .wxqt{opacity:1;visibility:visible;}\n"
         "@media (hover:hover){.wxq:hover ~ .wxqt{opacity:1;visibility:visible;}}\n"
+        # Vega chart tooltips (the dark #vg-tooltip-element box) are hover-driven and never
+        # get a mouseout on touch, so a tap left them stuck over the page with no way to
+        # dismiss. Hide them on touch devices — the in-chart tap-to-pin 'pinned' readout is
+        # the mobile path; desktop keeps the hover tooltip.
+        "@media (hover:none){#vg-tooltip-element{display:none!important;}}\n"
         # desktop: the leftmost top-metrics card (Current Temp / Balance) would extend its
         # tooltip left into the sidebar/screen edge — anchor that one to extend right.
         ".st-key-top_metrics [data-testid=\"stColumn\"]:first-child .wxqt"
