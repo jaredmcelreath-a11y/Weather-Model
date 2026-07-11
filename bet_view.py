@@ -229,6 +229,37 @@ def render():
             if not entries:
                 st.caption("No settled trades yet.")
                 continue
+            ps = bet_history.period_summary(entries, summ["pct_gain"])
+            noun = {"day": "day", "week": "week", "month": "month"}[period]
+            plural = noun + ("" if ps["count"] == 1 else "s")
+            with st.container(key=f"period_metrics_{period}"):
+                pc = st.columns(6)
+            pc[0].markdown(_mc(f"{noun.capitalize()}s", f"{ps['count']} {plural}",
+                               f"How many {plural} have settled trades — the "
+                               f"denominator for the averages here."),
+                           unsafe_allow_html=True)
+            pc[1].markdown(_mc(f"Avg $ / {noun}", _fmt_pnl(ps["avg_gain"]),
+                               f"Realized profit per {noun}: total realized gain "
+                               f"across these {plural} ÷ their count."),
+                           unsafe_allow_html=True)
+            pc[2].markdown(_mc("Avg %", f"{ps['avg_pct'] * 100:+.1f}%",
+                               f"Unweighted mean of each {noun}'s % Gain (its realized "
+                               f"profit ÷ what you staked that {noun}); every {noun} "
+                               f"counts equally."), unsafe_allow_html=True)
+            pc[3].markdown(_mc("Green rate", f"{ps['green_rate'] * 100:.0f}%",
+                               f"Share of {plural} that finished profitable — "
+                               f"{ps['green_count']} of {ps['count']} {plural}."),
+                           unsafe_allow_html=True)
+            pc[4].markdown(_mc("Best / Worst",
+                               f"{_fmt_pnl(ps['best_gain'])} / {_fmt_pnl(ps['worst_gain'])}",
+                               f"The single best and worst {noun}'s realized $ gain."),
+                           unsafe_allow_html=True)
+            pc[5].markdown(_mc("Portfolio %", f"{ps['pct_gain']:+.0f}%",
+                               "Total profit as a percent of your starting bankroll — "
+                               "marked to market (includes open positions' live P&L), so "
+                               "it matches the Total % Gain card up top and is the same "
+                               "on every tab. The cards to its left are realized-only."),
+                           unsafe_allow_html=True)
             market_view._html_table(pd.DataFrame([{
                 label_col: e["label"].strftime(datefmt),
                 "% Gain": f"{e['pct'] * 100:+.1f}%",

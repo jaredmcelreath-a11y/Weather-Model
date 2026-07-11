@@ -257,3 +257,33 @@ def test_period_table_daily_weekly_monthly():
     monthly = bh.period_table(rows, "month")
     assert len(monthly) == 1 and monthly[0]["label"] == _d(2026, 6, 1)
     assert round(monthly[0]["gain"], 2) == 8.00 and round(monthly[0]["total"], 2) == 18.00
+
+
+def test_period_summary_over_multiple_periods():
+    # Three periods: a win, a flat $0 (not green), and a loss.
+    entries = [
+        {"label": date(2026, 6, 22), "pct": 0.20, "gain": 4.0, "total": 14.0},
+        {"label": date(2026, 6, 23), "pct": 0.00, "gain": 0.0, "total": 14.0},
+        {"label": date(2026, 6, 24), "pct": -0.10, "gain": -2.0, "total": 12.0},
+    ]
+    s = bh.period_summary(entries, 180.0)
+    assert s["count"] == 3
+    assert round(s["avg_gain"], 4) == round((4.0 + 0.0 - 2.0) / 3, 4)
+    assert round(s["avg_pct"], 4) == round((0.20 + 0.00 - 0.10) / 3, 4)
+    assert s["green_count"] == 1                      # flat $0 is NOT green
+    assert round(s["green_rate"], 4) == round(1 / 3, 4)
+    assert s["best_gain"] == 4.0 and s["worst_gain"] == -2.0
+    assert s["pct_gain"] == 180.0                     # passthrough, marked-to-market
+
+
+def test_period_summary_single_period():
+    entries = [{"label": date(2026, 6, 22), "pct": 0.05, "gain": 1.5, "total": 11.5}]
+    s = bh.period_summary(entries, 15.0)
+    assert s["count"] == 1
+    assert s["best_gain"] == s["worst_gain"] == 1.5
+    assert s["green_count"] == 1 and s["green_rate"] == 1.0
+    assert round(s["avg_gain"], 4) == 1.5 and round(s["avg_pct"], 4) == 0.05
+
+
+def test_period_summary_empty_returns_none():
+    assert bh.period_summary([], 0.0) is None
