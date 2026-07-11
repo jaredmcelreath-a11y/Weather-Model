@@ -96,9 +96,11 @@ def _inject_theme(name):
         # phones: grid the 6 top metric boxes 2-per-row instead of stacking them
         # one-per-row (desktop keeps the 6-across row — this only fires ≤640px).
         "@media (max-width:640px){"
-        ".st-key-top_metrics [data-testid=\"stHorizontalBlock\"]"
+        ".st-key-top_metrics [data-testid=\"stHorizontalBlock\"],"
+        "[class*=\"st-key-period_metrics_\"] [data-testid=\"stHorizontalBlock\"]"
         "{flex-wrap:wrap!important;gap:0.8rem!important;}"
-        ".st-key-top_metrics [data-testid=\"stColumn\"]"
+        ".st-key-top_metrics [data-testid=\"stColumn\"],"
+        "[class*=\"st-key-period_metrics_\"] [data-testid=\"stColumn\"]"
         "{flex:1 1 47%!important;min-width:47%!important;width:47%!important;}"
         # keep the High/Low Consensus/Spread/Resolved trio on one row on phones
         "[class*=\"st-key-mini_\"] [data-testid=\"stHorizontalBlock\"]"
@@ -117,11 +119,14 @@ def _inject_theme(name):
         # On phones these metrics sit in multi-column grids, where a card-relative tooltip
         # runs off the left/right screen edge. Pin it to a fixed full-width bottom sheet
         # (8px insets) so it always stays fully on-screen, whichever box you tap.
-        ".st-key-top_metrics .wxqt,[class*=\"st-key-mini_\"] .wxqt"
+        ".st-key-top_metrics .wxqt,[class*=\"st-key-mini_\"] .wxqt,"
+        "[class*=\"st-key-period_metrics_\"] .wxqt"
         "{position:fixed!important;left:8px!important;right:8px!important;bottom:auto!important;"
         "top:7rem!important;width:auto!important;max-width:none!important;}"
         # the History page has no High/Low bar to clear, so its tooltip sits nearer the top
-        ".stApp:not(:has(.wx-toggle-bar)) .st-key-top_metrics .wxqt{top:3.5rem!important;}"
+        ".stApp:not(:has(.wx-toggle-bar)) .st-key-top_metrics .wxqt,"
+        ".stApp:not(:has(.wx-toggle-bar)) [class*=\"st-key-period_metrics_\"] .wxqt"
+        "{top:3.5rem!important;}"
         # keep the page title on one line on phones
         ".stApp h1{font-size:1.7rem!important;}"
         # pin the switcher to the viewport top. position:sticky doesn't hold inside

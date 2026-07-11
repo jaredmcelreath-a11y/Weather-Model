@@ -205,6 +205,30 @@ def period_table(rows: list[dict], period: str) -> list[dict]:
     return out
 
 
+def period_summary(entries: list[dict], pct_gain: float) -> dict | None:
+    """Per-tab summary stats over the `period_table` output. `entries` is that list
+    ({label, pct, gain, total}); `pct_gain` is the marked-to-market total % from
+    `summary()`, passed straight through so the "Portfolio %" card matches the
+    top-of-page metric. Cards 1-5 are realized-only (like `entries` itself); a period
+    is "green" only when gain > 0 (a flat $0 counts as not-green, matching the
+    losses = pnl <= 0 convention in `summary`). Returns None for an empty table."""
+    if not entries:
+        return None
+    gains = [e["gain"] for e in entries]
+    n = len(entries)
+    green = sum(1 for g in gains if g > 0)
+    return {
+        "count": n,
+        "avg_gain": sum(gains) / n,
+        "avg_pct": sum(e["pct"] for e in entries) / n,
+        "green_count": green,
+        "green_rate": green / n,
+        "best_gain": max(gains),
+        "worst_gain": min(gains),
+        "pct_gain": pct_gain,
+    }
+
+
 def _phi(x: float, mu: float, sigma: float) -> float:
     """Normal CDF Φ((x−mu)/sigma) via erf (no scipy dependency)."""
     if sigma <= 0:
