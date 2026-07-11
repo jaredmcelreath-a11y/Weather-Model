@@ -179,10 +179,12 @@ def equity_curve_live(rows: list[dict], today) -> list[dict]:
 
 
 def period_table(rows: list[dict], period: str) -> list[dict]:
-    """Realized P&L aggregated by 'day', 'week' (Monday-start), or 'month'. One entry per
-    period, oldest→newest: {label(date), pct = period gain / period staked, gain ($),
+    """P&L aggregated by 'day', 'week' (Monday-start), or 'month'. One entry per period,
+    oldest→newest: {label(date), pct = period gain / period staked, gain ($),
     total = running end-of-period balance from the $STARTING_BANKROLL base}. Dated by the
-    WEATHER day (same as the equity curve), realized bets only (settled or sold)."""
+    WEATHER day (same as the equity curve). Includes realized bets (settled or sold) AND
+    open positions marked to market (via `_pnl_mtm`), so today's still-open trades show up
+    as the current period — an open bet with no live price yet is skipped."""
     def bucket(d: date) -> date:
         if period == "week":
             return d - timedelta(days=d.weekday())
@@ -192,12 +194,18 @@ def period_table(rows: list[dict], period: str) -> list[dict]:
 
     agg: dict = {}
     for r in rows:
-        if r["status"] not in ("settled", "closed"):
+        pnl = _pnl_mtm(r)
+        if pnl is None:                              # open with no live price -> can't place
             continue
         td = _ticker_date(r["ticker"])
-        d = date.fromisoformat(td) if td else r["settled_ts"].date()
+        if td:
+            d = date.fromisoformat(td)
+        elif r["settled_ts"]:
+            d = r["settled_ts"].date()
+        else:
+            continue                                 # open + unparsable ticker -> can't date
         b = agg.setdefault(bucket(d), [0.0, 0.0])   # [gain, staked]
-        b[0] += r["pnl"]
+        b[0] += pnl
         b[1] += r["staked"]
     out, total = [], STARTING_BANKROLL
     for k in sorted(agg):

@@ -227,7 +227,7 @@ def render():
         with tab:
             entries = bet_history.period_table(rows, period)
             if not entries:
-                st.caption("No settled trades yet.")
+                st.caption("No trades yet.")
                 continue
             ps = bet_history.period_summary(entries, summ["pct_gain"])
             noun = {"day": "day", "week": "week", "month": "month"}[period]
@@ -235,26 +235,26 @@ def render():
             with st.container(key=f"period_metrics_{period}"):
                 pc = st.columns(6)
             pc[0].markdown(_mc(f"{noun.capitalize()}s", f"{ps['count']} {plural}",
-                               f"How many {plural} have settled trades — the "
-                               f"denominator for the averages here."),
+                               f"How many {plural} have trades (realized or still open) — "
+                               f"the denominator for the averages here."),
                            unsafe_allow_html=True)
             pc[1].markdown(_mc(f"Avg $ / {noun}", _fmt_pnl(ps["avg_gain"]),
-                               f"Realized profit per {noun}: total realized gain "
-                               f"across these {plural} ÷ their count."),
+                               f"Profit per {noun}: total gain across these {plural} ÷ "
+                               f"their count. Includes open positions marked to market."),
                            unsafe_allow_html=True)
             pc[2].markdown(_mc("Avg %", f"{ps['avg_pct'] * 100:+.1f}%",
-                               f"Unweighted mean of each {noun}'s % Gain (its realized "
-                               f"profit ÷ what you staked that {noun}); every {noun} "
-                               f"counts equally."), unsafe_allow_html=True)
+                               f"Unweighted mean of each {noun}'s % Gain (its profit ÷ "
+                               f"what you staked that {noun}); every {noun} counts equally. "
+                               f"Open positions marked to market."), unsafe_allow_html=True)
             pc[3].markdown(_mc("Green rate", f"{ps['green_rate'] * 100:.0f}%",
-                               f"Share of {plural} that finished profitable — "
-                               f"{ps['green_count']} of {ps['count']} {plural}."),
+                               f"Share of {plural} in the green — {ps['green_count']} of "
+                               f"{ps['count']} {plural} (open periods marked to market)."),
                            unsafe_allow_html=True)
             pc[4].markdown(_mc("Best", _fmt_pnl(ps["best_gain"]),
-                               f"The single best {noun}'s realized $ gain."),
+                               f"The single best {noun}'s $ gain (open marked to market)."),
                            unsafe_allow_html=True)
             pc[5].markdown(_mc("Worst", _fmt_pnl(ps["worst_gain"]),
-                               f"The single worst {noun}'s realized $ gain."),
+                               f"The single worst {noun}'s $ gain (open marked to market)."),
                            unsafe_allow_html=True)
             market_view._html_table(pd.DataFrame([{
                 label_col: e["label"].strftime(datefmt),
@@ -262,7 +262,8 @@ def render():
                 "Gain": _fmt_pnl(e["gain"]),
                 total_col: _fmt_usd(e["total"]),
             } for e in reversed(entries)]))   # most recent period first
-    st.caption(f"Each period's **% Gain** is that period's realized profit ÷ what you "
-               f"staked in it; the running **Total** is your "
-               f"${bet_history.STARTING_BANKROLL:,.0f} bankroll plus cumulative realized "
-               f"gain (like the chart above — excludes deposits and open positions).")
+    st.caption(f"Each period's **% Gain** is that period's profit ÷ what you staked in it; "
+               f"the running **Total** is your ${bet_history.STARTING_BANKROLL:,.0f} "
+               f"bankroll plus cumulative gain. Includes open positions marked to market "
+               f"(so today's still-open trades show as the current period, live) — excludes "
+               f"deposits, withdrawals, and fees.")

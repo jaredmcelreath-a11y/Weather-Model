@@ -252,6 +252,34 @@ def test_summary_marks_open_positions_to_market():
     assert s["wins"] == 1 and s["losses"] == 0 and s["n_settled"] == 1
 
 
+def test_period_table_includes_open_positions_marked_to_market():
+    # A settled bet (Jun 22, +5.00) plus an OPEN bet for Jun 24 must BOTH appear. The open
+    # period is dated by its weather day (not settled yet) and its gain is unrealized MTM.
+    fills = [
+        _fill("t1", "KXHIGHTDAL-26JUN22-B97", "yes", "buy", 10, 0.50, 22),   # settled +5.00
+        _fill("t2", "KXHIGHTDAL-26JUN24-B99", "yes", "buy", 5, 0.40, 24),    # open
+    ]
+    stl = {"KXHIGHTDAL-26JUN22-B97":
+           {"result": "yes", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc), "revenue": 10.0}}
+    rows = bh.build_rows(fills, stl, META)
+    for r in rows:
+        if r["status"] == "open":
+            r["current_value"] = 0.60          # entry 0.40 × qty 5 -> +$1.00 unrealized
+    daily = bh.period_table(rows, "day")
+    by = {d["label"].isoformat(): d for d in daily}
+    assert "2026-06-24" in by                   # today's OPEN trade now shows up
+    assert round(by["2026-06-24"]["gain"], 2) == 1.00
+    assert round(by["2026-06-22"]["gain"], 2) == 5.00
+    assert round(daily[-1]["total"], 2) == 16.00   # 10 bankroll + 5 realized + 1 open MTM
+
+
+def test_period_table_skips_open_without_live_price():
+    # An open bet with no current_value can't be marked to market -> excluded (no crash).
+    fills = [_fill("t2", "KXHIGHTDAL-26JUN24-B99", "yes", "buy", 5, 0.40, 24)]
+    rows = bh.build_rows(fills, {}, META)          # open, no current_value set
+    assert bh.period_table(rows, "day") == []
+
+
 def test_period_table_daily_weekly_monthly():
     fills = [
         _fill("a", "KXHIGHTDAL-26JUN22-B97", "yes", "buy", 10, 0.50, 22),  # +5.00
