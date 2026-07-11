@@ -205,7 +205,7 @@ def render():
                         else r["result"].capitalize()),
             "P&L": pnl_cell,
         })
-    with st.expander("Trade history", expanded=True):
+    with st.expander("Trade History", expanded=True):
         market_view._html_table(pd.DataFrame(disp))
         st.caption("Model @ bet = the model's probability for the side you took, its "
                    "edge vs your entry (pp), and whether you bet with or against it — "
