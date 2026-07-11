@@ -297,6 +297,10 @@ def test_period_table_daily_weekly_monthly():
     assert [(d["label"].isoformat(), round(d["gain"], 2), round(d["total"], 2)) for d in daily] == \
         [("2026-06-22", 1.00, 11.00), ("2026-06-29", 7.00, 18.00)]
     assert round(daily[0]["pct"], 3) == 0.111
+    # Portfolio %: period gain ÷ balance ENTERING the period. Jun 22: +1 on the $10
+    # bankroll = 0.10; Jun 29: +7 on the $11 balance = 0.636.
+    assert round(daily[0]["port_pct"], 3) == 0.100
+    assert round(daily[1]["port_pct"], 3) == 0.636
     weekly = bh.period_table(rows, "week")
     from datetime import date as _d, timedelta as _td
     mons = [_d(2026, 6, x) - _td(days=_d(2026, 6, x).weekday()) for x in (22, 29)]

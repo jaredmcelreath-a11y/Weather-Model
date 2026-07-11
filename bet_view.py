@@ -259,11 +259,14 @@ def render():
             market_view._html_table(pd.DataFrame([{
                 label_col: e["label"].strftime(datefmt),
                 "% Gain": f"{e['pct'] * 100:+.1f}%",
+                "Portfolio %": f"{e['port_pct'] * 100:+.1f}%",
                 "Gain": _fmt_pnl(e["gain"]),
                 total_col: _fmt_usd(e["total"]),
             } for e in reversed(entries)]))   # most recent period first
     st.caption(f"Each period's **% Gain** is that period's profit ÷ what you staked in it; "
-               f"the running **Total** is your ${bet_history.STARTING_BANKROLL:,.0f} "
-               f"bankroll plus cumulative gain. Includes open positions marked to market "
-               f"(so today's still-open trades show as the current period, live) — excludes "
-               f"deposits, withdrawals, and fees.")
+               f"**Portfolio %** is that same profit ÷ your whole account balance entering "
+               f"the period (a return on the full portfolio, not just the trade). The "
+               f"running **Total** is your ${bet_history.STARTING_BANKROLL:,.0f} bankroll "
+               f"plus cumulative gain. Includes open positions marked to market (so today's "
+               f"still-open trades show as the current period, live) — excludes deposits, "
+               f"withdrawals, and fees.")

@@ -180,8 +180,9 @@ def equity_curve_live(rows: list[dict], today) -> list[dict]:
 
 def period_table(rows: list[dict], period: str) -> list[dict]:
     """P&L aggregated by 'day', 'week' (Monday-start), or 'month'. One entry per period,
-    oldest→newest: {label(date), pct = period gain / period staked, gain ($),
-    total = running end-of-period balance from the $STARTING_BANKROLL base}. Dated by the
+    oldest→newest: {label(date), pct = period gain / period staked, port_pct = period gain
+    / portfolio balance ENTERING the period (a per-period return on the whole account),
+    gain ($), total = running end-of-period balance from the $STARTING_BANKROLL base}. Dated by the
     WEATHER day (same as the equity curve). Includes realized bets (settled or sold) AND
     open positions marked to market (via `_pnl_mtm`), so today's still-open trades show up
     as the current period — an open bet with no live price yet is skipped."""
@@ -210,8 +211,10 @@ def period_table(rows: list[dict], period: str) -> list[dict]:
     out, total = [], STARTING_BANKROLL
     for k in sorted(agg):
         gain, staked = agg[k]
+        start = total                                # portfolio balance entering the period
         total += gain
         out.append({"label": k, "pct": (gain / staked) if staked else 0.0,
+                    "port_pct": (gain / start) if start else 0.0,
                     "gain": gain, "total": total})
     return out
 
