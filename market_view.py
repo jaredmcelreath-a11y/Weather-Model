@@ -247,8 +247,11 @@ def _inject_theme(name):
         "color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:0.55rem 0.7rem;"
         "font-size:0.72rem;font-weight:500;line-height:1.35;box-shadow:0 6px 18px rgba(0,0,0,0.28);"
         "opacity:0;visibility:hidden;transition:opacity 0.12s;pointer-events:none;}\n"
-        ".wxq:hover ~ .wxqt,.wxq:focus ~ .wxqt,.wxcard:focus-within .wxqt"
-        "{opacity:1;visibility:visible;}\n"
+        # Tap (focus) reveals it on any device. Hover is gated to real pointers only —
+        # on touch, :hover sticks after a tap/scroll and popped the tooltip up randomly
+        # with no way to dismiss it.
+        ".wxq:focus ~ .wxqt,.wxcard:focus-within .wxqt{opacity:1;visibility:visible;}\n"
+        "@media (hover:hover){.wxq:hover ~ .wxqt{opacity:1;visibility:visible;}}\n"
         # desktop: the leftmost top-metrics card (Current Temp / Balance) would extend its
         # tooltip left into the sidebar/screen edge — anchor that one to extend right.
         ".st-key-top_metrics [data-testid=\"stColumn\"]:first-child .wxqt"
