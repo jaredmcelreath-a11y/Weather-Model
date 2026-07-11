@@ -130,6 +130,30 @@ def render():
         st.caption(f"No Dallas-temp bets found since {bet_history.BETS_START:%b %-d, %Y}.")
         return
 
+    # === TEMP DEBUG (remove after diagnosing the remaining gap) ====================
+    with st.expander("🔧 debug: classification + open fills"):
+        try:
+            from collections import defaultdict as _dd
+            from sources import kalshi_portfolio as _kp
+            _bk = bet_history.STARTING_BANKROLL
+            _real = sum(r["pnl"] for r in rows
+                        if r["status"] in ("settled", "closed") and r["pnl"] is not None)
+            st.write(f"realized ${_real:.2f} = {100 * _real / _bk:.1f}%  |  "
+                     f"open={sum(1 for r in rows if r['status'] == 'open')} "
+                     f"closed={sum(1 for r in rows if r['status'] == 'closed')} "
+                     f"settled={sum(1 for r in rows if r['status'] == 'settled')}")
+            _fbt = _dd(list)
+            for _f in _kp.fills(bet_history.BETS_START):
+                _fbt[_f["ticker"]].append(_f)
+            for r in rows:
+                if r["status"] == "open":
+                    st.write(f"**OPEN** {r['ticker']} qty={r['qty']:.2f} staked=${r['staked']:.2f}")
+                    st.write([{k: f.get(k) for k in ("action", "side", "count", "price")}
+                              for f in _fbt.get(r["ticker"], [])])
+        except Exception as _e:
+            st.write("debug error:", repr(_e))
+    # === END TEMP DEBUG =============================================================
+
     # keyed 'top_metrics' so the same mobile CSS grids these 2-per-row (like the Forecast
     # page) instead of stacking; columns created in the container, filled just after.
     with st.container(key="top_metrics"):
