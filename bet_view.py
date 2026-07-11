@@ -234,7 +234,7 @@ def render():
                 "% Gain": f"{e['pct'] * 100:+.1f}%",
                 "Gain": _fmt_pnl(e["gain"]),
                 total_col: _fmt_usd(e["total"]),
-            } for e in entries]))
+            } for e in reversed(entries)]))   # most recent period first
     st.caption(f"Each period's **% Gain** is that period's realized profit ÷ what you "
                f"staked in it; the running **Total** is your "
                f"${bet_history.STARTING_BANKROLL:,.0f} bankroll plus cumulative realized "
