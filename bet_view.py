@@ -58,7 +58,7 @@ def equity_chart(curve, color):
         axis=1))
     enc = alt.Chart(df).encode(
         x=alt.X("date:T", title=None),
-        y=alt.Y("total:Q", title="Trading balance ($)", scale=alt.Scale(zero=False)))
+        y=alt.Y("total:Q", title="Trading Total ($)", scale=alt.Scale(zero=False)))
     line = enc.mark_line(strokeWidth=2.5, color=color)
 
     pick = alt.selection_point(on="click", nearest=True, fields=["date"],
@@ -66,7 +66,7 @@ def equity_chart(curve, color):
     dots = enc.mark_point(filled=True, opacity=1, color=color).encode(
         size=alt.condition(pick, alt.value(150), alt.value(60)),
         tooltip=[alt.Tooltip("date:T", title="date"),
-                 alt.Tooltip("total:Q", title="balance", format="$.2f")],
+                 alt.Tooltip("total:Q", title="total", format="$.2f")],
     ).add_params(pick)
     # Pinned readout for the tapped point, anchored top-left so it never clips off the
     # right edge; one line per field (lineBreak) keeps the full readout in view.
