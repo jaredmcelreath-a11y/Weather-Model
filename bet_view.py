@@ -214,3 +214,27 @@ def render():
                "closed; open positions show their live unrealized P&L in terracotta "
                "(the `~` values) until they settle or you sell. Read-only view of your "
                "Kalshi account; prices in ¢, amounts in $.")
+
+    # Performance by period — realized gain per day / week / month (the spreadsheet's
+    # Daily & Weekly tables, plus a Monthly one with the same columns).
+    st.markdown("#### Performance by period")
+    for tab, (period, label_col, total_col, datefmt) in zip(
+            st.tabs(["Daily", "Weekly", "Monthly"]),
+            [("day", "Date", "EOD Total", "%b %-d, %Y"),
+             ("week", "Week of", "EOW Total", "%b %-d, %Y"),
+             ("month", "Month", "EOM Total", "%b %Y")]):
+        with tab:
+            entries = bet_history.period_table(rows, period)
+            if not entries:
+                st.caption("No settled trades yet.")
+                continue
+            market_view._html_table(pd.DataFrame([{
+                label_col: e["label"].strftime(datefmt),
+                "% Gain": f"{e['pct'] * 100:+.1f}%",
+                "Gain": _fmt_pnl(e["gain"]),
+                total_col: _fmt_usd(e["total"]),
+            } for e in entries]))
+    st.caption(f"Each period's **% Gain** is that period's realized profit ÷ what you "
+               f"staked in it; the running **Total** is your "
+               f"${bet_history.STARTING_BANKROLL:,.0f} bankroll plus cumulative realized "
+               f"gain (like the chart above — excludes deposits and open positions).")

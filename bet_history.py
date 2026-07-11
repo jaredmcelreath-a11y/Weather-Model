@@ -8,7 +8,7 @@ separate pass (annotate_rows) so assembly stays model-free.
 from __future__ import annotations
 
 import math
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 BETS_START = date(2026, 6, 22)
 # Starting bankroll ($): the equity curve's baseline and the "Total % Gain"
@@ -173,6 +173,36 @@ def equity_curve_live(rows: list[dict], today) -> list[dict]:
         return curve
     base = curve[-1]["total"] if curve else STARTING_BANKROLL
     return curve + [{"date": today, "total": base + unreal}]
+
+
+def period_table(rows: list[dict], period: str) -> list[dict]:
+    """Realized P&L aggregated by 'day', 'week' (Monday-start), or 'month'. One entry per
+    period, oldest→newest: {label(date), pct = period gain / period staked, gain ($),
+    total = running end-of-period balance from the $STARTING_BANKROLL base}. Dated by the
+    WEATHER day (same as the equity curve), realized bets only (settled or sold)."""
+    def bucket(d: date) -> date:
+        if period == "week":
+            return d - timedelta(days=d.weekday())
+        if period == "month":
+            return date(d.year, d.month, 1)
+        return d
+
+    agg: dict = {}
+    for r in rows:
+        if r["status"] not in ("settled", "closed"):
+            continue
+        td = _ticker_date(r["ticker"])
+        d = date.fromisoformat(td) if td else r["settled_ts"].date()
+        b = agg.setdefault(bucket(d), [0.0, 0.0])   # [gain, staked]
+        b[0] += r["pnl"]
+        b[1] += r["staked"]
+    out, total = [], STARTING_BANKROLL
+    for k in sorted(agg):
+        gain, staked = agg[k]
+        total += gain
+        out.append({"label": k, "pct": (gain / staked) if staked else 0.0,
+                    "gain": gain, "total": total})
+    return out
 
 
 def _phi(x: float, mu: float, sigma: float) -> float:

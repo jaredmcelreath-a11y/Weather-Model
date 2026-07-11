@@ -231,3 +231,29 @@ def test_summary_marks_open_positions_to_market():
     assert round(s["pct_gain"], 0) == 68       # 6.80 / $10 bankroll
     # win/loss + record stay realized-only (the open bet hasn't won or lost yet)
     assert s["wins"] == 1 and s["losses"] == 0 and s["n_settled"] == 1
+
+
+def test_period_table_daily_weekly_monthly():
+    fills = [
+        _fill("a", "KXHIGHTDAL-26JUN22-B97", "yes", "buy", 10, 0.50, 22),  # +5.00
+        _fill("b", "KXHIGHTDAL-26JUN22-B99", "yes", "buy", 10, 0.40, 22),  # -4.00
+        _fill("c", "KXHIGHTDAL-26JUN29-B97", "yes", "buy", 10, 0.30, 29),  # +7.00
+    ]
+    stl = {
+        "KXHIGHTDAL-26JUN22-B97": {"result": "yes", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc), "revenue": 10.0},
+        "KXHIGHTDAL-26JUN22-B99": {"result": "no", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc), "revenue": 0.0},
+        "KXHIGHTDAL-26JUN29-B97": {"result": "yes", "ts": datetime(2026, 6, 30, 6, tzinfo=timezone.utc), "revenue": 10.0},
+    }
+    rows = bh.build_rows(fills, stl, META)
+    daily = bh.period_table(rows, "day")
+    # Jun 22: +5-4=+1 on $9 staked -> total 11; Jun 29: +7 on $3 -> total 18
+    assert [(d["label"].isoformat(), round(d["gain"], 2), round(d["total"], 2)) for d in daily] == \
+        [("2026-06-22", 1.00, 11.00), ("2026-06-29", 7.00, 18.00)]
+    assert round(daily[0]["pct"], 3) == 0.111
+    weekly = bh.period_table(rows, "week")
+    from datetime import date as _d, timedelta as _td
+    mons = [_d(2026, 6, x) - _td(days=_d(2026, 6, x).weekday()) for x in (22, 29)]
+    assert [w["label"] for w in weekly] == mons and len(weekly) == 2
+    monthly = bh.period_table(rows, "month")
+    assert len(monthly) == 1 and monthly[0]["label"] == _d(2026, 6, 1)
+    assert round(monthly[0]["gain"], 2) == 8.00 and round(monthly[0]["total"], 2) == 18.00
