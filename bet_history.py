@@ -63,19 +63,22 @@ def build_rows(fills: list[dict], settlements: dict, meta: dict) -> list[dict]:
         # total matches Kalshi's actual account change (the user's net figure is
         # fee-inclusive).
         total_fee = sum(f.get("fee", 0) or 0 for f in group)
-        if settle:
-            total_fee += settle.get("fee", 0) or 0
-            pnl = sell_cash + (settle_rev or 0.0) - total_buy - total_fee
-            status, result, settled_ts = "settled", settle["result"], settle["ts"]
-        elif buy_ct and abs(qty) < 1e-6:
+        if buy_ct and abs(qty) < 1e-6:
             # Closed early by selling the whole position before the market settled: the
-            # P&L is realized from the sells (nothing was held to settlement). Without
-            # this it showed as a perpetual OPEN bet and its profit was missing from the
-            # totals (Total % Gain / roi under-counted).
+            # P&L is realized from the sells (nothing was held to settlement). Kalshi STILL
+            # returns a settlement record for such a market (revenue 0 — you held nothing
+            # at expiry), so this MUST be checked before the settle branch below, or the
+            # bet is mislabeled 'settled' with qty 0 (buy_ct - sell_ct) instead of 'sold'.
+            # Also fixes a perpetual OPEN bet whose profit was missing from the totals
+            # (Total % Gain / roi under-counted) when no settlement record exists.
             pnl = sell_cash - total_buy - total_fee
             status, result = "closed", None
             settled_ts = max(f["ts"] for f in group if f["action"] == "sell")
             qty = buy_ct   # net is 0 once closed; show the size actually traded
+        elif settle:
+            total_fee += settle.get("fee", 0) or 0
+            pnl = sell_cash + (settle_rev or 0.0) - total_buy - total_fee
+            status, result, settled_ts = "settled", settle["result"], settle["ts"]
         else:
             pnl, status, result, settled_ts = None, "open", None, None
 

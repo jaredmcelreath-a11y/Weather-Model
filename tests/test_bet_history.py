@@ -186,6 +186,25 @@ def test_closed_by_early_sell_is_realized_not_open():
     assert round(curve[0]["total"], 2) == 12.00    # 10 bankroll + 2.00
 
 
+def test_sold_out_with_settlement_record_is_closed_not_settled():
+    # July 10 bug: bought 3 YES @ $0.60, sold all 3 @ $0.99 BEFORE settlement, but Kalshi
+    # still returns a settlement record for the market (revenue 0 — you held nothing at
+    # expiry). Must be classified 'closed' (shows "sold") with qty = the size traded, NOT
+    # 'settled' with qty 0 (buy_ct - sell_ct). P&L comes from the sells.
+    fills = [
+        _fill("t1", "KXHIGHTDAL-26JUN22-B97", "yes", "buy", 3, 0.60, 22),
+        _fill("t2", "KXHIGHTDAL-26JUN22-B97", "yes", "sell", 3, 0.99, 22),
+    ]
+    stl = {"KXHIGHTDAL-26JUN22-B97":
+           {"result": "yes", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc),
+            "revenue": 0.0}}
+    r = bh.build_rows(fills, stl, META)[0]
+    assert r["status"] == "closed" and r["result"] is None      # -> "sold", not "YES"
+    assert r["qty"] == 3                                         # not 0
+    assert round(r["exit"], 2) == 0.99                           # the market sell price
+    assert round(r["pnl"], 2) == 1.17                            # 2.97 sell - 1.80 buy
+
+
 def test_partial_open_position_still_open():
     # Bought 10, sold only 4, no settlement -> still net-long 6, stays OPEN (no realized
     # P&L yet), so the early-sell rule must not fire on a partial exit.
