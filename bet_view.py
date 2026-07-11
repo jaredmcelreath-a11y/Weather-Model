@@ -250,15 +250,11 @@ def render():
                                f"Share of {plural} that finished profitable — "
                                f"{ps['green_count']} of {ps['count']} {plural}."),
                            unsafe_allow_html=True)
-            pc[4].markdown(_mc("Best / Worst",
-                               f"{_fmt_pnl(ps['best_gain'])} / {_fmt_pnl(ps['worst_gain'])}",
-                               f"The single best and worst {noun}'s realized $ gain."),
+            pc[4].markdown(_mc("Best", _fmt_pnl(ps["best_gain"]),
+                               f"The single best {noun}'s realized $ gain."),
                            unsafe_allow_html=True)
-            pc[5].markdown(_mc("Portfolio %", f"{ps['pct_gain']:+.0f}%",
-                               "Total profit as a percent of your starting bankroll — "
-                               "marked to market (includes open positions' live P&L), so "
-                               "it matches the Total % Gain card up top and is the same "
-                               "on every tab. The cards to its left are realized-only."),
+            pc[5].markdown(_mc("Worst", _fmt_pnl(ps["worst_gain"]),
+                               f"The single worst {noun}'s realized $ gain."),
                            unsafe_allow_html=True)
             market_view._html_table(pd.DataFrame([{
                 label_col: e["label"].strftime(datefmt),
