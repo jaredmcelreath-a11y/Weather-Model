@@ -194,7 +194,7 @@ def render():
             pnl_cell = _fmt_pnl(r["pnl"])
         disp.append({
             "Date": r["first_ts"].strftime("%b %-d"),
-            "Contract": r["label"], "Side": r["side"].upper(),
+            "Contract": r["label"], "Side": r["side"].capitalize(),
             "Entry": market_view.cents(r["entry"]),
             "Exit": market_view.cents(exit_val),
             "Qty": f"{r['qty']:.2f}",
