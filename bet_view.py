@@ -205,19 +205,20 @@ def render():
                         else r["result"].upper()),
             "P&L": pnl_cell,
         })
-    market_view._html_table(pd.DataFrame(disp))
-    st.caption("Model @ bet = the model's probability for the side you took, its "
-               "edge vs your entry (pp), and whether you bet with or against it — "
-               "reconstructed from the nearest logged snapshot to your fill (— if "
-               "none). Exit = your sell/settlement price, or the current market value "
-               "for an open position. P&L is realized (net of Kalshi fees) once "
-               "closed; open positions show their live unrealized P&L in terracotta "
-               "(the `~` values) until they settle or you sell. Read-only view of your "
-               "Kalshi account; prices in ¢, amounts in $.")
+    with st.expander("Trade history", expanded=True):
+        market_view._html_table(pd.DataFrame(disp))
+        st.caption("Model @ bet = the model's probability for the side you took, its "
+                   "edge vs your entry (pp), and whether you bet with or against it — "
+                   "reconstructed from the nearest logged snapshot to your fill (— if "
+                   "none). Exit = your sell/settlement price, or the current market value "
+                   "for an open position. P&L is realized (net of Kalshi fees) once "
+                   "closed; open positions show their live unrealized P&L in terracotta "
+                   "(the `~` values) until they settle or you sell. Read-only view of your "
+                   "Kalshi account; prices in ¢, amounts in $.")
 
     # Performance by period — realized gain per day / week / month (the spreadsheet's
     # Daily & Weekly tables, plus a Monthly one with the same columns).
-    st.markdown("#### Performance by period")
+    st.markdown("#### Performance by Period")
     for tab, (period, label_col, total_col, datefmt) in zip(
             st.tabs(["Daily", "Weekly", "Monthly"]),
             [("day", "Date", "EOD Total", "%b %-d, %Y"),
