@@ -1242,14 +1242,23 @@ def render_page(snap, calib, adapter, load_accuracy):
     # (instead of Streamlit's one-per-row stack) without touching other columns.
     with st.container(key="top_metrics"):
         top = st.columns(6)
+    # Always render the box; fall back to the routine hourly reading (then "—") so it
+    # doesn't vanish during a brief gap in the live sub-hourly feed.
+    ch = snap.get("current_hourly")
     if cur:
-        ch = snap.get("current_hourly")
+        _cur_val = f"{cur['temp']}°F"
         _cur_help = f"Live reading as of {_fmt_clock(cur['time'])}."
         if ch and ch.get("time") != cur.get("time"):
             _cur_help += (f" Latest routine hourly (:53 METAR): "
                           f"{ch['temp']}°F at {_fmt_clock(ch['time'])}.")
-        top[0].markdown(metric_card("Current Temp", f"{cur['temp']}°F", _cur_help),
-                        unsafe_allow_html=True)
+    elif ch:
+        _cur_val = f"{ch['temp']}°F"
+        _cur_help = (f"Latest routine hourly (:53 METAR) as of {_fmt_clock(ch['time'])} — "
+                     f"the live sub-hourly reading is momentarily unavailable.")
+    else:
+        _cur_val, _cur_help = "—", "No live reading available right now."
+    top[0].markdown(metric_card("Current Temp", _cur_val, _cur_help),
+                    unsafe_allow_html=True)
     _mkt_as_of = ki.get("as_of")
     _mkt_help = ("Today's market-implied expected {x}, from Kalshi's live contract "
                  "ladder (shown on both pages for reference)."
