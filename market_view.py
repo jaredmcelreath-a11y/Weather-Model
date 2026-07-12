@@ -672,6 +672,27 @@ def prob_bar_chart(df, variable, color=None):
     )
 
 
+# On a convective-downside day the low can be reset by evening storms, so the
+# Resolved metric is capped below 100% no matter how much of the diurnal window
+# has closed — the low isn't truly settled until midnight passes storm-free.
+CONVECTIVE_RESOLVED_CAP = 90
+
+
+def displayed_resolved(d):
+    """Resolved % for the metric card, clamped on a convective-downside day.
+
+    `resolved` measures how much of the *diurnal* uncertainty is settled and hits
+    100% once the extreme's window closes. But on a storm day the low's daily min
+    can still be reset lower by evening convection (convective.py), so a locked
+    dawn trough is not a resolved low. Cap the display so the metric stops
+    contradicting the risk caption. Display-only — the raw `resolved` and the
+    probabilities are untouched."""
+    pct = int(d.get("resolved", 1 - d.get("locked_ratio", 0.0)) * 100)
+    if d.get("convective_widened"):
+        pct = min(pct, CONVECTIVE_RESOLVED_CAP)
+    return pct
+
+
 def lock_status(d, variable):
     """Interpret the nowcast lock state into an actionable badge + buy-window note.
 
@@ -716,6 +737,15 @@ def lock_status(d, variable):
                 "Close to the prime window.")
 
     # variable == "low"
+    if d.get("convective_widened"):
+        # The dawn trough may be observationally in, but an open evening-storm
+        # tail can reset the daily min lower before midnight (convective.py). Don't
+        # flash a green "settled / prime buy window" badge that contradicts the
+        # risk caption — Kalshi settles on the full-day min, not the morning low.
+        return ("warning", "Low In — But Evening Storm Risk Open",
+                f"Dawn trough is in at {obs:.1f}°F, but evening storms could set a "
+                f"new, lower daily min before midnight (σ widened to "
+                f"{d['sigma_used']:.1f}°F). Not a settled low — wait or size down.")
     if d.get("peak_locked"):
         return ("success", "Locked — Dawn Trough Is In",
                 f"Low is in at {obs:.1f}°F — temperature has climbed back from the "
@@ -860,7 +890,7 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                     "what turns the consensus into contract probabilities. It gets "
                     "inflated for day-ahead forecasts until the scoring log matures."),
                     unsafe_allow_html=True)
-        locked_pct = int(d.get("resolved", 1 - d["locked_ratio"]) * 100)
+        locked_pct = displayed_resolved(d)
         c3.markdown(metric_card("Resolved", f"{locked_pct}%",
                     "How much of the day's uncertainty is already settled by "
                     "observations. 100% ≈ the extreme has happened."),
