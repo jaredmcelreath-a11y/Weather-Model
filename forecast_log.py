@@ -143,6 +143,13 @@ def record(snapshot: dict, path: str | None = None, basis: str = "hourly") -> No
                 "consensus": d.get("consensus"),
                 "probabilities": d["probabilities"],
             }
+            # Storm/front regime stamps — attribution for the correction
+            # estimators (scoring drops flagged records from its residual
+            # pool). Written only when set, so calm-day rows are unchanged
+            # and historical rows read as unflagged via .get().
+            for flag in ("convective_widened", "front_widened"):
+                if d.get(flag):
+                    rec[flag] = True
             # Per-source predicted extremes — present once the snapshot carries
             # them; lets scoring later learn ensemble/NWS bias from the live log.
             src = _source_means(sources.get(which, {}), variable)

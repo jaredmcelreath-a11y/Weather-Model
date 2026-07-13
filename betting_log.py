@@ -86,6 +86,8 @@ def _row(day: str, variable: str, slot: str, cli_var: dict, hourly_var: dict,
         "observed_continuous": cont,
         "peak_locked": cli_var.get("peak_locked"),
         "sigma_used": cli_var.get("sigma_used"),
+        "convective_widened": bool(cli_var.get("convective_widened")),
+        "front_widened": bool(cli_var.get("front_widened")),
         "model_bins": _top_bins(cli_var.get("probabilities") or {}),
     }
     if market_var:

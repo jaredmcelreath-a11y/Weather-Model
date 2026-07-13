@@ -97,3 +97,26 @@ def test_record_market_absent_is_omitted(tmp_path):
     betting_log.record(cli_no_market, _HOURLY, "16:00", _CALIB, path=p)
     hi = next(r for r in betting_log.load(p) if r["variable"] == "high")
     assert "market_ev" not in hi and "market_buckets" not in hi
+
+
+def test_row_carries_regime_flags():
+    cli_var = {"consensus": 78.0, "probabilities": {"78": 1.0},
+               "observed_so_far": 78.0, "observed_continuous": None,
+               "peak_locked": True, "sigma_used": 0.7,
+               "convective_widened": True, "front_widened": False}
+    rec = betting_log._row("2026-07-13", "low", "15:00", cli_var, {}, None,
+                           -0.36, "2026-07-13T15:00:00-05:00")
+    assert rec["convective_widened"] is True
+    assert rec["front_widened"] is False
+
+
+def test_row_flags_default_false_when_absent():
+    # A prediction dict from before the flags existed must not crash and must
+    # read as un-flagged (explicit False in betting rows, for the join analysis).
+    cli_var = {"consensus": 97.0, "probabilities": {"97": 1.0},
+               "observed_so_far": None, "observed_continuous": None,
+               "peak_locked": False, "sigma_used": 1.0}
+    rec = betting_log._row("2026-07-13", "high", "15:00", cli_var, {}, None,
+                           0.91, "2026-07-13T15:00:00-05:00")
+    assert rec["convective_widened"] is False
+    assert rec["front_widened"] is False

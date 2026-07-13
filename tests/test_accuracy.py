@@ -95,6 +95,23 @@ def test_forecast_log_persists_market_block(tmp_path):
     assert "market" not in rows[(TODAY.isoformat(), "low")]
 
 
+def test_forecast_log_stamps_regime_flags(tmp_path):
+    p = str(tmp_path / "log.jsonl")
+    now = datetime(2026, 6, 16, 22, tzinfo=TZ)
+    snap = _snapshot(now)
+    snap["today"]["low"]["convective_widened"] = True
+    snap["today"]["low"]["front_widened"] = False
+    snap["tomorrow"]["high"]["front_widened"] = True
+    forecast_log.record(snap, path=p)
+    rows = {(r["target_date"], r["variable"]): r for r in forecast_log.load(p)}
+    assert rows[(TODAY.isoformat(), "low")]["convective_widened"] is True
+    # falsy or absent flags are omitted entirely (calm rows stay byte-identical)
+    assert "front_widened" not in rows[(TODAY.isoformat(), "low")]
+    assert "convective_widened" not in rows[(TODAY.isoformat(), "high")]
+    tom = (TODAY + timedelta(days=1)).isoformat()
+    assert rows[(tom, "high")]["front_widened"] is True
+
+
 def test_market_accuracy_compares_to_model(tmp_path, monkeypatch):
     p = str(tmp_path / "log.jsonl")
     captured = datetime(2026, 6, 16, 22, tzinfo=TZ)
