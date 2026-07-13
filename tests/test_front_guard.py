@@ -102,3 +102,48 @@ def test_locked_high_still_pins_to_observed():
     got = model._member_extreme(times, temps, _DAY, "high", _at(16),
                                 observed=95.0, obs_now=None, locked=True)
     assert got == 95.0
+
+
+# ---- integration: predict_variable consensus/sigma/flag ----
+
+def _obs_locked_afternoon():
+    """Observed series: dawn min 78.0 at 06:00, risen to 93 by 14:00 (locked).
+    The 14:00 reading matches the members' 14:00 forecast (93 in `_curve`) so
+    the anchoring offset is 0 and the evening scenarios stay uncontaminated."""
+    hours = [(0, 84), (2, 82), (4, 80), (6, 78.0), (8, 82), (10, 86),
+             (12, 88), (14, 93)]
+    return ([_at(h) for h, _ in hours], [t for _, t in hours])
+
+
+def test_predict_variable_front_day_shifts_and_widens():
+    # Two members agree through the afternoon (fc 90 at 14:00 -> offset 0), then
+    # disagree on the evening: det_a stays warm, det_b drops to 74. The locked
+    # low must shift below the morning min, reopen its spread, and set the flag.
+    series = {"det_a": _fc(_curve({18: 86, 21: 83, 23: 80})),
+              "det_b": _fc(_curve({18: 80, 21: 76, 23: 74}))}
+    out = model.predict_variable(series, {"obs": _obs_locked_afternoon()},
+                                 _DAY, "low", _at(14), None)
+    assert out["peak_locked"] is True
+    assert out["front_widened"] is True
+    assert out["consensus"] < 78.0          # mean of 78 and 74
+    assert out["sigma_used"] > model._SIGMA_FLOOR
+
+
+def test_predict_variable_calm_day_unchanged():
+    # Both members keep the evening above the min: byte-identical to today —
+    # consensus pinned to the observed min, sigma collapsed to the floor.
+    series = {"det_a": _fc(_curve({18: 86, 21: 83, 23: 80})),
+              "det_b": _fc(_curve({18: 84, 21: 82, 23: 81}))}
+    out = model.predict_variable(series, {"obs": _obs_locked_afternoon()},
+                                 _DAY, "low", _at(14), None)
+    assert out["peak_locked"] is True
+    assert out["front_widened"] is False
+    assert out["consensus"] == 78.0
+    assert out["sigma_used"] == model._SIGMA_FLOOR
+
+
+def test_high_never_sets_front_widened():
+    series = {"det_a": _fc(_curve({18: 86, 21: 83, 23: 80}))}
+    out = model.predict_variable(series, {"obs": _obs_locked_afternoon()},
+                                 _DAY, "high", _at(14), None)
+    assert out["front_widened"] is False

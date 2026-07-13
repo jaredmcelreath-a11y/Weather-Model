@@ -543,6 +543,13 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     if not samples or not fullday:
         return None
 
+    # Front guard fired: at least one locked-low member reported an anchored
+    # post-noon projection below the observed min (see _member_extreme).
+    # Computed here, before the cooling/settle/bias offsets move the samples,
+    # so the comparison against `observed` is clean.
+    front_widened = (locked and variable == "low" and observed is not None
+                     and any(s < observed for s in samples))
+
     # Radiational cooling: on a forecast clear+calm night the bias-corrected low
     # still runs warm, so nudge the (pure-forecast) low samples down by the
     # calibrated offset. Skipped once obs are anchoring the day (obs_now set) —
@@ -719,6 +726,7 @@ def predict_variable(series, obs_series, day, variable, now, calib,
         "observed_continuous_display": observed_cont_display,
         "cooling_applied": cooling_applied,
         "peak_locked": locked,
+        "front_widened": front_widened,
         "convective_widened": convective_widened,
     }
 
