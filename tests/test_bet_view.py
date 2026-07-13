@@ -9,17 +9,35 @@ def test_bet_view_imports():
     assert hasattr(bet_view, "render") and hasattr(bet_view, "equity_chart")
 
 
-def test_model_cell_handles_missing_edge():
+def test_model_cell_is_probability_only():
     import bet_view
     # No model read at all.
     assert bet_view._model_cell({"model_prob": None}) == "—"
-    # model_prob present but edge is None (entry was None — e.g. a resolved side
-    # with zero matching BUY fills). Must not raise, and shows probability only.
+    # Probability only now — edge/with-against moved out to tighten the column,
+    # and it must not depend on edge/agree being present.
     assert bet_view._model_cell(
         {"model_prob": 0.62, "edge": None, "agree": None}) == "62%"
-    # Both present — full cell with edge and with/against.
-    cell = bet_view._model_cell({"model_prob": 0.62, "edge": 0.19, "agree": True})
-    assert "62%" in cell and "+19" in cell and "with" in cell
+    assert bet_view._model_cell(
+        {"model_prob": 0.62, "edge": 0.19, "agree": True}) == "62%"
+
+
+def test_pct_gain_cell():
+    import bet_view
+    # Closed/settled: realized pnl ÷ staked.
+    assert bet_view._pct_gain_cell(
+        {"status": "settled", "pnl": 3.0, "staked": 6.0}) == "+50.0%"
+    assert bet_view._pct_gain_cell(
+        {"status": "closed", "pnl": -1.5, "staked": 6.0}) == "-25.0%"
+    # Open: marked to market from current_value, shown live in terracotta with a ~.
+    open_cell = bet_view._pct_gain_cell(
+        {"status": "open", "entry": 0.50, "current_value": 0.60,
+         "qty": 10.0, "staked": 5.0})
+    assert "~" in open_cell and "+20.0%" in open_cell and "C97B5E" in open_cell
+    # No staked / no mark → em dash, never a crash.
+    assert bet_view._pct_gain_cell({"status": "settled", "pnl": 3.0, "staked": 0}) == "—"
+    assert bet_view._pct_gain_cell(
+        {"status": "open", "entry": None, "current_value": None,
+         "qty": 1.0, "staked": 5.0}) == "—"
 
 
 def test_equity_chart_encodes_date_and_total():

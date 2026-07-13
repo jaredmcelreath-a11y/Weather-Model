@@ -90,16 +90,27 @@ def _fmt_usd(v):
 
 
 def _model_cell(r):
-    """The 'Model @ bet' display string. entry can be None (a resolved side with
-    zero matching BUY fills), which leaves edge/agree unset even though model_prob
-    is present — so probability and edge/agreement are handled independently to
-    avoid a TypeError on `None * 100` crashing the whole page."""
+    """The 'Model @ Bet' display string: just the model's probability for the side
+    you took, to keep the column tight (edge/with-against dropped). `model_prob`
+    can be absent (no snapshot near the fill) → em dash."""
     if r.get("model_prob") is None:
         return "—"
-    if r.get("edge") is None:
-        return f"{r['model_prob']*100:.0f}%"
-    return (f"{r['model_prob']*100:.0f}% · {r['edge']*100:+.0f} · "
-            + ("with" if r["agree"] else "against"))
+    return f"{r['model_prob']*100:.0f}%"
+
+
+def _pct_gain_cell(r):
+    """Per-trade % Gain: the bet's P&L (realized, or open marked to market) ÷ what
+    you staked — the same figure the summary's per-trade return averages. Open
+    positions show their live/unrealized percent in terracotta with a `~`, matching
+    the P&L cell; missing stake or mark → em dash (never raises)."""
+    pnl = bet_history._pnl_mtm(r)
+    staked = r.get("staked")
+    if pnl is None or not staked:
+        return "—"
+    pct = 100.0 * pnl / staked
+    if r["status"] == "open":
+        return (f'<span style="color:#C97B5E;font-weight:600">~{pct:+.1f}%</span>')
+    return f"{pct:+.1f}%"
 
 
 def render():
@@ -199,20 +210,21 @@ def render():
             "Exit": market_view.cents(exit_val),
             "Qty": f"{r['qty']:.2f}",
             "Volume": _fmt_usd(volume),
-            "Model @ bet": model,
+            "Model @ Bet": model,
             "Settled": ("Open" if r["status"] == "open"
                         else "Sold" if r["status"] == "closed"
                         else r["result"].capitalize()),
+            "% Gain": _pct_gain_cell(r),
             "P&L": pnl_cell,
         })
     with st.expander("Trade History", expanded=True):
         market_view._html_table(pd.DataFrame(disp))
-        st.caption("Model @ bet = the model's probability for the side you took, its "
-                   "edge vs your entry (pp), and whether you bet with or against it — "
+        st.caption("Model @ Bet = the model's probability for the side you took, "
                    "reconstructed from the nearest logged snapshot to your fill (— if "
-                   "none). Exit = your sell/settlement price, or the current market value "
-                   "for an open position. P&L is realized (net of Kalshi fees) once "
-                   "closed; open positions show their live unrealized P&L in terracotta "
+                   "none). % Gain = the bet's profit ÷ what you staked. Exit = your "
+                   "sell/settlement price, or the current market value for an open "
+                   "position. P&L is realized (net of Kalshi fees) once closed; open "
+                   "positions show their live unrealized P&L and % Gain in terracotta "
                    "(the `~` values) until they settle or you sell. Read-only view of your "
                    "Kalshi account; prices in ¢, amounts in $.")
 
