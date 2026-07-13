@@ -674,7 +674,9 @@ def prob_bar_chart(df, variable, color=None):
 
 # On a convective-downside day the low can be reset by evening storms, so the
 # Resolved metric is capped below 100% no matter how much of the diurnal window
-# has closed — the low isn't truly settled until midnight passes storm-free.
+# has closed — the low isn't truly settled until midnight passes storm-free. The
+# same cap applies when the front guard (`front_widened`) projects a colder evening
+# reading — a forecast front is no more settled than a storm risk.
 CONVECTIVE_RESOLVED_CAP = 90
 
 
@@ -683,8 +685,9 @@ def displayed_resolved(d):
 
     `resolved` measures how much of the *diurnal* uncertainty is settled and hits
     100% once the extreme's window closes. But on a storm day the low's daily min
-    can still be reset lower by evening convection (convective.py), so a locked
-    dawn trough is not a resolved low. Cap the display so the metric stops
+    can still be reset lower by evening convection (convective.py), or when a forecast
+    front is active, the low may be undercut by a colder post-noon reading — either way,
+    a locked dawn trough is not a resolved low. Cap the display so the metric stops
     contradicting the risk caption. Display-only — the raw `resolved` and the
     probabilities are untouched."""
     pct = int(d.get("resolved", 1 - d.get("locked_ratio", 0.0)) * 100)

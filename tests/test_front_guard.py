@@ -116,7 +116,7 @@ def _obs_locked_afternoon():
 
 
 def test_predict_variable_front_day_shifts_and_widens():
-    # Two members agree through the afternoon (fc 90 at 14:00 -> offset 0), then
+    # Two members agree through the afternoon (fc 93 at 14:00 -> offset 0), then
     # disagree on the evening: det_a stays warm, det_b drops to 74. The locked
     # low must shift below the morning min, reopen its spread, and set the flag.
     series = {"det_a": _fc(_curve({18: 86, 21: 83, 23: 80})),
