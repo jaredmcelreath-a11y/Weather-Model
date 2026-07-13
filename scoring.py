@@ -271,3 +271,16 @@ def per_lead_bias(min_days: int = MIN_LEAD_DAYS, today: date | None = None,
             continue  # statistically indistinguishable from zero
         out.setdefault(int(bucket), {})[var] = round(med * n / (n + SHRINK_K), 2)
     return out
+
+
+def correction_exclusions(today: date | None = None, basis: str = "cli") -> int:
+    """How many settled records inside the correction window were dropped for a
+    storm/front flag — the dashboard shows this next to the active corrections
+    so an exclusion is visible instead of a silent mystery. Counts candidates
+    (no settlement join needed): a flagged record is excluded either way."""
+    today = today or date.today()
+    cutoff = today - timedelta(days=CALIBRATION_WINDOW_DAYS)
+    return sum(1 for r in _settled_records(today)
+               if r.get("basis", "hourly") == basis
+               and date.fromisoformat(r["target_date"]) >= cutoff
+               and _flagged(r))

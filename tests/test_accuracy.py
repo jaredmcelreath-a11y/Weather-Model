@@ -437,6 +437,32 @@ def test_correction_pool_windows_and_excludes_flags(tmp_path, monkeypatch):
     assert pool[(0, "high")] == [-1.0]         # only the windowed clean record
 
 
+def test_correction_exclusions_counts_windowed_flags(tmp_path, monkeypatch):
+    p = str(tmp_path / "log.jsonl")
+    today = date(2026, 6, 18)
+    old_day = today - timedelta(days=60)
+    rows = [
+        # flagged, in window, right basis -> counted
+        {"target_date": TODAY.isoformat(), "variable": "low", "lead_bucket": 0,
+         "basis": "cli", "consensus": 81.7, "probabilities": {"81": 1.0},
+         "front_widened": True},
+        # flagged but stale -> not counted
+        {"target_date": old_day.isoformat(), "variable": "low", "lead_bucket": 0,
+         "basis": "cli", "consensus": 70.0, "probabilities": {"70": 1.0},
+         "convective_widened": True},
+        # clean, in window -> not counted
+        {"target_date": TODAY.isoformat(), "variable": "high", "lead_bucket": 0,
+         "basis": "cli", "consensus": 95.0, "probabilities": {"95": 1.0}},
+        # flagged, in window, WRONG basis -> not counted
+        {"target_date": TODAY.isoformat(), "variable": "low", "lead_bucket": 24,
+         "basis": "hourly", "consensus": 80.0, "probabilities": {"80": 1.0},
+         "convective_widened": True},
+    ]
+    forecast_log._write(rows, p)
+    monkeypatch.setattr(forecast_log, "_PATH", p)
+    assert scoring.correction_exclusions(today=today, basis="cli") == 1
+
+
 def test_bias_correction_block_wraps_scoring(monkeypatch):
     import calibration
     seen = {}

@@ -20,7 +20,7 @@ from streamlit_autorefresh import st_autorefresh
 
 import calibration
 import model
-from config import STATION_ID, TIMEZONE
+from config import CALIBRATION_WINDOW_DAYS, STATION_ID, TIMEZONE
 
 _TZ = ZoneInfo(TIMEZONE)
 
@@ -1165,6 +1165,26 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                 unsafe_allow_html=True)
 
 
+def exclusion_note(n):
+    """Caption text for the accuracy panel when the correction estimators
+    dropped `n` storm/front-flagged records; None when nothing was excluded."""
+    if not n:
+        return None
+    return (f"Correction estimators exclude {n} storm/front-flagged record(s) "
+            f"from the last {CALIBRATION_WINDOW_DAYS} days.")
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def _correction_exclusions():
+    """Cached flag-exclusion count (reads the remote forecast log — must not
+    refetch on every 60s page refresh). Best-effort: 0 on any failure."""
+    import scoring
+    try:
+        return scoring.correction_exclusions(basis="cli")
+    except Exception:
+        return 0
+
+
 def _render_accuracy(load_accuracy, calib=None):
     """The 'Model Accuracy' expander body — backtest table + reliability charts
     + live self-scoring. `load_accuracy` is the cached () -> (bt, live) callable."""
@@ -1174,6 +1194,9 @@ def _render_accuracy(load_accuracy, calib=None):
         st.markdown("**Active self-corrections** — adjustments the model has "
                     "learned from its own settled forecasts and is applying now: "
                     + "; ".join(corr) + ".")
+    note = exclusion_note(_correction_exclusions())
+    if note:
+        st.caption(note)
     if not bt:
         st.caption("Backtest unavailable (archive fetch failed).")
     else:
