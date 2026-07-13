@@ -350,52 +350,91 @@ def test_cooling_offset_applied_on_clear_calm(monkeypatch):
 # --- self-correction: lead-time bias ---
 
 def test_per_lead_bias_shrinks_and_gates(monkeypatch):
-    fake = {"by_lead": {
-        24: {"high": {"n": 10, "bias": 1.5, "sigma": 1.0},   # strong + significant
-             "low":  {"n": 10, "bias": 0.1, "sigma": 2.0}},   # tiny -> insignificant
-        0:  {"high": {"n": 5,  "bias": 2.0, "sigma": 0.5}},   # below min_days -> dropped
-    }}
-    monkeypatch.setattr(scoring, "score", lambda today=None, basis="hourly": fake)
+    fake = {(24, "high"): [1.5] * 10,        # unanimous 1.5 -> significant
+            (24, "low"): [0.1, -0.1] * 5,    # median 0 -> gate fails
+            (0, "high"): [2.0] * 5}          # below MIN_LEAD_DAYS -> dropped
+    monkeypatch.setattr(scoring, "_correction_residuals",
+                        lambda today=None, basis="hourly": fake)
     out = scoring.per_lead_bias()
-    # high@24: shrink 1.5 * 10/(10+8) = 0.833 -> 0.83
+    # high@24: median 1.5, sd 0 -> SE 0, passes; shrink 1.5 * 10/(10+8) = 0.83
     assert out[24]["high"] == 0.83
-    # low@24: |0.1| <= Z*sigma/sqrt(n) = 1.0*2/sqrt(10) = 0.632 -> not significant
     assert "low" not in out.get(24, {})
-    # bucket 0 has only 5 days (< MIN_LEAD_DAYS) -> absent entirely
     assert 0 not in out
 
 
 def test_per_lead_bias_empty_when_no_data(monkeypatch):
-    monkeypatch.setattr(scoring, "score", lambda today=None, basis="hourly": {"by_lead": {}})
+    monkeypatch.setattr(scoring, "_correction_residuals",
+                        lambda today=None, basis="hourly": {})
     assert scoring.per_lead_bias() == {}
 
 
-def test_per_lead_bias_uses_residual_count(monkeypatch):
-    # Hit-count n is inflated (20) but only 9 records had a consensus residual.
-    # The gate must use n_resid (9 < MIN_LEAD_DAYS=10) and drop the bucket.
-    fake = {"by_lead": {24: {"high": {"n": 20, "n_resid": 9, "bias": 1.5, "sigma": 1.0}}}}
-    monkeypatch.setattr(scoring, "score", lambda today=None, basis="hourly": fake)
-    assert scoring.per_lead_bias() == {}
 
 
-def test_per_lead_bias_forwards_basis_and_today(monkeypatch):
-    seen = {}
-    def fake_score(today=None, basis="hourly"):
-        seen["today"], seen["basis"] = today, basis
-        return {"by_lead": {}}
-    monkeypatch.setattr(scoring, "score", fake_score)
+def test_per_lead_estimators_forward_basis_and_today(monkeypatch):
+    seen = []
+    def fake(today=None, basis="hourly"):
+        seen.append((today, basis))
+        return {}
+    monkeypatch.setattr(scoring, "_correction_residuals", fake)
     scoring.per_lead_bias(today=date(2026, 6, 20), basis="cli")
-    assert seen == {"today": date(2026, 6, 20), "basis": "cli"}
-
-
-def test_per_lead_sigma_forwards_basis(monkeypatch):
-    seen = {}
-    def fake_score(today=None, basis="hourly"):
-        seen["basis"] = basis
-        return {"by_lead": {}}
-    monkeypatch.setattr(scoring, "score", fake_score)
     scoring.per_lead_sigma(basis="cli")
-    assert seen["basis"] == "cli"
+    assert seen[0] == (date(2026, 6, 20), "cli")
+    assert seen[1][1] == "cli"
+
+
+def test_median_immune_to_storm_outliers(monkeypatch):
+    # 18 calm nights (median ~0) + the three June-style storm misses. The
+    # median-based estimator must emit nothing; the sanity block shows the old
+    # mean-based estimator WOULD have cleared its own gate on the same pool.
+    errs = [0.1, -0.1, 0.2, -0.2, 0.0, 0.1, -0.1, 0.0, 0.2, -0.2,
+            0.0, 0.1, -0.1, 0.0, 0.2, -0.2, 0.0, 0.1] + [3.7, 2.7, 3.6]
+    monkeypatch.setattr(scoring, "_correction_residuals",
+                        lambda today=None, basis="hourly": {(0, "low"): errs})
+    assert scoring.per_lead_bias() == {}
+    mean = sum(errs) / len(errs)
+    sd = (sum((e - mean) ** 2 for e in errs) / len(errs)) ** 0.5
+    assert abs(mean) > sd / len(errs) ** 0.5   # the outlier-driven mean was "significant"
+
+
+def test_consistent_bias_survives_median(monkeypatch):
+    # A genuine persistent warm bias (like the day-ahead high) must still emit.
+    errs = [1.0, 1.1, 0.9, 1.0, 1.2, 0.8, 1.0, 1.1, 0.9, 1.0,
+            1.1, 0.9, 1.0, 1.2, 0.8, 1.0, 1.1, 0.9, 1.0, 1.0]
+    monkeypatch.setattr(scoring, "_correction_residuals",
+                        lambda today=None, basis="hourly": {(24, "high"): errs})
+    out = scoring.per_lead_bias()
+    assert out[24]["high"] == round(1.0 * 20 / 28, 2)   # median 1.0, shrunk
+
+
+def test_per_lead_sigma_std_over_pool(monkeypatch):
+    errs = [1.0, -1.0] * 5                    # mean 0, population sd exactly 1.0
+    monkeypatch.setattr(scoring, "_correction_residuals",
+                        lambda today=None, basis="hourly": {(24, "low"): errs})
+    assert scoring.per_lead_sigma() == {24: {"low": 1.0}}
+
+
+def test_correction_pool_windows_and_excludes_flags(tmp_path, monkeypatch):
+    p = str(tmp_path / "log.jsonl")
+    today = date(2026, 6, 18)
+    old_day = today - timedelta(days=60)
+    rows = [
+        # in-window but storm-flagged -> excluded from the pool
+        {"target_date": TODAY.isoformat(), "variable": "low", "lead_bucket": 0,
+         "consensus": 81.7, "probabilities": {"81": 1.0}, "convective_widened": True},
+        # in-window, clean -> kept
+        {"target_date": TODAY.isoformat(), "variable": "high", "lead_bucket": 0,
+         "consensus": 95.0, "probabilities": {"95": 1.0}},
+        # clean but 60 days old -> outside the 45-day window
+        {"target_date": old_day.isoformat(), "variable": "high", "lead_bucket": 0,
+         "consensus": 90.0, "probabilities": {"90": 1.0}},
+    ]
+    forecast_log._write(rows, p)
+    monkeypatch.setattr(forecast_log, "_PATH", p)
+    monkeypatch.setattr(station_history, "fetch_actual",
+                        lambda s, e: {TODAY: (96, 78), old_day: (91, 70)})
+    pool = scoring._correction_residuals(today=today)
+    assert (0, "low") not in pool              # flagged record excluded
+    assert pool[(0, "high")] == [-1.0]         # only the windowed clean record
 
 
 def test_bias_correction_block_wraps_scoring(monkeypatch):

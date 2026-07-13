@@ -10,10 +10,12 @@ days accumulate, feeds empirical per-lead-time spread back into calibration.
 from __future__ import annotations
 
 import math
-from datetime import date
+import statistics
+from datetime import date, timedelta
 
 import forecast_log
 from backtest import contract_points, reliability_bins, _brier, LABELS
+from config import CALIBRATION_WINDOW_DAYS
 from settlement import bin_for_temp
 from sources import station_history
 
@@ -24,6 +26,48 @@ MIN_LEAD_DAYS = 10
 # only correct when the bias clears SIG_Z standard errors (distinguishable from 0).
 SHRINK_K = 8
 SIG_Z = 1.0
+
+# SE(median) ≈ 1.2533 × sd/√n under approximate normality. The bias gate uses
+# it because the estimator is now a median: keeping the mean's SE would make
+# the significance test quietly easier to pass, the wrong direction.
+MEDIAN_SE_FACTOR = 1.2533
+
+
+def _flagged(rec: dict) -> bool:
+    """True when the record was captured under a live storm/front regime — the
+    convective floor or front guard was active, so its residual belongs to a
+    conditional regime the live model already widens for, not calm-day skill."""
+    return bool(rec.get("convective_widened") or rec.get("front_widened"))
+
+
+def _correction_residuals(today: date | None = None, basis: str = "hourly"
+                          ) -> dict[tuple, list[float]]:
+    """{(lead_bucket, variable): [signed consensus errors]} for the correction
+    estimators.
+
+    Unlike the all-time scoreboard (score()), this pool is windowed to the last
+    CALIBRATION_WINDOW_DAYS — so both calibration loops age at the same rate and
+    stale regimes/outliers fall out on their own — and drops storm/front-flagged
+    records (see _flagged). Records without a consensus contribute nothing.
+    """
+    today = today or date.today()
+    cutoff = today - timedelta(days=CALIBRATION_WINDOW_DAYS)
+    records = [r for r in _settled_records(today)
+               if r.get("basis", "hourly") == basis
+               and date.fromisoformat(r["target_date"]) >= cutoff
+               and not _flagged(r)
+               and r.get("consensus") is not None]
+    if not records:
+        return {}
+    actual = _actuals_for(records, basis)
+    out: dict[tuple, list[float]] = {}
+    for r in records:
+        d = date.fromisoformat(r["target_date"])
+        if d not in actual:
+            continue
+        act = actual[d][0] if r["variable"] == "high" else actual[d][1]
+        out.setdefault((r["lead_bucket"], r["variable"]), []).append(r["consensus"] - act)
+    return out
 
 
 def _settled_records(today: date | None = None) -> list[dict]:
@@ -182,16 +226,21 @@ def per_lead_sigma(min_days: int = MIN_LEAD_DAYS, today: date | None = None,
                    basis: str = "hourly") -> dict:
     """{lead_bucket: {variable: sigma}} for buckets with enough settled days.
 
-    Calibration uses this to override the interim inflation factor once the
-    forward log can speak for itself. Buckets below `min_days` are omitted, so
-    the model keeps falling back to the static inflation for those. `basis`
-    selects which settlement cohort to score against (the live site is CLI).
+    An honest std over the correction pool (_correction_residuals: windowed to
+    CALIBRATION_WINDOW_DAYS, storm/front-flagged records dropped). Deliberately
+    NOT a robust scale estimator: a day-ahead miss on a day that *turned out*
+    stormy is legitimate lead-time uncertainty and stays in — the flags only
+    ever mark same-day locked records, so this falls out naturally. Buckets
+    below `min_days` are omitted, so the model keeps falling back to the static
+    inflation there. `basis` selects the settlement cohort (the live site is CLI).
     """
     out: dict[int, dict[str, float]] = {}
-    for bucket, vars_ in score(today, basis=basis).get("by_lead", {}).items():
-        for var, stats in vars_.items():
-            if stats["n"] >= min_days and stats.get("sigma") is not None:
-                out.setdefault(int(bucket), {})[var] = stats["sigma"]
+    for (bucket, var), errs in _correction_residuals(today, basis).items():
+        if len(errs) < min_days:
+            continue
+        m = sum(errs) / len(errs)
+        sigma = math.sqrt(sum((e - m) ** 2 for e in errs) / len(errs))
+        out.setdefault(int(bucket), {})[var] = round(sigma, 2)
     return out
 
 
@@ -200,23 +249,25 @@ def per_lead_bias(min_days: int = MIN_LEAD_DAYS, today: date | None = None,
     """{lead_bucket: {variable: correction}} signed bias to SUBTRACT from the
     consensus, for buckets the data can speak to.
 
-    Built from score()'s by_lead bias (= mean(consensus - actual); positive =
-    forecast ran warm). Two guards keep auto-correction safe on small samples: a
-    >= min_days gate, plus shrinkage toward zero by n/(n+SHRINK_K) combined with a
-    significance test (|bias| must exceed SIG_Z * sigma/sqrt(n)). A noisy bias is
-    shrunk away; a persistent one survives and grows as days accumulate. Omitted
-    buckets => the model applies no correction there.
+    The point estimate is the MEDIAN of the correction pool (windowed +
+    flag-excluded, see _correction_residuals), not the mean: three storm-night
+    outliers once manufactured a lead-0 low correction the median correctly
+    reads as zero, and the median also damps any regime day the flags missed.
+    The guards keep their shape: >= min_days pool records, significance
+    |median| > SIG_Z * MEDIAN_SE_FACTOR * sd/sqrt(n) (the median's own standard
+    error), and shrinkage toward zero by n/(n+SHRINK_K). Omitted buckets =>
+    the model applies no correction there.
     """
     out: dict[int, dict[str, float]] = {}
-    for bucket, vars_ in score(today, basis=basis).get("by_lead", {}).items():
-        for var, stats in vars_.items():
-            n = stats.get("n_resid", stats.get("n", 0))
-            bias = stats.get("bias")
-            sigma = stats.get("sigma")
-            if n < min_days or bias is None or sigma is None:
-                continue
-            stderr = sigma / math.sqrt(n)
-            if abs(bias) <= SIG_Z * stderr:
-                continue  # statistically indistinguishable from zero
-            out.setdefault(int(bucket), {})[var] = round(bias * n / (n + SHRINK_K), 2)
+    for (bucket, var), errs in _correction_residuals(today, basis).items():
+        n = len(errs)
+        if n < min_days:
+            continue
+        med = statistics.median(errs)
+        m = sum(errs) / n
+        sd = math.sqrt(sum((e - m) ** 2 for e in errs) / n)
+        se = MEDIAN_SE_FACTOR * sd / math.sqrt(n)
+        if abs(med) <= SIG_Z * se:
+            continue  # statistically indistinguishable from zero
+        out.setdefault(int(bucket), {})[var] = round(med * n / (n + SHRINK_K), 2)
     return out
