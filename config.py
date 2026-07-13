@@ -124,6 +124,19 @@ HIGH_PLATEAU_MAX = 0.3
 # lock on the first reading exactly as before (no delay).
 HIGH_BUMPY_STD = 1.5
 
+# --- Front-aware locked low ---
+# A locked morning min can still be undercut by a real evening cold front
+# before midnight (Kalshi settles the full-day min), and the POP-gated
+# convective floor can't see a dry front. A member whose obs-anchored
+# afternoon/evening projection undercuts the observed min by at least the
+# margin reports that projection instead of the observed min. The margin
+# clears anchor jitter; scanning only hours >= FRONT_SCAN_FROM_HOUR keeps the
+# dawn-adjacent wobble (the reason the early sunrise lock exists) from
+# reopening a calm day's lock — "a new low later today" is an
+# afternoon/evening event.
+FRONT_UNDERCUT_MARGIN = 0.5   # °F below the observed min a projection must reach
+FRONT_SCAN_FROM_HOUR = 12     # local hour the undercut scan starts
+
 MAX_CLI_GAP = 3.0   # °F; largest CLI-vs-hourly low gap we trust as a live anchor (spike clamp)
 
 # --- Radiational-cooling predictor (overnight low) ---

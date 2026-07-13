@@ -23,7 +23,8 @@ from zoneinfo import ZoneInfo
 import requests
 
 from config import (BIN_HIGH, BIN_LOW, CACHE_TTL_SECONDS, CALM_WIND_MAX,
-                    CLEAR_CLOUD_MAX, HIGH_BUMPY_STD, HIGH_LOCK_DROP,
+                    CLEAR_CLOUD_MAX, FRONT_SCAN_FROM_HOUR,
+                    FRONT_UNDERCUT_MARGIN, HIGH_BUMPY_STD, HIGH_LOCK_DROP,
                     HIGH_LOCK_NOON_OFFSET_HOURS, HIGH_PLATEAU_MAX,
                     LEAD_SIGMA_INFLATION, LOW_LOCK_RISE, MAX_CLI_GAP,
                     PEAK_LOCK_DROP, TIMEZONE, bin_labels, lead_bucket)
@@ -188,11 +189,13 @@ def _member_extreme(times, temps, day, variable, now, observed, obs_now=None,
     instead of trusting a stale, too-warm forecast. Future days: full-day extreme.
 
     When `locked` (the extreme has demonstrably passed — see `_extreme_locked`),
-    the realized extreme supersedes the forecast entirely: return `observed`, so
-    a forecast still projecting more rise/fall can't push past what already happened.
+    the realized extreme supersedes the forecast: return `observed`. The one
+    exception is the low's front guard — a member whose anchored post-noon
+    forecast undercuts the observed min by FRONT_UNDERCUT_MARGIN returns that
+    projected new low instead, so an evening cold front reopens the locked low.
     """
     start, end = local_day_bounds(day)
-    day_vals, remaining = [], []
+    day_vals, remaining = [], []   # remaining: (local time, temp) pairs after `now`
     # Bracket the forecast around `now` so the anchor can be interpolated to the
     # exact time. Snapping fc_now to the last whole hour made it a step function
     # that jumped at the top of each hour while the observation anchor hadn't yet
@@ -208,7 +211,7 @@ def _member_extreme(times, temps, day, variable, now, observed, obs_now=None,
         day_vals.append(v)
         if now is not None:
             if t > now:
-                remaining.append(v)
+                remaining.append((t, v))
                 if hi_t is None:            # first forecast hour after now
                     hi_t, hi_v = t, v
             else:
@@ -233,21 +236,37 @@ def _member_extreme(times, temps, day, variable, now, observed, obs_now=None,
             return None
         return max(day_vals) if variable == "high" else min(day_vals)
 
-    # Extreme already passed: the realized value is the answer; ignore the
-    # forecast's projected further rise/fall.
-    if locked and observed is not None:
-        return observed
-
     # Anchor the remaining forecast to the current observation.
     offset = (obs_now - fc_now) if (obs_now is not None and fc_now is not None) else 0.0
-    remaining = [v + offset for v in remaining]
+    remaining = [(t, v + offset) for t, v in remaining]
+
+    # Extreme already passed: the realized value is the answer; ignore the
+    # forecast's projected further rise/fall. Exception — the low's front
+    # guard: a locked morning min can still be undercut by a real evening cold
+    # front before midnight (Kalshi settles the full-day min), which the
+    # POP-gated convective floor can't see when the front is dry. A member
+    # whose anchored post-noon projection undercuts the observed min by
+    # FRONT_UNDERCUT_MARGIN reports that projection, so the consensus and
+    # spread follow the forecast signal; everyone else stays pinned to the
+    # observed min. The scan starts at FRONT_SCAN_FROM_HOUR so dawn-adjacent
+    # jitter (the reason the early sunrise lock exists) can't reopen a calm
+    # day's lock. The high keeps the unconditional pin: nothing sets a new
+    # daytime max after its window, and its lock already carries the
+    # peak-postdates-trough guard.
+    if locked and observed is not None:
+        if variable == "high":
+            return observed
+        scan = [v for t, v in remaining if t.hour >= FRONT_SCAN_FROM_HOUR]
+        if scan and min(scan) <= observed - FRONT_UNDERCUT_MARGIN:
+            return min(scan)
+        return observed
 
     # Today: combine realized-so-far with the anchored forecast of what's left.
     if variable == "high":
-        fcst = max(remaining) if remaining else -math.inf
+        fcst = max((v for _, v in remaining), default=-math.inf)
         return max(observed if observed is not None else -math.inf, fcst)
     else:
-        fcst = min(remaining) if remaining else math.inf
+        fcst = min((v for _, v in remaining), default=math.inf)
         return min(observed if observed is not None else math.inf, fcst)
 
 
