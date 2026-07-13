@@ -679,7 +679,7 @@ CONVECTIVE_RESOLVED_CAP = 90
 
 
 def displayed_resolved(d):
-    """Resolved % for the metric card, clamped on a convective-downside day.
+    """Resolved % for the metric card, clamped on a convective- or front-risk day.
 
     `resolved` measures how much of the *diurnal* uncertainty is settled and hits
     100% once the extreme's window closes. But on a storm day the low's daily min
@@ -688,7 +688,7 @@ def displayed_resolved(d):
     contradicting the risk caption. Display-only — the raw `resolved` and the
     probabilities are untouched."""
     pct = int(d.get("resolved", 1 - d.get("locked_ratio", 0.0)) * 100)
-    if d.get("convective_widened"):
+    if d.get("convective_widened") or d.get("front_widened"):
         pct = min(pct, CONVECTIVE_RESOLVED_CAP)
     return pct
 
@@ -746,6 +746,15 @@ def lock_status(d, variable):
                 f"Dawn trough is in at {obs:.1f}°F, but evening storms could set a "
                 f"new, lower daily min before midnight (σ widened to "
                 f"{d['sigma_used']:.1f}°F). Not a settled low — wait or size down.")
+    if d.get("front_widened"):
+        # Forecast members project a post-noon reading under the locked morning
+        # min — a cold front may set a new daily low before midnight. Don't show
+        # the green settled badge the flag contradicts.
+        return ("warning", "Front Risk — Colder Evening Reading Forecast",
+                f"Dawn trough is in at {obs:.1f}°F, but forecast members project "
+                f"a colder reading before midnight (consensus {consensus:.1f}°F) "
+                "— a front may undercut the morning low. NOT safe to treat as "
+                "settled — wait or size down.")
     if d.get("peak_locked"):
         return ("success", "Locked — Dawn Trough Is In",
                 f"Low is in at {obs:.1f}°F — temperature has climbed back from the "
@@ -911,6 +920,9 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
         _conv = risk_label(d)
         if _conv:
             st.caption(_conv)
+        if d.get("front_widened"):
+            st.caption("Forecast front risk — models project a colder evening "
+                       "reading; the low may not be final.")
 
         level, headline, detail = lock_status(d, variable)
         getattr(st, level)(f"**{headline}** — {detail}")
