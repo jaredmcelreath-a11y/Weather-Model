@@ -52,3 +52,25 @@ def test_kelly_fraction_positive_edge():
 def test_kelly_fraction_no_edge_is_zero():
     assert kelly.kelly_fraction(0.50, 0.50) == 0.0
     assert kelly.kelly_fraction(0.40, 0.50) == 0.0
+
+
+def test_best_side_picks_yes_when_underpriced():
+    # p=0.65, yes_ask=0.55 -> edge_yes +0.10; no_ask=0.50 -> edge_no 0.35-0.50<0.
+    assert kelly.best_side(0.65, 0.55, 0.50) == ("yes", 0.65, 0.55)
+
+
+def test_best_side_picks_no_when_yes_overpriced():
+    # p=0.30 -> no win-prob 0.70; no_ask=0.55 -> edge_no +0.15 beats yes.
+    assert kelly.best_side(0.30, 0.80, 0.55) == ("no", 0.70, 0.55)
+
+
+def test_best_side_none_when_no_edge():
+    assert kelly.best_side(0.50, 0.55, 0.55) is None
+
+
+def test_best_side_ignores_missing_ask():
+    # yes_ask missing -> only NO considered; NO win-prob 0.35 vs 0.50 ask is
+    # negative edge, so nothing clears -> None.
+    assert kelly.best_side(0.65, None, 0.50) is None
+    # yes_ask present with edge, no_ask missing -> picks YES.
+    assert kelly.best_side(0.65, 0.55, None) == ("yes", 0.65, 0.55)

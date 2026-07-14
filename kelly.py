@@ -45,3 +45,19 @@ def kelly_fraction(q, price):
         return 0.0
     f = (q - price) / (1.0 - price)
     return max(0.0, f)
+
+
+def best_side(p, yes_ask, no_ask):
+    """The side to buy: whichever of YES (win-prob p) / NO (win-prob 1-p) has
+    the larger positive edge vs its ask. None if neither side has an edge or
+    its ask is missing. Mirrors the market table's >0 edge signal."""
+    cands = []
+    if yes_ask is not None:
+        cands.append(("yes", p, yes_ask, p - yes_ask))
+    if no_ask is not None:
+        cands.append(("no", 1.0 - p, no_ask, (1.0 - p) - no_ask))
+    cands = [c for c in cands if c[3] > 0]
+    if not cands:
+        return None
+    side, win, ask, _edge = max(cands, key=lambda c: c[3])
+    return (side, win, ask)
