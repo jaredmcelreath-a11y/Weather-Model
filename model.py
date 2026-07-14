@@ -604,12 +604,23 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     # printing ~1°F too hot in the late-afternoon window (the "95.9 at 6pm when
     # it's 95" bug). The low keeps the strict `locked` gate — its downside is real.
     if settle_offset is not None and observed is not None:
+        # The CLI daily-summary max/min is the exact Kalshi settlement variable —
+        # used below both to anchor the low's center and to floor the hard bound.
+        cli_daily = obs_series.get("cli_daily", {}).get(day)
         if variable == "high":
             # Unchanged: once the peak is locked or past the solar-noon gate and
             # the continuous peak is observed, anchor on the measured gap.
             if (locked or _past_high_peak_gate(day, now)) and observed_cont is not None:
                 settle_shift = observed_cont - observed
                 settle_gap_std = 0.0
+            # Hard-bound floor: when the authoritative daily-summary max is hotter
+            # than our bound floor, the buckets the settled high has already passed
+            # are impossible — floor the bound up to it so they read 0%. Live-only
+            # (no backtest lookahead), tighten-up-only, MAX_CLI_GAP-capped.
+            if (live and cli_daily is not None and cli_daily[0] is not None
+                    and cli_daily[0] > observed_bound
+                    and cli_daily[0] - observed <= MAX_CLI_GAP):
+                observed_bound = cli_daily[0]
         else:
             # Low, CLI basis: prefer the whole-°F daily-summary CLI min (the exact
             # Kalshi settlement variable) over the whole-°C 5-min feed. Use the
@@ -618,7 +629,6 @@ def predict_variable(series, obs_series, day, variable, now, calib,
             # the low downward (gap < 0), and only `live` (backtest must not get the
             # settled value as lookahead). A locked low keeps its measured gap even
             # at gap == 0 (the settled value must beat the average offset).
-            cli_daily = obs_series.get("cli_daily", {}).get(day)
             cli_low = cli_daily[1] if cli_daily else observed_cont
             if cli_low is not None:
                 gap = cli_low - observed
@@ -627,6 +637,16 @@ def predict_variable(series, obs_series, day, variable, now, calib,
                 if trust:
                     settle_shift = gap
                     settle_gap_std = 0.0
+            # Hard-bound floor: the authoritative daily-summary min IS the Kalshi
+            # settlement value. When it's colder than our bound floor, the brackets
+            # the settled low has already passed are impossible — floor the bound
+            # down to it so they read 0%. Live-only, tighten-down-only,
+            # MAX_CLI_GAP-capped. Does NOT touch the corroboration/anti-blip logic:
+            # a lone cold 5-min reading still cannot lock the low.
+            if (live and cli_daily is not None and cli_daily[1] is not None
+                    and cli_daily[1] < observed_bound
+                    and observed - cli_daily[1] <= MAX_CLI_GAP):
+                observed_bound = cli_daily[1]
     fullday_mean = sum(fullday) / len(fullday)  # unshifted (hourly-basis) forecast center
     if settle_shift:
         samples = [s + settle_shift for s in samples]

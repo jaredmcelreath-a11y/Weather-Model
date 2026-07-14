@@ -579,3 +579,75 @@ def test_high_display_matches_behavior_when_no_lone_spike():
     off = {"high": 1.0, "high_std": 2.0, "low": 0.0, "low_std": 0.0}
     r = model.predict_variable(_series(day), _obs(day, _LOCKED_HIGH, True), day, "high", now, None, off)
     assert r["observed_continuous_display"] == r["observed_continuous"]
+
+
+# --- Hard bound floored on the CLI daily-summary extreme (2026-07-14) ----------
+# Kalshi settles on the NWS CLI daily-summary max/min, not the ASOS feed the bound
+# floors on. When the authoritative whole-°F summary has already passed a bracket,
+# that bracket is impossible and must read 0% (with the freed mass reallocated).
+
+# Morning low sitting at 76 (hourly min 76 @03:00, ticked to 77 @04:00 -> set but
+# not locked). Full-day member lows are ~75-77, so bin 76 carries real mass.
+_PASSED_LOW = [82, 80, 78, 76, 77]
+
+
+def test_live_low_daily_summary_zeros_passed_bracket():
+    day = date(2030, 7, 1)
+    series = _series(day)
+    now = datetime(day.year, day.month, day.day, 4, tzinfo=_TZ)
+    base = model.predict_variable(series, _obs(day, _PASSED_LOW, False), day,
+                                  "low", now, None, _ZERO_OFF, live=True)
+    obs_cli = _obs(day, _PASSED_LOW, False)
+    obs_cli["cli_daily"] = {day: (95.0, 75.0)}   # CLI min 75 -> 76+ impossible
+    fixed = model.predict_variable(series, obs_cli, day, "low", now, None,
+                                   _ZERO_OFF, live=True)
+    # The bracket the summary has passed genuinely had mass before the fix...
+    assert model.prob_at_least(base["probabilities"], 76) > 0.05
+    # ...and is zeroed once the summary floors the bound, with mass reallocated.
+    assert model.prob_at_least(fixed["probabilities"], 76) == 0.0
+    assert abs(sum(fixed["probabilities"].values()) - 1.0) < 1e-9
+
+
+def test_live_high_daily_summary_zeros_passed_bracket():
+    # Locked afternoon high realized at 95; the CLI summary max reads 96, so the
+    # 95-and-below buckets the settled high has passed must go to 0%.
+    day = date(2030, 7, 1)
+    series = _series(day)
+    now = datetime(day.year, day.month, day.day, 17, tzinfo=_TZ)
+    base = model.predict_variable(series, _obs(day, _LOCKED_HIGH, False), day,
+                                  "high", now, None, _ZERO_OFF, live=True)
+    obs_cli = _obs(day, _LOCKED_HIGH, False)
+    obs_cli["cli_daily"] = {day: (96.0, 70.0)}   # CLI max 96 -> <=95 impossible
+    fixed = model.predict_variable(series, obs_cli, day, "high", now, None,
+                                   _ZERO_OFF, live=True)
+    assert model.prob_at_most(base["probabilities"], 95) > 0.05
+    assert model.prob_at_most(fixed["probabilities"], 95) == 0.0
+    assert abs(sum(fixed["probabilities"].values()) - 1.0) < 1e-9
+
+
+def test_daily_summary_bound_floor_is_live_only():
+    day = date(2030, 7, 1)
+    series = _series(day)
+    now = datetime(day.year, day.month, day.day, 4, tzinfo=_TZ)
+    obs_cli = _obs(day, _PASSED_LOW, False)
+    obs_cli["cli_daily"] = {day: (95.0, 75.0)}
+    replay = model.predict_variable(series, obs_cli, day, "low", now, None,
+                                    _ZERO_OFF, live=False)
+    # Backtest/replay must not receive the settled value as lookahead -> the passed
+    # bracket keeps its mass (bound not floored on the summary).
+    assert model.prob_at_least(replay["probabilities"], 76) > 0.05
+
+
+def test_daily_summary_bound_floor_respects_max_cli_gap():
+    day = date(2030, 7, 1)
+    series = _series(day)
+    now = datetime(day.year, day.month, day.day, 4, tzinfo=_TZ)
+    base = model.predict_variable(series, _obs(day, _PASSED_LOW, False), day,
+                                  "low", now, None, _ZERO_OFF, live=True)
+    wild = _obs(day, _PASSED_LOW, False)
+    wild["cli_daily"] = {day: (95.0, 72.0)}   # gap 76-72 = 4 > MAX_CLI_GAP=3
+    fixed = model.predict_variable(series, wild, day, "low", now, None,
+                                   _ZERO_OFF, live=True)
+    # An implausibly cold summary is clamped out -> bound unchanged, bracket kept.
+    assert model.prob_at_least(fixed["probabilities"], 76) \
+        == model.prob_at_least(base["probabilities"], 76) > 0.05
