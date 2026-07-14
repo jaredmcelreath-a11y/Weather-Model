@@ -1195,7 +1195,7 @@ def _kelly_sizing_box(contracts, probs, adapter, variable):
     from sources import kalshi, kalshi_portfolio
 
     box = st.container(border=True)
-    box.markdown(f"**{variable.capitalize()} Kelly Sizing Helper** — how much to bet")
+    box.markdown(f"**{variable.capitalize()} Kelly Sizing Helper**")
 
     edged = [c for c in contracts
              if kelly.best_side(adapter.model_prob(probs, c),
