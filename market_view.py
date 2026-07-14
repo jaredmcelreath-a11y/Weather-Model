@@ -19,6 +19,7 @@ import streamlit.components.v1 as components
 from streamlit_autorefresh import st_autorefresh
 
 import calibration
+import kelly
 import model
 from config import CALIBRATION_WINDOW_DAYS, STATION_ID, TIMEZONE
 
@@ -1163,6 +1164,101 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                 "win-probability + positive-edge bar right now — no low-risk hold "
                 "available (the market isn't underpricing a safe side).</p></div>",
                 unsafe_allow_html=True)
+
+        _kelly_sizing_box(contracts, probs, adapter, variable)
+
+
+def _kelly_pick(contracts, probs, adapter):
+    """The model's single best-edge (contract, side, win_prob) across the live
+    contracts, or None if nothing clears a positive edge. Pure — no Streamlit."""
+    best = None  # (edge, contract, side, q)
+    for c in contracts:
+        p = adapter.model_prob(probs, c)
+        chosen = kelly.best_side(p, c.get("yes_ask"), c.get("no_ask"))
+        if chosen is None:
+            continue
+        side, q, ask = chosen
+        edge = q - ask
+        if best is None or edge > best[0]:
+            best = (edge, c, side, q)
+    if best is None:
+        return None
+    _edge, c, side, q = best
+    return (c, side, q)
+
+
+def _kelly_sizing_box(contracts, probs, adapter, variable):
+    """Interactive Kelly bet-sizing box for one market. Lets the user pick a
+    live contract, set a Kelly fraction, and see the recommended stake plus a
+    size-vs-return curve that shows where extra contracts stop being worth it.
+    Thin glue over kelly.optimal_size + the live order book + account balance."""
+    from sources import kalshi, kalshi_portfolio
+
+    box = st.container(border=True)
+    box.markdown(f"**{variable.capitalize()} Kelly Sizing Helper** — how much to bet")
+
+    edged = [c for c in contracts
+             if kelly.best_side(adapter.model_prob(probs, c),
+                                c.get("yes_ask"), c.get("no_ask")) is not None]
+    if not edged:
+        box.caption("No live contract has a positive edge right now — nothing to size.")
+        return
+
+    labels = [c["label"] for c in edged]
+    default = _kelly_pick(edged, probs, adapter)
+    default_idx = labels.index(default[0]["label"]) if default else 0
+    label = box.selectbox("Contract", labels, index=default_idx,
+                          key=f"kelly_ct_{variable}")
+    c = next(x for x in edged if x["label"] == label)
+    side, q, _ask = kelly.best_side(adapter.model_prob(probs, c),
+                                    c.get("yes_ask"), c.get("no_ask"))
+
+    bal = kalshi_portfolio.balance()
+    bankroll = box.number_input(
+        "Bankroll ($)", min_value=1.0,
+        value=float(round(bal, 2)) if bal else 100.0, step=10.0,
+        key=f"kelly_bank_{variable}",
+        help="Auto-filled from your live Kalshi cash balance; edit to size against "
+             "a different pool." if bal else "Enter the pool you're sizing against.")
+    frac = box.slider("Kelly fraction", 0.25, 1.0, 0.5, 0.05,
+                      key=f"kelly_frac_{variable}",
+                      help="Fraction of full Kelly. 0.5 (half Kelly) is the safe "
+                           "default; full Kelly (1.0) is aggressive.")
+
+    try:
+        ob = kalshi.fetch_orderbook(c["ticker"])
+        ladder = kalshi.ask_ladder(ob, side)
+    except Exception:
+        box.caption("Couldn't load the live order book — try again in a moment.")
+        return
+
+    s = kelly.optimal_size(ladder, q, bankroll, frac, side=side)
+    if s.contracts == 0:
+        box.info(s.note or "No bet recommended.")
+        return
+
+    m1, m2, m3 = box.columns(3)
+    m1.metric("Buy", f"{s.contracts} × {side.upper()}")
+    m2.metric("Avg fill", cents(s.avg_price))
+    m3.metric("Stake", f"${s.stake:,.2f}")
+    n1, n2 = box.columns(2)
+    n1.metric("Expected value", f"${s.ev:,.2f}")
+    n2.metric("Max +EV size", f"{s.ev_ceiling}")
+    if s.curve:
+        cdf = pd.DataFrame(s.curve, columns=["contracts", "ev"])
+        chart = (alt.Chart(cdf).mark_line().encode(
+                    x=alt.X("contracts", title="contracts bought"),
+                    y=alt.Y("ev", title="expected value ($)"))
+                 + alt.Chart(pd.DataFrame({"contracts": [s.contracts]}))
+                    .mark_rule(color="green").encode(x="contracts"))
+        box.altair_chart(chart, use_container_width=True)
+    box.caption(
+        f"At {frac:g}× Kelly against ${bankroll:,.0f}, buy **{s.contracts} "
+        f"{side.upper()}** on {label} (avg {cents(s.avg_price)}, stake "
+        f"${s.stake:,.2f}, EV +${s.ev:,.2f}). Beyond {s.ev_ceiling} contracts the "
+        "order book climbs past the model's win probability — those add negative "
+        "expected value. The green line marks the recommended size."
+        + (f" {s.note}" if s.note else ""))
 
 
 def exclusion_note(n):
