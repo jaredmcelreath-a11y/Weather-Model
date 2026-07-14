@@ -3,7 +3,8 @@ name: Log forecast snapshot
 # Records a model snapshot to the forward log every 15 min so live self-scoring,
 # per-lead sigma, and the intraday consensus history keep accumulating in the
 # cloud — independent of any computer. The logs live on an orphan `data` branch
-# (just those files), kept separate from the deployed branch so these commits
+# (forecast_log.jsonl, consensus_history.jsonl, settlements.jsonl, betting_log.jsonl,
+# calibration.json), kept separate from the deployed branch so these commits
 # don't restart the app.
 
 on:
@@ -54,6 +55,7 @@ jobs:
             git show origin/data:consensus_history.jsonl > consensus_history.jsonl || true
             git show origin/data:settlements.jsonl > settlements.jsonl || true
             git show origin/data:betting_log.jsonl > betting_log.jsonl 2>/dev/null || true
+            git show origin/data:calibration.json > calibration.json 2>/dev/null || true
           fi
 
       - name: Append this snapshot
@@ -67,6 +69,7 @@ jobs:
           [ -f consensus_history.jsonl ] && cp consensus_history.jsonl "$tmp/consensus_history.jsonl"
           [ -f settlements.jsonl ] && cp settlements.jsonl "$tmp/settlements.jsonl"
           [ -f betting_log.jsonl ] && cp betting_log.jsonl "$tmp/betting_log.jsonl"
+          [ -f calibration.json ] && [ -s calibration.json ] && cp calibration.json "$tmp/calibration.json"
           cd "$tmp"
           git init -q
           git config user.name "weather-log-bot"
@@ -76,6 +79,7 @@ jobs:
           [ -f consensus_history.jsonl ] && git add consensus_history.jsonl
           [ -f settlements.jsonl ] && git add settlements.jsonl
           [ -f betting_log.jsonl ] && git add -f betting_log.jsonl
+          [ -f calibration.json ] && git add -f calibration.json
           git commit -q -m "log: snapshot $(date -u +%FT%TZ)"
           git push -fq \
             "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" \
