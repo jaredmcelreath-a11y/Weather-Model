@@ -147,3 +147,17 @@ def test_high_never_sets_front_widened():
     out = model.predict_variable(series, {"obs": _obs_locked_afternoon()},
                                  _DAY, "high", _at(14), None)
     assert out["front_widened"] is False
+
+
+def test_unanimous_undercut_floors_sigma():
+    # BOTH members project the same evening undercut: the sample spread
+    # collapses, but the projected new low is still an hours-ahead forecast —
+    # sigma must floor at FRONT_SIGMA_MIN instead of printing observation-noise
+    # confidence (the May 5 replay: sigma 0.8 on a 3.2°F miss).
+    from config import FRONT_SIGMA_MIN
+    ev = {18: 80, 21: 76, 23: 74}
+    series = {"det_a": _fc(_curve(ev)), "det_b": _fc(_curve(ev))}
+    out = model.predict_variable(series, {"obs": _obs_locked_afternoon()},
+                                 _DAY, "low", _at(14), None)
+    assert out["front_widened"] is True
+    assert out["sigma_used"] >= FRONT_SIGMA_MIN

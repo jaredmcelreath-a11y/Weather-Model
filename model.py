@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 from config import (BIN_HIGH, BIN_LOW, CACHE_TTL_SECONDS, CALM_WIND_MAX,
-                    CLEAR_CLOUD_MAX, FRONT_SCAN_FROM_HOUR,
+                    CLEAR_CLOUD_MAX, FRONT_SCAN_FROM_HOUR, FRONT_SIGMA_MIN,
                     FRONT_UNDERCUT_MARGIN, HIGH_BUMPY_STD, HIGH_LOCK_DROP,
                     HIGH_LOCK_NOON_OFFSET_HOURS, HIGH_PLATEAU_MAX,
                     LEAD_SIGMA_INFLATION, LOW_LOCK_RISE, MAX_CLI_GAP,
@@ -706,6 +706,16 @@ def predict_variable(series, obs_series, day, variable, now, calib,
                 convective_widened = True
         except Exception:
             pass
+
+    # Front-guard humility: when members project an evening undercut of the
+    # locked low, the projected new low is still an hours-ahead forecast. If
+    # every member agrees, the sample spread collapses and sigma would print
+    # observation-noise confidence on an unrealized event (May 5 replay: sigma
+    # 0.8 on a 3.2°F miss). Floor it like the convective case; the hard bound
+    # keeps the widening one-sided. Flag-driven (no live data), so unlike the
+    # convective floor it also runs in backtest — exactly like the guard.
+    if front_widened:
+        sigma = max(sigma, FRONT_SIGMA_MIN)
 
     probs = _bin_probabilities(samples, sigma, weights)
     probs = _apply_hard_bound(probs, variable, observed_bound)

@@ -136,6 +136,12 @@ HIGH_BUMPY_STD = 1.5
 # afternoon/evening event.
 FRONT_UNDERCUT_MARGIN = 0.5   # °F below the observed min a projection must reach
 FRONT_SCAN_FROM_HOUR = 12     # local hour the undercut scan starts
+FRONT_SIGMA_MIN = 1.5   # °F; sigma floor while the front guard holds a locked
+                        # low open. A projected-but-unrealized evening event
+                        # deserves at least this much spread (the same idiom and
+                        # value as CONVECTIVE_SIGMA_MIN) — even when every member
+                        # agrees on the undercut and the raw sample spread
+                        # collapses, the projection is still hours ahead.
 
 MAX_CLI_GAP = 3.0   # °F; largest CLI-vs-hourly low gap we trust as a live anchor (spike clamp)
 
