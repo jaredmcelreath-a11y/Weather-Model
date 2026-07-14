@@ -16,3 +16,22 @@ def fee(n: int, price: float) -> float:
         return 0.0
     raw = 0.07 * n * price * (1.0 - price)
     return math.ceil(raw * 100 - 1e-9) / 100.0
+
+
+def cost_to_buy(ladder, n, include_fees=True):
+    """Total dollars to buy `n` contracts walking the ascending ask `ladder`
+    (levels of (price, size)); fees applied per level on the block taken from
+    that level. None if `n` exceeds total book depth."""
+    if n <= 0:
+        return 0.0
+    remaining = n
+    total = 0.0
+    for price, size in ladder:
+        take = min(remaining, size)
+        total += take * price
+        if include_fees:
+            total += fee(take, price)
+        remaining -= take
+        if remaining == 0:
+            return total
+    return None  # book too thin to fill n
