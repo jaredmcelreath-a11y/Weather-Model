@@ -1194,6 +1194,9 @@ def _kelly_sizing_box(contracts, probs, adapter, variable):
     Thin glue over kelly.optimal_size + the live order book + account balance."""
     from sources import kalshi, kalshi_portfolio
 
+    # The 'Safest hold' .wbox above carries only a 0.3rem bottom margin, so nudge
+    # the box down to match the gap between the other bordered sections.
+    st.markdown("<div style='margin-top:0.75rem'></div>", unsafe_allow_html=True)
     box = st.container(border=True)
     box.markdown(f"**{variable.capitalize()} Kelly Sizing Helper**")
 
