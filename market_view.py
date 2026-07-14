@@ -1259,6 +1259,8 @@ def _kelly_sizing_box(contracts, probs, adapter, variable):
                   ("Max +EV size", f"{s.ev_ceiling}")], "wmini2"),
         unsafe_allow_html=True)
     if s.curve:
+        # breathing room between the metric cards and the chart (desktop + mobile)
+        box.markdown("<div style='margin-top:0.75rem'></div>", unsafe_allow_html=True)
         cdf = pd.DataFrame(s.curve, columns=["contracts", "ev"])
         chart = (alt.Chart(cdf).mark_line().encode(
                     x=alt.X("contracts", title="contracts bought"),
