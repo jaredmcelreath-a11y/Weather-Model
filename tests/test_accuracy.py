@@ -112,6 +112,23 @@ def test_forecast_log_stamps_regime_flags(tmp_path):
     assert rows[(tom, "high")]["front_widened"] is True
 
 
+def test_forecast_log_flag_latches_across_upserts(tmp_path):
+    p = str(tmp_path / "log.jsonl")
+    # 3pm capture: the front guard is firing on today's low.
+    snap = _snapshot(datetime(2026, 6, 16, 15, tzinfo=TZ))
+    snap["today"]["low"]["front_widened"] = True
+    forecast_log.record(snap, path=p)
+    # 10pm capture: the storm passed, the guard un-fired — but the day WAS a
+    # regime day, so the flag must latch (the correction pool and the exclusion
+    # count key on "fired at any point today").
+    forecast_log.record(_snapshot(datetime(2026, 6, 16, 22, tzinfo=TZ)), path=p)
+    rows = {(r["target_date"], r["variable"]): r for r in forecast_log.load(p)}
+    low = rows[(TODAY.isoformat(), "low")]
+    assert low["front_widened"] is True                 # latched
+    assert low["captured_at"].startswith("2026-06-16T22")  # still the latest capture
+    assert "front_widened" not in rows[(TODAY.isoformat(), "high")]  # never-flagged stays clean
+
+
 def test_market_accuracy_compares_to_model(tmp_path, monkeypatch):
     p = str(tmp_path / "log.jsonl")
     captured = datetime(2026, 6, 16, 22, tzinfo=TZ)

@@ -168,6 +168,13 @@ def record(snapshot: dict, path: str | None = None, basis: str = "hourly") -> No
     for rec in new_recs:
         k = _key(rec)
         if k in index:
+            # Latch regime flags across upserts: a day the guard fired on at
+            # ANY capture stays flagged even if the storm passed before this
+            # final capture un-fired it — the correction pool excludes by
+            # "was this a regime day", not "was the guard firing at 11:45pm".
+            for flag in ("convective_widened", "front_widened"):
+                if rows[index[k]].get(flag):
+                    rec[flag] = True
             rows[index[k]] = rec
         else:
             index[k] = len(rows)
