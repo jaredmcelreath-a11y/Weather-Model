@@ -42,3 +42,13 @@ def test_cost_includes_per_level_fees():
 def test_cost_none_when_deeper_than_book():
     assert kelly.cost_to_buy(LADDER, 461, include_fees=False) is None
     assert kelly.cost_to_buy(LADDER, 460, include_fees=False) is not None
+
+
+def test_kelly_fraction_positive_edge():
+    # q=0.60, price=0.50 -> (0.60-0.50)/(1-0.50) = 0.20.
+    assert round(kelly.kelly_fraction(0.60, 0.50), 4) == 0.20
+
+
+def test_kelly_fraction_no_edge_is_zero():
+    assert kelly.kelly_fraction(0.50, 0.50) == 0.0
+    assert kelly.kelly_fraction(0.40, 0.50) == 0.0

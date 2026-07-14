@@ -35,3 +35,13 @@ def cost_to_buy(ladder, n, include_fees=True):
         if remaining == 0:
             return total
     return None  # book too thin to fill n
+
+
+def kelly_fraction(q, price):
+    """Classic Kelly fraction of bankroll to risk on a binary contract bought
+    at fixed `price` with win-probability `q`. Clamped at 0 (no bet) when the
+    edge is non-positive. Reference point for the book-walk optimizer."""
+    if price >= 1.0 or price <= 0.0:
+        return 0.0
+    f = (q - price) / (1.0 - price)
+    return max(0.0, f)
