@@ -256,7 +256,16 @@ def _member_extreme(times, temps, day, variable, now, observed, obs_now=None,
     if locked and observed is not None:
         if variable == "high":
             return observed
-        scan = [v for t, v in remaining if t.hour >= FRONT_SCAN_FROM_HOUR]
+        # Scan from local noon of the settlement day's primary date through the
+        # window end — NOT by raw clock hour. Under the LST window the day's
+        # final hour is 00:00–00:59 of the next clock day (t.hour == 0), which a
+        # `t.hour >= 12` filter would silently drop, defeating the guard exactly
+        # on the post-midnight-front nights it exists for. `noon` is derived from
+        # the window start, so this is correct in summer and byte-identical in
+        # winter (start is clock midnight there, so noon == start + 12h either way).
+        noon = start.astimezone(TZ).replace(
+            hour=FRONT_SCAN_FROM_HOUR, minute=0, second=0, microsecond=0)
+        scan = [v for t, v in remaining if t >= noon]
         if scan and min(scan) <= observed - FRONT_UNDERCUT_MARGIN:
             return min(scan)
         return observed

@@ -5,11 +5,9 @@ midnight->midnight window, rounded to a whole degree Fahrenheit. Every part of
 the model that needs "the high/low for day D" goes through here so the
 definition stays consistent.
 
-IMPORTANT (verify before trusting edge cases): this implements clock-time
-midnight->midnight in America/Chicago, as the user described the market. The
-NWS *climate day* uses local STANDARD time year-round, which can shift a
-near-midnight low onto a different calendar day during DST. Confirm against one
-actually-settled Kalshi/Robinhood KDFW market before relying on edge cases.
+The window is the NWS climate day (fixed Local Standard Time, UTC−6),
+verified 2026-07-14 (docs/benchmarks/2026-07-14/climate-day/FINDINGS.md). The
+settlement day in summer runs 01:00 CDT → 01:00 CDT the next clock day.
 """
 
 from __future__ import annotations

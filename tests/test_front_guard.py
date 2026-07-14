@@ -2,7 +2,7 @@
 forecast minimum instead of the observed min when that projection undercuts it
 by FRONT_UNDERCUT_MARGIN — so a dry evening cold front (which the POP-gated
 convective floor can't see) reopens the low instead of being discarded."""
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import model
 from config import TIMEZONE
@@ -14,6 +14,12 @@ _DAY = date(2026, 7, 2)
 
 def _at(hour, minute=0):
     return datetime(_DAY.year, _DAY.month, _DAY.day, hour, minute, tzinfo=_TZ)
+
+
+def _at_next(hour, minute=0):
+    """A datetime on the clock day AFTER _DAY (the settlement day's LST tail)."""
+    nxt = _DAY + timedelta(days=1)
+    return datetime(nxt.year, nxt.month, nxt.day, hour, minute, tzinfo=_TZ)
 
 
 def _fc(curve):
@@ -161,3 +167,31 @@ def test_unanimous_undercut_floors_sigma():
                                  _DAY, "low", _at(14), None)
     assert out["front_widened"] is True
     assert out["sigma_used"] >= FRONT_SIGMA_MIN
+
+
+def test_front_scan_includes_post_midnight_tail():
+    # Under the LST window, _DAY's settlement day runs to 01:00 CDT the next
+    # clock day. A front whose only undercut is a forecast reading at 00:30 CDT
+    # the next day must reopen the locked low — the old `t.hour >= 12` clock
+    # filter dropped it (hour 0).
+    ev = _curve({18: 88, 21: 85, 23: 82})          # evening stays warm...
+    series = {"det_a": _fc(ev), "det_b": _fc(ev)}
+    # ...but append a cold projection at 00:30 CDT the NEXT clock day (in-window)
+    tail_t = _at_next(0, 30)
+    for lbl in series:
+        t, v = series[lbl]
+        series[lbl] = (t + [tail_t], v + [70.0])
+    out = model.predict_variable(series, {"obs": _obs_locked_afternoon()},
+                                 _DAY, "low", _at(14), None)
+    assert out["front_widened"] is True
+    assert out["consensus"] < 78.0                 # pulled toward the 70 tail
+
+
+def test_front_scan_still_excludes_pre_noon_dip():
+    # A pre-noon dip (hour 9) still cannot trigger the guard.
+    curve = _curve({18: 88, 21: 85, 23: 82})
+    curve[9] = 70.0
+    series = {"det_a": _fc(curve), "det_b": _fc(curve)}
+    out = model.predict_variable(series, {"obs": _obs_locked_afternoon()},
+                                 _DAY, "low", _at(14), None)
+    assert out["front_widened"] is False
