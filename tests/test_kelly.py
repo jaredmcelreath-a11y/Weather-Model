@@ -74,3 +74,45 @@ def test_best_side_ignores_missing_ask():
     assert kelly.best_side(0.65, None, 0.50) is None
     # yes_ask present with edge, no_ask missing -> picks YES.
     assert kelly.best_side(0.65, 0.55, None) == ("yes", 0.65, 0.55)
+
+
+def test_optimal_size_recommends_within_ceiling():
+    # Flat deep book at 55c, q=0.65: every contract is +EV until bankroll/ceiling.
+    ladder = [(0.55, 1000)]
+    s = kelly.optimal_size(ladder, q=0.65, bankroll=1000.0, kelly_frac=1.0)
+    assert s.contracts > 0
+    assert s.contracts <= s.ev_ceiling
+    assert s.ev > 0
+
+
+def test_optimal_size_stops_at_negative_ev():
+    # Book climbs past q: 55c x40 (+EV), then 70c (>q=0.65, -EV). Ceiling=40.
+    ladder = [(0.55, 40), (0.70, 1000)]
+    s = kelly.optimal_size(ladder, q=0.65, bankroll=1_000_000.0, kelly_frac=1.0)
+    assert s.ev_ceiling == 40
+    assert s.contracts <= 40
+
+
+def test_fractional_kelly_is_monotone_and_smaller():
+    ladder = [(0.55, 1000)]
+    half = kelly.optimal_size(ladder, 0.65, 1000.0, kelly_frac=0.5)
+    full = kelly.optimal_size(ladder, 0.65, 1000.0, kelly_frac=1.0)
+    assert 0 < half.contracts <= full.contracts
+    # cost(half) <= 0.5 * cost(full) + one contract's slack
+    assert half.stake <= 0.5 * full.stake + 0.55 + 0.05
+
+
+def test_optimal_size_no_bet_when_best_ask_exceeds_q():
+    ladder = [(0.70, 100)]
+    s = kelly.optimal_size(ladder, q=0.65, bankroll=1000.0, kelly_frac=1.0)
+    assert s.contracts == 0
+    assert s.ev_ceiling == 0
+    assert "No bet" in s.note
+
+
+def test_optimal_size_flags_thin_book():
+    # Whole book is +EV (never hits the ceiling within depth).
+    ladder = [(0.55, 20)]
+    s = kelly.optimal_size(ladder, q=0.90, bankroll=1_000_000.0, kelly_frac=1.0)
+    assert s.contracts == 20
+    assert "depth" in s.note.lower()
