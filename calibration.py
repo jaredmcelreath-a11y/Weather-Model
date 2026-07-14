@@ -658,18 +658,42 @@ def compute_and_save() -> dict:
     return calib
 
 
+def _is_fresh(cached: dict) -> bool:
+    """Freshness travels with the FILE CONTENT, not the file's mtime: the
+    scheduled Action restores calibration.json from the data branch on every
+    run, which resets mtime to 'just now' — mtime-based freshness would never
+    recompute and silently freeze the calibration. The internal `computed`
+    timestamp survives the round-trip; files without one (pre-upgrade) fall
+    back to mtime. Timestamps are naive-local; a few hours' clock skew between
+    local and CI is acceptable against the 24h TTL."""
+    stamp = cached.get("computed")
+    if stamp:
+        try:
+            age = datetime.now() - datetime.fromisoformat(stamp)
+            return age.total_seconds() < _MAX_AGE
+        except ValueError:
+            pass
+    return time.time() - os.path.getmtime(_PATH) < _MAX_AGE
+
+
 def get(refresh: bool = True) -> dict | None:
-    """Return cached calibration, recomputing if stale. None if unavailable and
-    recompute is off (model then falls back to its built-in defaults)."""
+    """Return cached calibration, recomputing if stale. A corrupt/empty file
+    (e.g. a failed data-branch restore) reads as absent; a failed recompute
+    serves the last cached copy even if stale (a 2-day-old settlement offset
+    beats logging unshifted rows) — None only when nothing usable exists, so
+    callers can treat None as 'no calibration at all'."""
+    cached = None
     if os.path.exists(_PATH):
-        fresh = time.time() - os.path.getmtime(_PATH) < _MAX_AGE
-        with open(_PATH) as fh:
-            cached = json.load(fh)
-        if fresh or not refresh:
-            return cached
+        try:
+            with open(_PATH) as fh:
+                cached = json.load(fh)
+        except (json.JSONDecodeError, OSError):
+            cached = None
+    if cached is not None and (not refresh or _is_fresh(cached)):
+        return cached
     if not refresh:
         return None
     try:
         return compute_and_save()
     except Exception:
-        return None
+        return cached
