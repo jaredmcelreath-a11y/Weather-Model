@@ -70,6 +70,41 @@ def fetch_contracts(variable: str, day: date) -> list[dict]:
     return out
 
 
+def fetch_orderbook(ticker: str, fetch=None) -> dict:
+    """Live resting-bid order book for `ticker`, normalized to
+    {"yes": [[price_dollars, size], ...], "no": [...]} with float prices/sizes.
+
+    Kalshi returns the book under `orderbook_fp` with `yes_dollars` /
+    `no_dollars` arrays of [price_str, size_str] — prices already in dollars,
+    sizes possibly fractional, sorted ascending. `fetch` is injectable for
+    tests; the default hits GET /markets/{ticker}/orderbook, cached ~15s."""
+    fetch = fetch or (lambda t: get_json(f"{BASE}/markets/{t}/orderbook",
+                                         {"depth": 100}, ttl=15))
+    ob = (fetch(ticker) or {}).get("orderbook_fp") or {}
+
+    def _side(key):
+        return [[_f(p), _f(sz)] for p, sz in (ob.get(key) or [])]
+
+    return {"yes": _side("yes_dollars"), "no": _side("no_dollars")}
+
+
+def ask_ladder(orderbook: dict, side: str) -> list:
+    """Ascending ask ladder in dollars for the side being BOUGHT, reconstructed
+    from the opposite side's resting bids: buying YES sells against NO bids
+    (yes_ask = 1 - no_bid), and vice-versa. Levels are (price_dollars, size)
+    with size floored to whole contracts; zero-size levels dropped. Prices are
+    rounded to the cent (Kalshi trades in whole cents)."""
+    opp = "no" if side == "yes" else "yes"
+    ladder = []
+    for bid, sz in (orderbook.get(opp) or []):
+        size = int(sz)
+        if size <= 0:
+            continue
+        ladder.append((round(1.0 - bid, 2), size))
+    ladder.sort(key=lambda lvl: lvl[0])
+    return ladder
+
+
 def _bucket_mid(c) -> float | None:
     """A representative temperature for a contract's range, for an implied EV.
 
