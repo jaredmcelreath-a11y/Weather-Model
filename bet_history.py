@@ -17,82 +17,119 @@ BETS_START = date(2026, 6, 22)
 STARTING_BANKROLL = 10.0
 
 
+def _split_episodes(group: list[dict]) -> list[list[dict]]:
+    """Partition one ticker's fills into independent position episodes. A YES stake and a
+    NO stake on the same bracket — or a fresh entry after you've sold a position out — are
+    economically separate trades, so each becomes its own row. Walk the fills oldest→newest:
+    a buy opens/adds to the running position, a sell reduces it (side-agnostic — Kalshi may
+    record a close on either outcome, see build_rows), and when the size returns to flat the
+    episode closes and the next buy starts a fresh one. The trailing episode (one that never
+    sold flat) is the position held to settlement. A single-position ticker yields exactly
+    one episode = the whole group, so this is a no-op for the common case."""
+    episodes: list[list[dict]] = []
+    cur: list[dict] = []
+    size, opened = 0.0, False
+    for f in sorted(group, key=lambda f: f["ts"]):
+        cur.append(f)
+        if f["action"] == "buy":
+            size += f["count"]
+            opened = True
+        else:
+            size -= f["count"]
+        if opened and size <= 1e-9:              # position back to flat -> episode done
+            episodes.append(cur)
+            cur, size, opened = [], 0.0, False
+    if cur:                                      # trailing position still held (-> settlement)
+        episodes.append(cur)
+    return episodes
+
+
 def build_rows(fills: list[dict], settlements: dict, meta: dict) -> list[dict]:
     by_ticker: dict[str, list] = {}
     for f in fills:
         by_ticker.setdefault(f["ticker"], []).append(f)
 
     rows = []
-    for ticker, group in by_ticker.items():
-        m = meta.get(ticker, {})
-        buys_yes = sum(f["count"] for f in group if f["side"] == "yes" and f["action"] == "buy")
-        sells_yes = sum(f["count"] for f in group if f["side"] == "yes" and f["action"] == "sell")
-        buys_no = sum(f["count"] for f in group if f["side"] == "no" and f["action"] == "buy")
-        sells_no = sum(f["count"] for f in group if f["side"] == "no" and f["action"] == "sell")
-        # The side you're net-long is whichever you BOUGHT more of. Kalshi records
-        # closing a position via the other outcome (a "sell YES" that actually closes
-        # a NO), so a sell realizes at the DOMINANT side's price, not the fill's own
-        # `side`. Realized P&L = sells (dominant price) + settlement revenue − buys.
-        side = "yes" if buys_yes >= buys_no else "no"
-        total_buy = sum(f["count"] * f["price"] for f in group if f["action"] == "buy")
-        sell_cash = sum(f["count"] * (f["yes_price"] if side == "yes" else f["no_price"])
-                        for f in group if f["action"] == "sell")
-        sell_ct = sum(f["count"] for f in group if f["action"] == "sell")
-        buy_cost = sum(f["count"] * f["price"] for f in group
-                       if f["side"] == side and f["action"] == "buy")
-        buy_ct = sum(f["count"] for f in group
-                     if f["side"] == side and f["action"] == "buy")
-        # Net contracts still held = dominant-side buys minus ALL sells. Kalshi records a
-        # close on the OPPOSITE outcome (a YES position is closed via a 'sell NO'), so a
-        # sell must reduce the position even though its own `side` differs from what you
-        # hold — subtracting only same-side sells left a sold-out position looking open.
-        qty = buy_ct - sell_ct
-        entry = round(buy_cost / buy_ct, 4) if buy_ct else None
-        settle = settlements.get(ticker)
-        settle_rev = settle.get("revenue") if settle else None
-        # Exit = avg realized sell price (dominant side); else the settlement value
-        # $1.00 (side won) / $0.00 (lost) for held-to-settlement; None while open.
-        if sell_ct:
-            exit_price = round(sell_cash / sell_ct, 4)
-        elif settle:
-            exit_price = 1.0 if settle["result"] == side else 0.0
-        else:
-            exit_price = None
-
-        # Fees (per fill + the settlement) come straight out of realized P&L, so the
-        # total matches Kalshi's actual account change (the user's net figure is
-        # fee-inclusive).
-        total_fee = sum(f.get("fee", 0) or 0 for f in group)
-        if buy_ct and abs(qty) < 1e-6:
-            # Closed early by selling the whole position before the market settled: the
-            # P&L is realized from the sells (nothing was held to settlement). Kalshi STILL
-            # returns a settlement record for such a market (revenue 0 — you held nothing
-            # at expiry), so this MUST be checked before the settle branch below, or the
-            # bet is mislabeled 'settled' with qty 0 (buy_ct - sell_ct) instead of 'sold'.
-            # Also fixes a perpetual OPEN bet whose profit was missing from the totals
-            # (Total % Gain / roi under-counted) when no settlement record exists.
-            pnl = sell_cash - total_buy - total_fee
-            status, result = "closed", None
-            settled_ts = max(f["ts"] for f in group if f["action"] == "sell")
-            qty = buy_ct   # net is 0 once closed; show the size actually traded
-        elif settle:
-            total_fee += settle.get("fee", 0) or 0
-            pnl = sell_cash + (settle_rev or 0.0) - total_buy - total_fee
-            status, result, settled_ts = "settled", settle["result"], settle["ts"]
-        else:
-            pnl, status, result, settled_ts = None, "open", None, None
-
-        rows.append({
-            "ticker": ticker, "label": m.get("label", ticker),
-            "variable": m.get("variable"), "floor": m.get("floor"),
-            "cap": m.get("cap"), "strike_type": m.get("strike_type"),
-            "side": side, "entry": entry, "exit": exit_price, "qty": qty,
-            "first_ts": min(f["ts"] for f in group),
-            "status": status, "result": result, "settled_ts": settled_ts,
-            "pnl": pnl, "staked": total_buy,
-        })
+    for ticker, ticker_fills in by_ticker.items():
+        episodes = _split_episodes(ticker_fills)
+        for i, group in enumerate(episodes):
+            # A ticker's settlement (held-to-expiry payout) belongs ONLY to the trailing,
+            # still-open episode; earlier episodes were sold flat before expiry, so they hit
+            # the 'closed' branch below and any settle would be ignored anyway.
+            settle = settlements.get(ticker) if i == len(episodes) - 1 else None
+            rows.append(_position_row(ticker, group, settle, meta))
     rows.sort(key=lambda r: r["first_ts"], reverse=True)  # newest first
     return rows
+
+
+def _position_row(ticker: str, group: list[dict], settle: dict | None,
+                  meta: dict) -> dict:
+    m = meta.get(ticker, {})
+    buys_yes = sum(f["count"] for f in group if f["side"] == "yes" and f["action"] == "buy")
+    sells_yes = sum(f["count"] for f in group if f["side"] == "yes" and f["action"] == "sell")
+    buys_no = sum(f["count"] for f in group if f["side"] == "no" and f["action"] == "buy")
+    sells_no = sum(f["count"] for f in group if f["side"] == "no" and f["action"] == "sell")
+    # The side you're net-long is whichever you BOUGHT more of. Kalshi records
+    # closing a position via the other outcome (a "sell YES" that actually closes
+    # a NO), so a sell realizes at the DOMINANT side's price, not the fill's own
+    # `side`. Realized P&L = sells (dominant price) + settlement revenue − buys.
+    side = "yes" if buys_yes >= buys_no else "no"
+    total_buy = sum(f["count"] * f["price"] for f in group if f["action"] == "buy")
+    sell_cash = sum(f["count"] * (f["yes_price"] if side == "yes" else f["no_price"])
+                    for f in group if f["action"] == "sell")
+    sell_ct = sum(f["count"] for f in group if f["action"] == "sell")
+    buy_cost = sum(f["count"] * f["price"] for f in group
+                   if f["side"] == side and f["action"] == "buy")
+    buy_ct = sum(f["count"] for f in group
+                 if f["side"] == side and f["action"] == "buy")
+    # Net contracts still held = dominant-side buys minus ALL sells. Kalshi records a
+    # close on the OPPOSITE outcome (a YES position is closed via a 'sell NO'), so a
+    # sell must reduce the position even though its own `side` differs from what you
+    # hold — subtracting only same-side sells left a sold-out position looking open.
+    qty = buy_ct - sell_ct
+    entry = round(buy_cost / buy_ct, 4) if buy_ct else None
+    settle_rev = settle.get("revenue") if settle else None
+    # Exit = avg realized sell price (dominant side); else the settlement value
+    # $1.00 (side won) / $0.00 (lost) for held-to-settlement; None while open.
+    if sell_ct:
+        exit_price = round(sell_cash / sell_ct, 4)
+    elif settle:
+        exit_price = 1.0 if settle["result"] == side else 0.0
+    else:
+        exit_price = None
+
+    # Fees (per fill + the settlement) come straight out of realized P&L, so the
+    # total matches Kalshi's actual account change (the user's net figure is
+    # fee-inclusive).
+    total_fee = sum(f.get("fee", 0) or 0 for f in group)
+    if buy_ct and abs(qty) < 1e-6:
+        # Closed early by selling the whole position before the market settled: the
+        # P&L is realized from the sells (nothing was held to settlement). Kalshi STILL
+        # returns a settlement record for such a market (revenue 0 — you held nothing
+        # at expiry), so this MUST be checked before the settle branch below, or the
+        # bet is mislabeled 'settled' with qty 0 (buy_ct - sell_ct) instead of 'sold'.
+        # Also fixes a perpetual OPEN bet whose profit was missing from the totals
+        # (Total % Gain / roi under-counted) when no settlement record exists.
+        pnl = sell_cash - total_buy - total_fee
+        status, result = "closed", None
+        settled_ts = max(f["ts"] for f in group if f["action"] == "sell")
+        qty = buy_ct   # net is 0 once closed; show the size actually traded
+    elif settle:
+        total_fee += settle.get("fee", 0) or 0
+        pnl = sell_cash + (settle_rev or 0.0) - total_buy - total_fee
+        status, result, settled_ts = "settled", settle["result"], settle["ts"]
+    else:
+        pnl, status, result, settled_ts = None, "open", None, None
+
+    return {
+        "ticker": ticker, "label": m.get("label", ticker),
+        "variable": m.get("variable"), "floor": m.get("floor"),
+        "cap": m.get("cap"), "strike_type": m.get("strike_type"),
+        "side": side, "entry": entry, "exit": exit_price, "qty": qty,
+        "first_ts": min(f["ts"] for f in group),
+        "status": status, "result": result, "settled_ts": settled_ts,
+        "pnl": pnl, "staked": total_buy,
+    }
 
 
 def _pnl_mtm(r: dict):

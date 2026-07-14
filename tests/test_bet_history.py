@@ -231,6 +231,50 @@ def test_cross_side_sell_close_is_realized():
     assert round(bh.summary(rows)["net_pnl"], 2) == 1.26
 
 
+def test_independent_yes_and_no_positions_same_ticker_are_separate_rows():
+    # Bought NO, sold it out at a loss, then bought YES on the SAME bracket and held it to a
+    # win. These are two economically independent trades and must be TWO rows — not netted
+    # into one (which previously hid the winning YES trade and mislabeled the day a loss).
+    tkr = "KXHIGHTDAL-26JUN22-B97"
+    fills = [
+        _fill("n1", tkr, "no", "buy", 10, 0.30, 22, hour=10),    # open NO @ .30 -> $3.00
+        _fill("n2", tkr, "no", "sell", 6, 0.10, 22, hour=12),    # start selling the NO out
+        _fill("n3", tkr, "no", "sell", 4, 0.10, 22, hour=13),    # NO fully closed @ .10 -> -$2.00
+        _fill("y1", tkr, "yes", "buy", 10, 0.55, 22, hour=15),   # THEN open YES @ .55 -> $5.50
+    ]
+    stl = {tkr: {"result": "yes", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc),
+                 "revenue": 10.0}}                                # only the 10 YES were held -> $10
+    rows = bh.build_rows(fills, stl, META)
+    assert len(rows) == 2
+    by_side = {r["side"]: r for r in rows}
+    no_row, yes_row = by_side["no"], by_side["yes"]
+    assert no_row["status"] == "closed" and round(no_row["pnl"], 2) == -2.00
+    assert yes_row["status"] == "settled" and yes_row["result"] == "yes"
+    assert round(yes_row["pnl"], 2) == 4.50                       # 10 payout - 5.50 stake
+    # Net is the SUM of the two independent trades, not just the NO loss.
+    assert round(bh.summary(rows)["net_pnl"], 2) == 2.50
+    assert bh.summary(rows)["wins"] == 1 and bh.summary(rows)["losses"] == 1
+
+
+def test_independent_positions_robust_to_cross_side_close_encoding():
+    # Same trade, but Kalshi recorded the NO close as a SELL on the YES side (the cross-side
+    # convention it also uses). The split is side-agnostic, so the two rows come out identical.
+    tkr = "KXHIGHTDAL-26JUN22-B97"
+    fills = [
+        _fill("n1", tkr, "no", "buy", 10, 0.30, 22, hour=10),
+        _fill("n2", tkr, "yes", "sell", 6, 0.90, 22, hour=12),   # close NO via sell YES @ .90 (no=.10)
+        _fill("n3", tkr, "yes", "sell", 4, 0.90, 22, hour=13),
+        _fill("y1", tkr, "yes", "buy", 10, 0.55, 22, hour=15),
+    ]
+    stl = {tkr: {"result": "yes", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc),
+                 "revenue": 10.0}}
+    rows = bh.build_rows(fills, stl, META)
+    assert len(rows) == 2
+    by_side = {r["side"]: r for r in rows}
+    assert by_side["no"]["status"] == "closed" and round(by_side["no"]["pnl"], 2) == -2.00
+    assert by_side["yes"]["status"] == "settled" and round(by_side["yes"]["pnl"], 2) == 4.50
+
+
 def test_summary_marks_open_positions_to_market():
     # A settled win (+5.80) plus an OPEN position marked to market (+1.00 unrealized).
     fills = [
