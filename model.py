@@ -892,8 +892,11 @@ def snapshot(calib: dict | None = None, settle_offset=None,
     now = datetime.now(TZ)
     today = now.date()
     tomorrow = today + timedelta(days=1)
+    # forecast_days=3: tomorrow's settlement window (LST climate day) runs
+    # through 01:00 CDT the day after tomorrow, past Open-Meteo's clock-day
+    # hourly cutoff at 2 days — a 3rd forecast day keeps that final hour in view.
     series, obs, dropped = gather_series(
-        forecast_days=2, continuous_obs=continuous_obs, now=now)
+        forecast_days=3, continuous_obs=continuous_obs, now=now)
 
     obs_times, obs_temps = obs.get("obs", ([], []))
     # Latest routine hourly (:53 METAR) reading, kept alongside the live value so

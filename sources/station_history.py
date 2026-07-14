@@ -48,11 +48,18 @@ def fetch_actual(start: date, end: date) -> dict[date, tuple[float, float]]:
     """{day: (actual_high_f, actual_low_f)} for each day in [start, end].
 
     Resampled to hourly so the calibration/backtest ground truth matches the
-    hourly settlement basis (same as live obs)."""
-    times, temps = to_hourly(*_fetch_series(start, end))
+    hourly settlement basis (same as live obs).
+
+    IEM asos.py's `day2` param is exclusive, so a fetch bounded at `end` only
+    returns rows through `end - 1 day` 23:59 clock — missing `end`'s LST
+    settlement tail (00:00-00:59 the next clock day). Fetch one extra day of
+    raw rows so every emitted day has its full LST window in view; the
+    emission loop below still stops at `end` inclusive, so no extra day is
+    emitted."""
+    from datetime import timedelta
+    times, temps = to_hourly(*_fetch_series(start, end + timedelta(days=1)))
     out: dict[date, tuple[float, float]] = {}
     day = start
-    from datetime import timedelta
     while day <= end:
         hi, lo = day_high_low(times, temps, day)
         if hi is not None:

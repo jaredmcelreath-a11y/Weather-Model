@@ -1,13 +1,15 @@
 """The single source of truth for *what the market settles on*.
 
-A contract's outcome is the official daily high/low at KDFW within a local
-midnight->midnight window, rounded to a whole degree Fahrenheit. Every part of
-the model that needs "the high/low for day D" goes through here so the
-definition stays consistent.
+A contract's outcome is the official daily high/low at KDFW within the NWS
+climate day (fixed Local Standard Time, UTC−6) -- not clock midnight to
+midnight -- rounded to a whole degree Fahrenheit. Every part of the model
+that needs "the high/low for day D" goes through here so the definition
+stays consistent.
 
-The window is the NWS climate day (fixed Local Standard Time, UTC−6),
-verified 2026-07-14 (docs/benchmarks/2026-07-14/climate-day/FINDINGS.md). The
-settlement day in summer runs 01:00 CDT → 01:00 CDT the next clock day.
+The LST window was verified 2026-07-14
+(docs/benchmarks/2026-07-14/climate-day/FINDINGS.md). The settlement day in
+summer runs 01:00 CDT → 01:00 CDT the next clock day; in winter (CST) it
+coincides with clock midnight to midnight.
 """
 
 from __future__ import annotations
@@ -89,6 +91,12 @@ def covers_extreme(times: list[datetime], temps: list[float], day: date,
     True only if at least one non-null sample falls inside the variable's
     occurrence window for `day`. Lets a now-forward source abstain from an
     extreme it never observed instead of reporting the wrong tail value.
+
+    Under the LST settlement window, `day`'s final hour is clock 00:00-00:59
+    of the next clock day (the post-midnight tail in summer). A reading there
+    has clock hour 0, which falls inside `_LOW_WINDOW` (0, 9) -- it correctly
+    counts as low-window coverage (it's an overnight reading), so no source
+    wrongly abstains on it.
     """
     lo_h, hi_h = _HIGH_WINDOW if variable == "high" else _LOW_WINDOW
     start, end = local_day_bounds(day)

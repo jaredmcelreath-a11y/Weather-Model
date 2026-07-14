@@ -133,7 +133,8 @@ CONVECTIVE_VARS = "precipitation_probability,cape"
 
 
 def _window_max(times, pop, cape, day: date, now: datetime):
-    """(max_pop, max_cape) over the remaining window [now, midnight) for `day`.
+    """(max_pop, max_cape) over the remaining window [now, settlement-day end)
+    for `day`.
 
     These are the hours that could still set a new daily low via a storm
     downdraft. (None, None) for whichever field has no points in window."""
@@ -150,7 +151,8 @@ def _window_max(times, pop, cape, day: date, now: datetime):
 
 
 def convective_window(day: date, now: datetime, forecast_days: int = 2):
-    """Forecast (max_pop_pct, max_cape) over [now, midnight) for `day` at KDFW."""
+    """Forecast (max_pop_pct, max_cape) over [now, settlement-day end) for
+    `day` at KDFW."""
     data = get_json(FORECAST_URL, {
         "latitude": LAT,
         "longitude": LON,
