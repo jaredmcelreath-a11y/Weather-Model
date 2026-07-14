@@ -210,6 +210,9 @@ def _inject_theme(name):
         "color:var(--ink);margin:0 0 0.6rem;}\n"
         ".wbox .wnote{color:var(--muted);font-size:0.85rem;margin:0;}\n"
         ".wmini3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0.7rem;}\n"
+        # 2-up variant for the Kelly box's bottom row; stays a grid on mobile too
+        ".wmini2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0.7rem;"
+        "margin-top:0.7rem;}\n"
         ".wmini{background:var(--surface2);border:1px solid var(--border);border-radius:10px;"
         "padding:0.6rem 0.35rem;text-align:center;min-width:0;}\n"
         ".wmini .wlabel{font-size:0.72rem;font-weight:700;color:var(--muted);white-space:nowrap;}\n"
@@ -1240,13 +1243,21 @@ def _kelly_sizing_box(contracts, probs, adapter, variable):
         box.info(s.note or "No bet recommended.")
         return
 
-    m1, m2, m3 = box.columns(3)
-    m1.metric("Buy", f"{s.contracts} × {side.upper()}")
-    m2.metric("Avg fill", cents(s.avg_price))
-    m3.metric("Stake", f"${s.stake:,.2f}")
-    n1, n2 = box.columns(2)
-    n1.metric("Expected value", f"${s.ev:,.2f}")
-    n2.metric("Max +EV size", f"{s.ev_ceiling}")
+    # HTML grid cards (not st.columns/st.metric, which stack on mobile) so the
+    # layout stays 3-up then 2-up on phones, matching the Safest-hold box above.
+    def _cards(pairs, grid):
+        cells = "".join(
+            f'<div class="wmini"><div class="wlabel">{lab}</div>'
+            f'<div class="wval">{val}</div></div>' for lab, val in pairs)
+        return f'<div class="{grid}">{cells}</div>'
+
+    box.markdown(
+        _cards([("Buy", f"{s.contracts} × {side.upper()}"),
+                ("Avg fill", cents(s.avg_price)),
+                ("Stake", f"${s.stake:,.2f}")], "wmini3")
+        + _cards([("Expected value", f"${s.ev:,.2f}"),
+                  ("Max +EV size", f"{s.ev_ceiling}")], "wmini2"),
+        unsafe_allow_html=True)
     if s.curve:
         cdf = pd.DataFrame(s.curve, columns=["contracts", "ev"])
         chart = (alt.Chart(cdf).mark_line().encode(
