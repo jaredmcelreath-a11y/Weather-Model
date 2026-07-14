@@ -139,7 +139,7 @@ _BUCKETED = {"high": {"clear_calm": 0.0, "other": 0.0,
 
 
 def test_model_picks_clear_calm_bucket(monkeypatch):
-    day = date(2030, 7, 1)
+    day = date(2030, 1, 1)
     monkeypatch.setattr(model.open_meteo_models, "night_conditions",
                         lambda d: (10.0, 5.0))           # clear + calm
     out = model.predict_variable(_series(day), {"obs": ([], [])}, day, "low",
@@ -149,7 +149,7 @@ def test_model_picks_clear_calm_bucket(monkeypatch):
 
 
 def test_model_picks_other_bucket(monkeypatch):
-    day = date(2030, 7, 1)
+    day = date(2030, 1, 1)
     monkeypatch.setattr(model.open_meteo_models, "night_conditions",
                         lambda d: (90.0, 25.0))          # cloudy + windy
     out = model.predict_variable(_series(day), {"obs": ([], [])}, day, "low",
@@ -158,7 +158,7 @@ def test_model_picks_other_bucket(monkeypatch):
 
 
 def test_model_other_bucket_when_conditions_unavailable(monkeypatch):
-    day = date(2030, 7, 1)
+    day = date(2030, 1, 1)
     def boom(d):
         raise RuntimeError("no network")
     monkeypatch.setattr(model.open_meteo_models, "night_conditions", boom)
@@ -168,8 +168,8 @@ def test_model_other_bucket_when_conditions_unavailable(monkeypatch):
 
 
 def test_backtest_applies_bucketed_offset_per_day(monkeypatch):
-    d_clear = date(2026, 6, 10)
-    d_cloud = date(2026, 6, 11)
+    d_clear = date(2026, 1, 10)
+    d_cloud = date(2026, 1, 11)
     # one series spanning both days
     base = {}
     for d in (d_clear, d_cloud):

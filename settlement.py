@@ -18,9 +18,10 @@ import math
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from config import BIN_HIGH, BIN_LOW, TIMEZONE
+from config import BIN_HIGH, BIN_LOW, CLIMATE_TZ, TIMEZONE
 
 TZ = ZoneInfo(TIMEZONE)
+_CLIMATE_TZ = ZoneInfo(CLIMATE_TZ)
 
 
 def round_half_up(x: float) -> int:
@@ -31,8 +32,16 @@ def round_half_up(x: float) -> int:
 
 
 def local_day_bounds(day: date) -> tuple[datetime, datetime]:
-    """[start, end) of the local calendar day, as tz-aware datetimes."""
-    start = datetime(day.year, day.month, day.day, tzinfo=TZ)
+    """[start, end) of the settlement (NWS climate) day, as tz-aware datetimes.
+
+    Built in fixed Local Standard Time (CLIMATE_TZ, UTC−6) — the CLIDFW climate
+    day Kalshi settles on — NOT clock time: in summer this window is 01:00 CDT →
+    01:00 CDT, one hour after clock midnight. Comparisons elsewhere convert obs
+    to America/Chicago and compare against these bounds by absolute instant, so
+    the zone difference is transparent to them; only the day *boundary* moves.
+    Fixed UTC−6 means every settlement day is exactly 24h (no DST 23h/25h days).
+    """
+    start = datetime(day.year, day.month, day.day, tzinfo=_CLIMATE_TZ)
     end = start + timedelta(days=1)
     return start, end
 

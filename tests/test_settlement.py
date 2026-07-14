@@ -9,7 +9,41 @@ import settlement as S
 from config import TIMEZONE
 
 TZ = ZoneInfo(TIMEZONE)
-DAY = date(2025, 7, 15)
+DAY = date(2025, 1, 15)
+
+LST = ZoneInfo("Etc/GMT+6")
+
+
+def test_local_day_bounds_is_lst_not_clock():
+    # Summer: the settlement window starts at 00:00 LST = 01:00 CDT, one hour
+    # after clock midnight — this is the CLIDFW climate day (verified May 2026).
+    summer = date(2026, 7, 14)
+    start, end = S.local_day_bounds(summer)
+    assert start == datetime(2026, 7, 14, tzinfo=LST)
+    assert start.astimezone(TZ).hour == 1          # 01:00 CDT, not 00:00
+    assert (end - start) == timedelta(days=1)       # always exactly 24h (no DST)
+
+
+def test_local_day_bounds_winter_matches_clock():
+    # Winter: LST == CST == the old America/Chicago clock window, byte-identical.
+    winter = date(2026, 1, 14)
+    start, end = S.local_day_bounds(winter)
+    assert start == datetime(2026, 1, 14, tzinfo=TZ)   # same absolute instant
+
+
+def test_post_clock_midnight_reading_settles_prior_day():
+    # The May 26 2026 pattern: a min recorded 00:30 CDT the NEXT clock day still
+    # belongs to THIS settlement day (window ends 01:00 CDT next day). The old
+    # clock window dropped it; the LST window keeps it.
+    summer = date(2026, 7, 14)
+    start, _ = S.local_day_bounds(summer)
+    # a warm afternoon plus a cold reading at 00:30 CDT the next clock day
+    times = [datetime(2026, 7, 14, 15, tzinfo=TZ),
+             datetime(2026, 7, 15, 0, 30, tzinfo=TZ)]
+    temps = [95.0, 70.0]
+    hi, lo = S.day_high_low(times, temps, summer)
+    assert lo == 70    # the post-midnight reading settles this day
+    assert hi == 95
 
 
 def _series(pairs):

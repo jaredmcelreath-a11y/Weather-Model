@@ -74,7 +74,7 @@ def _series(day, peaks=(92.0, 94.0)):
 
 
 def test_model_warms_low_on_warm_night():
-    day = date(2030, 7, 1)
+    day = date(2030, 1, 1)
     out = model.predict_variable(_series(day), {"obs": ([], [])}, day, "low",
                                  None, _CALIB_WARM)
     # lows 77,79 -> consensus 78 >= 76 -> subtract -0.5 -> +0.5 -> 78.5
@@ -82,7 +82,7 @@ def test_model_warms_low_on_warm_night():
 
 
 def test_model_leaves_cool_night_low():
-    day = date(2030, 7, 1)
+    day = date(2030, 1, 1)
     out = model.predict_variable(_series(day, peaks=(88.0, 90.0)), {"obs": ([], [])},
                                  day, "low", None, _CALIB_WARM)
     # lows 73,75 -> consensus 74 < 76 -> no correction
@@ -90,7 +90,7 @@ def test_model_leaves_cool_night_low():
 
 
 def test_model_never_touches_high():
-    day = date(2030, 7, 1)
+    day = date(2030, 1, 1)
     out = model.predict_variable(_series(day), {"obs": ([], [])}, day, "high",
                                  None, _CALIB_WARM)
     assert out["consensus"] == 93.0            # mean(92,94), untouched
@@ -111,7 +111,7 @@ def test_model_skips_warm_low_when_obs_anchored():
 
 
 def test_model_warm_low_and_cooling_stack(monkeypatch):
-    day = date(2030, 7, 1)
+    day = date(2030, 1, 1)
     monkeypatch.setattr(model.open_meteo_models, "night_conditions",
                         lambda d: (10.0, 5.0))          # clear + calm
     calib = {

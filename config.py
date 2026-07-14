@@ -16,6 +16,13 @@ STATION_ID = "KDFW"
 LAT = 32.90
 LON = -97.04
 TIMEZONE = "America/Chicago"  # all daily-window math happens in this tz
+# The NWS Climatological Report (CLIDFW) — what Kalshi settles on — defines its
+# climate day as midnight-to-midnight LOCAL STANDARD TIME (UTC−6) year-round,
+# i.e. 1:00 AM → 1:00 AM CDT during daylight saving. This is the settlement-day
+# boundary, distinct from TIMEZONE (America/Chicago), which stays the
+# wall-clock/diurnal zone for hour-of-day logic and all display. Verified
+# 2026-07-14 (docs/benchmarks/2026-07-14/climate-day/FINDINGS.md).
+CLIMATE_TZ = "Etc/GMT+6"
 
 # NWS requires a descriptive User-Agent with contact info.
 NWS_USER_AGENT = "kdfw-weather-model (jaredmcelreath@gmail.com)"
