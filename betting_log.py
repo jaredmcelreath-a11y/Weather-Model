@@ -1,7 +1,8 @@
 """Betting-time forward log — a slot-keyed snapshot of the model + Kalshi market
-at fixed clock times (afternoon 15:00-17:00 CDT for the high, early-morning
-05:00-07:00 for the low), so the model-vs-market edge and the settlement-gap
-predictor can be measured at the moment bets are placed.
+at fixed afternoon clock times for the high (15:00-17:00 CDT) and sunrise-
+anchored early-morning slots for the low (sunrise-90min to sunrise+30min), so the
+model-vs-market edge and the settlement-gap predictor can be measured at the
+moment bets are placed.
 
 Separate from forecast_log.jsonl on purpose: forecast_log upserts on
 (target_date, variable, lead_bucket) and would overwrite the same-day row every
@@ -11,12 +12,13 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from config import TIMEZONE
 from zoneinfo import ZoneInfo
 
 import model
+import solar
 
 TZ = ZoneInfo(TIMEZONE)
 _PATH = os.path.join(os.path.dirname(__file__), "betting_log.jsonl")
@@ -26,26 +28,42 @@ _PATH = os.path.join(os.path.dirname(__file__), "betting_log.jsonl")
 # LOW as it bottoms out near the sunrise trough. The opposite variable at each
 # time is useless for edge measurement — an afternoon low is already settled, and
 # a dawn high is a ~10h day-ahead forecast — so SLOT_VARS records only the one
-# that matters. (Seasonal note: the low trough shifts with sunrise ~6:25 summer →
-# ~7:20 winter local; the fixed 05:00–07:00 window centers on summer troughs.)
-LOW_SLOTS = ["05:00", "05:30", "06:00", "06:30", "07:00"]
+# that matters.
+#
+# The morning low slots are SUNRISE-ANCHORED, not fixed clock times: the trough
+# tracks sunrise (~6:25 CDT summer → ~7:30 CST winter local), so a fixed window
+# would drift ~1h too early in winter. Each slot is an offset in minutes from that
+# day's sunrise; `current_slot` resolves the offsets against solar.sunrise(today).
+# The stored label is symbolic (e.g. "sr-30" = 30 min before sunrise) so a given
+# solar-relative moment aggregates across days/seasons; the exact clock time stays
+# recoverable from `captured_at`. Afternoon high slots stay fixed clock times —
+# the mid-afternoon peak is season-stable enough not to need anchoring.
+LOW_SLOT_OFFSETS = [("sr-90", -90), ("sr-60", -60), ("sr-30", -30),
+                    ("sr", 0), ("sr+30", 30)]
 HIGH_SLOTS = ["15:00", "15:30", "16:00", "16:30", "17:00"]
-SLOTS = LOW_SLOTS + HIGH_SLOTS
-SLOT_VARS = {**{s: ("low",) for s in LOW_SLOTS},
+SLOTS = [lbl for lbl, _off in LOW_SLOT_OFFSETS] + HIGH_SLOTS
+SLOT_VARS = {**{lbl: ("low",) for lbl, _off in LOW_SLOT_OFFSETS},
              **{s: ("high",) for s in HIGH_SLOTS}}
 # The scheduler fires on a ~15-min cadence (GitHub cron at :07/:22/:37/:52 + the
-# external 15-min trigger). Slots sit at :00/:30, so the nearest run to any slot is
-# at most 7.5 min away. A ±8-min window therefore catches every slot regardless of
-# the cron's phase — and under the :07/:22/:37/:52 fallback each slot gets TWO
-# eligible runs (e.g. :00 is covered by both :52 and :07) instead of a single one
-# hugging the boundary. The per-slot upsert makes redundant runs harmless.
+# external 15-min trigger). A 15-min cadence puts a run within 7.5 min of ANY
+# clock minute, so a ±8-min window catches every slot regardless of the cron's
+# phase — this holds for the fixed :00/:30 high slots and the arbitrary-minute
+# sunrise-anchored low slots alike. The per-slot upsert makes redundant runs
+# harmless.
 SLOT_TOLERANCE_MIN = 8
 
 
-def current_slot(now: datetime, slots=SLOTS, tol_min=SLOT_TOLERANCE_MIN) -> str | None:
-    """Slot label if `now` is within `tol_min` minutes of a slot (local time), else None."""
+def current_slot(now: datetime, tol_min=SLOT_TOLERANCE_MIN) -> str | None:
+    """Slot label if `now` is within `tol_min` minutes of a slot (local time),
+    else None. Morning low slots are resolved against today's sunrise; afternoon
+    high slots are fixed clock times."""
     local = now.astimezone(TZ)
-    for s in slots:
+    sunrise = solar.sunrise(local.date())
+    for label, off in LOW_SLOT_OFFSETS:
+        slot_dt = sunrise + timedelta(minutes=off)
+        if abs((local - slot_dt).total_seconds()) <= tol_min * 60:
+            return label
+    for s in HIGH_SLOTS:
         hh, mm = (int(x) for x in s.split(":"))
         slot_dt = local.replace(hour=hh, minute=mm, second=0, microsecond=0)
         if abs((local - slot_dt).total_seconds()) <= tol_min * 60:

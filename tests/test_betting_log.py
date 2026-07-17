@@ -1,8 +1,9 @@
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 import os
 
 import betting_log
+import solar
 from config import TIMEZONE
 
 _TZ = ZoneInfo(TIMEZONE)
@@ -33,17 +34,36 @@ def test_current_slot_outside_tolerance_is_none():
 
 
 def test_current_slot_slot_sets_defined():
-    assert betting_log.LOW_SLOTS == ["05:00", "05:30", "06:00", "06:30", "07:00"]
+    # Morning low slots are sunrise-anchored (symbolic labels); afternoon high
+    # slots are fixed clock times.
+    assert [lbl for lbl, _off in betting_log.LOW_SLOT_OFFSETS] == \
+        ["sr-90", "sr-60", "sr-30", "sr", "sr+30"]
     assert betting_log.HIGH_SLOTS == ["15:00", "15:30", "16:00", "16:30", "17:00"]
-    assert betting_log.SLOTS == betting_log.LOW_SLOTS + betting_log.HIGH_SLOTS
+    assert betting_log.SLOTS == \
+        ["sr-90", "sr-60", "sr-30", "sr", "sr+30",
+         "15:00", "15:30", "16:00", "16:30", "17:00"]
     assert betting_log.SLOT_TOLERANCE_MIN == 8
 
 
-def test_current_slot_matches_morning_low_slots():
-    assert betting_log.current_slot(_at(6, 0)) == "06:00"
-    assert betting_log.current_slot(_at(5, 28)) == "05:30"    # -2 min
-    assert betting_log.current_slot(_at(7, 8)) == "07:00"     # +8 min, inclusive
-    assert betting_log.current_slot(_at(6, 12)) is None       # 12 min off any slot
+def test_current_slot_matches_sunrise_anchored_low_slots():
+    day = date(2026, 7, 3)
+    sr = solar.sunrise(day)
+    assert betting_log.current_slot(sr) == "sr"                      # at sunrise
+    assert betting_log.current_slot(sr - timedelta(minutes=30)) == "sr-30"
+    assert betting_log.current_slot(sr - timedelta(minutes=90)) == "sr-90"
+    assert betting_log.current_slot(sr + timedelta(minutes=30)) == "sr+30"
+    assert betting_log.current_slot(sr + timedelta(minutes=5)) == "sr"   # +5 within ±8
+    assert betting_log.current_slot(sr + timedelta(minutes=60)) is None  # between anchors
+
+
+def test_morning_window_tracks_the_season():
+    # The 'sr' slot resolves to a later wall-clock time in winter than summer,
+    # so the morning window follows the trough across the year.
+    summer = solar.sunrise(date(2026, 7, 3))
+    winter = solar.sunrise(date(2026, 1, 3))
+    assert (winter.hour, winter.minute) > (summer.hour, summer.minute)
+    assert betting_log.current_slot(summer) == "sr"
+    assert betting_log.current_slot(winter) == "sr"
 
 
 _CLI = {
@@ -91,11 +111,11 @@ def test_record_morning_slot_low_only(tmp_path):
     # the high is ~10h away (a day-ahead forecast, not a betting-time number), so
     # no high row is written.
     p = str(tmp_path / "b.jsonl")
-    betting_log.record(_CLI, _HOURLY, "06:00", _CALIB, path=p)
+    betting_log.record(_CLI, _HOURLY, "sr", _CALIB, path=p)
     rows = betting_log.load(p)
     assert {r["variable"] for r in rows} == {"low"}
     lo = rows[0]
-    assert lo["capture_slot"] == "06:00"
+    assert lo["capture_slot"] == "sr"
     assert lo["target_date"] == "2026-07-03"
     assert lo["cli_consensus"] == 78.0
     assert lo["hourly_consensus"] == 78.0
