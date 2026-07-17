@@ -81,3 +81,18 @@ def test_abstain_propagates_through_kalshi_strikes():
 def test_answerable_strike_still_prices():
     p = model.prob_for_strike(_LEGACY_FRONT, "between", 61, 62)
     assert abs(p - 0.03) < 1e-9
+
+
+import kelly
+
+
+def test_best_side_abstains_when_model_cannot_price():
+    # Without the guard this raises TypeError on `p - yes_ask`.
+    assert kelly.best_side(None, 0.40, 0.55) is None
+
+
+def test_best_side_still_picks_the_edge_when_priced():
+    side, win, ask = kelly.best_side(0.70, 0.55, 0.42)
+    assert side == "yes"
+    assert win == 0.70
+    assert ask == 0.55
