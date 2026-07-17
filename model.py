@@ -771,11 +771,15 @@ def predict_variable(series, obs_series, day, variable, now, calib,
 
 
 def bin_temp(label: str) -> int:
-    """Integer temperature a bin label represents (tails map to their edge)."""
-    if label.startswith("<="):
-        return BIN_LOW
-    if label.startswith(">="):
-        return BIN_HIGH
+    """Integer temperature a bin label represents.
+
+    Parses the number out of the label rather than reading BIN_LOW/BIN_HIGH, so
+    a row logged under an older bin range still means what it meant when it was
+    written. Without this, widening the range would silently re-interpret every
+    historical "<= 60" tail as the new BIN_LOW.
+    """
+    if label.startswith("<=") or label.startswith(">="):
+        return int(label[2:])
     return int(label)
 
 
