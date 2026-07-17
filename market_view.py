@@ -268,6 +268,11 @@ def _inject_theme(name):
         ".wx-briefing-head{display:flex;justify-content:space-between;align-items:center;"
         "font-family:'Bitter',serif;font-weight:700;margin-bottom:0.5rem;color:var(--ink);}\n"
         ".wx-briefing-close{cursor:pointer;font-size:1.05rem;opacity:0.7;padding:0 0.3rem;}\n"
+        # On desktop the sidebar shifts the content right, so dead-center of the
+        # viewport looks off. When the sidebar is open, nudge the FAB right by half
+        # the default sidebar width (~244px) to center it on the model display.
+        ".stApp:has([data-testid=\"stSidebar\"][aria-expanded=\"true\"]) .wx-fab"
+        "{left:calc(50% + 122px);}\n"
         # Custom metric card + hover/tap tooltip. Streamlit's native help= tooltip is
         # hover-only (needs a long-press on touch) and its box runs off the right edge on
         # phones; this bubble opens on hover OR a single tap (focusable), and its panel is
@@ -1433,21 +1438,41 @@ def _kelly_sizing_box(contracts, probs, adapter, variable):
     box = st.container(border=True)
     box.markdown(f"**{variable.capitalize()} Kelly Sizing Helper**")
 
-    edged = [c for c in contracts
-             if kelly.best_side(adapter.model_prob(probs, c),
-                                c.get("yes_ask"), c.get("no_ask")) is not None]
-    if not edged:
-        box.caption("No live contract has a positive edge right now — nothing to size.")
+    # Every live contract, not just ones with a positive edge — you can inspect or
+    # size any of them and choose the side yourself.
+    sizable = [c for c in contracts if c.get("ticker") and c.get("label")
+               and (c.get("yes_ask") is not None or c.get("no_ask") is not None)]
+    if not sizable:
+        box.caption("No live contracts to size right now.")
         return
 
-    labels = [c["label"] for c in edged]
-    default = _kelly_pick(edged, probs, adapter)
+    labels = [c["label"] for c in sizable]
+    default = _kelly_pick(sizable, probs, adapter)          # best-edge = default pick
     default_idx = labels.index(default[0]["label"]) if default else 0
     label = box.selectbox("Contract", labels, index=default_idx,
                           key=f"kelly_ct_{variable}")
-    c = next(x for x in edged if x["label"] == label)
-    side, q, _ask = kelly.best_side(adapter.model_prob(probs, c),
-                                    c.get("yes_ask"), c.get("no_ask"))
+    c = next(x for x in sizable if x["label"] == label)
+
+    p = adapter.model_prob(probs, c)
+    if p is None:
+        box.caption("The model can't price this contract (it falls inside an "
+                    "open-ended tail bin), so it can't be sized.")
+        return
+
+    # Side is user-selectable; default to the model's edged side if it has one.
+    best = kelly.best_side(p, c.get("yes_ask"), c.get("no_ask"))
+    side_label = box.radio("Side", ["Yes", "No"],
+                           index=1 if (best and best[0] == "no") else 0,
+                           horizontal=True, key=f"kelly_side_{variable}")
+    side = side_label.lower()
+    q = p if side == "yes" else 1.0 - p
+    ask = c.get("yes_ask") if side == "yes" else c.get("no_ask")
+    if ask is None:
+        box.caption(f"No live {side_label} ask for this contract right now.")
+        return
+    # Show the selected side's value up front so 'no bet' is self-explanatory.
+    box.caption(f"Model {q*100:.0f}% · {side_label} ask {cents(ask)} · "
+                f"edge {(q - ask) * 100:+.0f}pp")
 
     bal = kalshi_portfolio.balance()
     bankroll = box.number_input(
