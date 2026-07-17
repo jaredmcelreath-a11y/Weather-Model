@@ -745,7 +745,11 @@ def lock_status(d, variable):
     model's own read on whether the day's extreme is still ahead of us.
     """
     lr = d.get("locked_ratio", 1.0)
-    resolved = int((1 - lr) * 100)
+    # Use the monotonic `resolved` field (same as the metric card via
+    # displayed_resolved), NOT 1 - locked_ratio: locked_ratio is momentary
+    # ensemble agreement that spikes and crashes, which made the green "prime
+    # buy window" badge flash then retract. Fall back to 1 - lr on older snapshots.
+    resolved = int(d.get("resolved", 1 - lr) * 100)
     obs = d.get("observed_so_far")
     consensus = d["consensus"]
     floor = getattr(model, "_SIGMA_FLOOR", 0.7)
