@@ -107,3 +107,39 @@ def test_contract_points_skips_unpriceable_strikes():
     pts = backtest.contract_points(_LEGACY_FRONT, 55.0, "low")
     assert isinstance(pts, list)
     assert all(p is not None and 0.01 <= p <= 0.99 for p, _won in pts)
+
+
+import sys
+
+try:
+    import streamlit  # noqa: F401
+except ModuleNotFoundError:
+    from unittest.mock import MagicMock
+    for _m in ("streamlit", "streamlit.components", "streamlit.components.v1",
+               "streamlit_autorefresh"):
+        sys.modules.setdefault(_m, MagicMock())
+
+import market_view
+
+
+class _AbstainAdapter:
+    """model_prob returns each contract's stashed p — None means unpriceable."""
+    def model_prob(self, probs, c):
+        return c["p"]
+
+
+def test_unpriceable_contract_is_not_a_kelly_pick():
+    # The phantom-edge scenario: a near-certain YES bucket the model can't
+    # price, priced cheap on the NO side. It must NOT become a pick.
+    contracts = [{"label": "54-55", "p": None, "yes_ask": 0.85, "no_ask": 0.15}]
+    assert market_view._kelly_pick(contracts, {}, _AbstainAdapter()) is None
+
+
+def test_priceable_contract_still_picked_alongside_unpriceable():
+    contracts = [
+        {"label": "54-55", "p": None, "yes_ask": 0.85, "no_ask": 0.15},
+        {"label": "90-91", "p": 0.70, "yes_ask": 0.55, "no_ask": 0.42},
+    ]
+    pick = market_view._kelly_pick(contracts, {}, _AbstainAdapter())
+    assert pick is not None
+    assert pick[0]["label"] == "90-91"
