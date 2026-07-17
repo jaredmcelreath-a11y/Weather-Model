@@ -127,7 +127,7 @@ def _inject_theme(name):
         # runs off the left/right screen edge. Pin it to a fixed full-width bottom sheet
         # (8px insets) so it always stays fully on-screen, whichever box you tap.
         ".st-key-top_metrics .wxqt,[class*=\"st-key-mini_\"] .wxqt,"
-        "[class*=\"st-key-period_metrics_\"] .wxqt"
+        "[class*=\"st-key-period_metrics_\"] .wxqt,[class*=\"st-key-kelly_box_\"] .wxqt"
         "{position:fixed!important;left:8px!important;right:8px!important;bottom:auto!important;"
         "top:7rem!important;width:auto!important;max-width:none!important;}"
         # the History page has no High/Low bar to clear, so its tooltip sits nearer the top
@@ -271,7 +271,8 @@ def _inject_theme(name):
         # On desktop the sidebar shifts the content right, so dead-center of the
         # viewport looks off. When the sidebar is open, nudge the FAB right by half
         # the default sidebar width (~244px) to center it on the model display.
-        ".stApp:has([data-testid=\"stSidebar\"][aria-expanded=\"true\"]) .wx-fab"
+        ".stApp:has([data-testid=\"stSidebar\"][aria-expanded=\"true\"]) .wx-fab,"
+        ".stApp:has([data-testid=\"stSidebar\"][aria-expanded=\"true\"]) .wx-briefing-panel"
         "{left:calc(50% + 122px);}\n"
         # Custom metric card + hover/tap tooltip. Streamlit's native help= tooltip is
         # hover-only (needs a long-press on touch) and its box runs off the right edge on
@@ -307,9 +308,32 @@ def _inject_theme(name):
         # tooltip left into the sidebar/screen edge — anchor that one to extend right.
         ".st-key-top_metrics [data-testid=\"stColumn\"]:first-child .wxqt"
         "{left:6px;right:auto;}\n"
+        # Custom tap-to-open tooltip on a WIDGET label (Kelly box), replacing
+        # Streamlit's hover-only help=. The ? sits inline after the label text; the
+        # tooltip anchors below-left (and pins to the fixed top box on phones, via
+        # the st-key-kelly_box_ rule above).
+        ".wxfield{position:relative;display:flex;align-items:center;gap:0.35rem;"
+        "font-size:0.875rem;font-weight:600;color:var(--ink);margin:0.15rem 0 0.1rem;}\n"
+        ".wxfield .wxq{position:static;display:inline-flex;align-items:center;"
+        "justify-content:center;}\n"
+        ".wxfield .wxqt{top:1.7rem;left:0;right:auto;}\n"
         "</style>",
         unsafe_allow_html=True,
     )
+
+
+def _field_label(container, label, help_text):
+    """Render a widget label with the custom tap-to-open tooltip (matches the
+    metric cards), for use above a label_visibility='collapsed' widget so the
+    control gets a mobile-friendly help bubble instead of Streamlit's hover-only
+    native tooltip."""
+    import html as _h
+    container.markdown(
+        f'<div class="wxfield">{_h.escape(label)}'
+        f'<span class="wxq" tabindex="0" role="button" '
+        f'aria-label="{_h.escape(label)} info">?</span>'
+        f'<span class="wxqt">{_h.escape(help_text)}</span></div>',
+        unsafe_allow_html=True)
 
 
 def metric_card(label, value, help_text=None):
@@ -1437,7 +1461,7 @@ def _kelly_sizing_box(contracts, probs, adapter, variable, bankroll_default=None
     # The 'Safest hold' .wbox above carries only a 0.3rem bottom margin, so nudge
     # the box down to match the gap between the other bordered sections.
     st.markdown("<div style='margin-top:0.75rem'></div>", unsafe_allow_html=True)
-    box = st.container(border=True)
+    box = st.container(border=True, key=f"kelly_box_{variable}")
     box.markdown(f"**{variable.capitalize()} Kelly Sizing Helper**")
 
     # Every live contract, not just ones with a positive edge — you can inspect or
@@ -1451,8 +1475,10 @@ def _kelly_sizing_box(contracts, probs, adapter, variable, bankroll_default=None
     labels = [c["label"] for c in sizable]
     default = _kelly_pick(sizable, probs, adapter)          # best-edge = default pick
     default_idx = labels.index(default[0]["label"]) if default else 0
+    _field_label(box, "Contract", "The temperature bucket to size. All live "
+                 "contracts are listed, not just ones with an edge.")
     label = box.selectbox("Contract", labels, index=default_idx,
-                          key=f"kelly_ct_{variable}")
+                          key=f"kelly_ct_{variable}", label_visibility="collapsed")
     c = next(x for x in sizable if x["label"] == label)
 
     p = adapter.model_prob(probs, c)
@@ -1463,9 +1489,12 @@ def _kelly_sizing_box(contracts, probs, adapter, variable, bankroll_default=None
 
     # Side is user-selectable; default to the model's edged side if it has one.
     best = kelly.best_side(p, c.get("yes_ask"), c.get("no_ask"))
+    _field_label(box, "Side", "Buy YES (the outcome happens) or NO (it doesn't). "
+                 "Defaults to the side the model has an edge on.")
     side_label = box.radio("Side", ["Yes", "No"],
                            index=1 if (best and best[0] == "no") else 0,
-                           horizontal=True, key=f"kelly_side_{variable}")
+                           horizontal=True, key=f"kelly_side_{variable}",
+                           label_visibility="collapsed")
     side = side_label.lower()
     q = p if side == "yes" else 1.0 - p
     ask = c.get("yes_ask") if side == "yes" else c.get("no_ask")
@@ -1477,17 +1506,19 @@ def _kelly_sizing_box(contracts, probs, adapter, variable, bankroll_default=None
                 f"edge {(q - ask) * 100:+.0f}pp")
 
     default_bank = bankroll_default or kalshi_portfolio.balance()
+    _field_label(box, "Bankroll ($)",
+                 "Auto-filled from your live Kalshi portfolio value (cash + open "
+                 "positions marked to market); edit to size against a different pool."
+                 if default_bank else "Enter the pool you're sizing against.")
     bankroll = box.number_input(
         "Bankroll ($)", min_value=1.0,
         value=float(round(default_bank, 2)) if default_bank else 100.0, step=10.0,
-        key=f"kelly_bank_{variable}",
-        help="Auto-filled from your live Kalshi portfolio value (cash + open "
-             "positions marked to market); edit to size against a different pool."
-             if default_bank else "Enter the pool you're sizing against.")
+        key=f"kelly_bank_{variable}", label_visibility="collapsed")
+    _field_label(box, "Kelly fraction",
+                 "Fraction of full Kelly. 0.5 (half Kelly) is the safe default; "
+                 "full Kelly (1.0) is aggressive.")
     frac = box.slider("Kelly fraction", 0.25, 1.0, 0.5, 0.05,
-                      key=f"kelly_frac_{variable}",
-                      help="Fraction of full Kelly. 0.5 (half Kelly) is the safe "
-                           "default; full Kelly (1.0) is aggressive.")
+                      key=f"kelly_frac_{variable}", label_visibility="collapsed")
 
     try:
         ob = kalshi.fetch_orderbook(c["ticker"])
