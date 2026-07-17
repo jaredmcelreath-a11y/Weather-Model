@@ -308,6 +308,23 @@ def _fmt_temp(v):
     return f"{v:.0f}°F" if v is not None else "—"
 
 
+_SPARK_BLOCKS = "▁▂▃▄▅▆▇█"
+
+
+def sparkline(values):
+    """A unicode-block sparkline for a numeric series, scaled min→max. None gaps
+    are dropped; a flat or single-value series renders uniform; '' when empty."""
+    vals = [v for v in (values or []) if v is not None]
+    if not vals:
+        return ""
+    lo, hi = min(vals), max(vals)
+    span = hi - lo
+    if span <= 0:
+        return _SPARK_BLOCKS[0] * len(vals)
+    n = len(_SPARK_BLOCKS) - 1
+    return "".join(_SPARK_BLOCKS[int((v - lo) / span * n + 0.5)] for v in vals)
+
+
 def storm_watch_html(storm):
     """Colored storm-watch panel: POP, any upstream severe warning (county +
     direction), and the convective downside on today's low. '' when no storm
@@ -1424,9 +1441,59 @@ def _correction_exclusions():
         return 0
 
 
-def _render_accuracy(load_accuracy, calib=None):
+# (log key, display label, unit, value format) for the calibration-drift view.
+_DRIFT_PARAMS = [
+    ("bias_high", "High bias", "°F", "{:+.1f}"),
+    ("bias_low", "Low bias", "°F", "{:+.1f}"),
+    ("sigma_high", "Day-ahead σ (high)", "°F", "{:.1f}"),
+    ("sigma_low", "Day-ahead σ (low)", "°F", "{:.1f}"),
+    ("settle_high", "Settle offset (high)", "°F", "{:+.2f}"),
+    ("settle_low", "Settle offset (low)", "°F", "{:+.2f}"),
+    ("cooling_low", "Cooling offset", "°F", "{:+.2f}"),
+    ("corr_lead24_high", "Day-ahead corr (high)", "°F", "{:+.2f}"),
+    ("corr_lead24_low", "Day-ahead corr (low)", "°F", "{:+.2f}"),
+    ("corr_warm_low", "Warm-low corr", "°F", "{:+.2f}"),
+    ("n_days", "Calib window (days)", "", "{:.0f}"),
+]
+
+
+def _render_calibration_drift(history):
+    """Sparklines of the learned calibration parameters over recomputes — the
+    model-health view. `history` is calibration_history.load() (oldest first)."""
+    st.markdown("**Calibration drift** — how the model's learned parameters have "
+                "moved across recomputes (one point per ~daily recompute). Flat = "
+                "stable; a trending or oscillating line is worth a look.")
+    if not history:
+        st.caption("No recompute history yet — a row is logged each time the "
+                   "calibration recomputes (~1×/day).")
+        return
+    rows = []
+    for key, label, unit, fmt in _DRIFT_PARAMS:
+        series = [r.get(key) for r in history]
+        present = [v for v in series if v is not None]
+        if not present:
+            continue
+        lo, hi = min(present), max(present)
+        # The sparkline is min→max scaled, so it shows relative shape, not
+        # magnitude; the range column anchors it (a jagged line spanning a tiny
+        # range is just noise, not real drift).
+        rng = fmt.format(lo) if lo == hi else f"{fmt.format(lo)} … {fmt.format(hi)}"
+        rows.append({"parameter": label, "trend": sparkline(series),
+                     "current": fmt.format(present[-1]) + (f" {unit}" if unit else ""),
+                     "range": rng})
+    if rows:
+        _html_df(pd.DataFrame(rows).set_index("parameter"))
+        st.caption("The trend sparkline is scaled to each parameter's own min–max, "
+                   "so it shows *shape* not magnitude — read it with the range "
+                   "column (a jagged line over a tiny range is just noise)."
+                   + (" Trend fills in as more recomputes accumulate."
+                      if len(history) < 2 else ""))
+
+
+def _render_accuracy(load_accuracy, calib=None, history_loader=None):
     """The 'Model Accuracy' expander body — backtest table + reliability charts
-    + live self-scoring. `load_accuracy` is the cached () -> (bt, live) callable."""
+    + live self-scoring + calibration drift. `load_accuracy` is the cached
+    () -> (bt, live) callable; `history_loader` the cached () -> history rows."""
     bt, live = load_accuracy()
     corr = calibration.active_corrections(calib)
     if corr:
@@ -1545,8 +1612,16 @@ def _render_accuracy(load_accuracy, calib=None):
         st.caption("Live self-scoring will appear here once logged predictions "
                    "start settling (one day's lead).")
 
+    if history_loader is not None:
+        st.markdown("---")
+        try:
+            _render_calibration_drift(history_loader())
+        except Exception:
+            pass
 
-def render_page(snap, calib, adapter, load_accuracy, recap_loader=None):
+
+def render_page(snap, calib, adapter, load_accuracy, recap_loader=None,
+                history_loader=None):
     """Draw the full dashboard body for one market. `snap`/`calib` come from the
     cached snapshot loader; `adapter` selects the exchange; `load_accuracy` is the
     cached () -> (bt, live) callable for the accuracy expander; `recap_loader` is
@@ -1702,6 +1777,6 @@ def render_page(snap, calib, adapter, load_accuracy, recap_loader=None):
     with st.expander("Model Accuracy"):
         if adapter.accuracy_note:
             st.caption(adapter.accuracy_note)
-        _render_accuracy(load_accuracy, calib)
+        _render_accuracy(load_accuracy, calib, history_loader=history_loader)
 
     st.caption(adapter.settle_footer)

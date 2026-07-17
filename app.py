@@ -126,6 +126,16 @@ def load_recap():
         return None
 
 
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def load_calibration_history():
+    """Calibration recompute history for the drift sparklines. Changes ~1×/day."""
+    import calibration_history
+    try:
+        return calibration_history.load()
+    except Exception:
+        return []
+
+
 def _page(adapter, snapshot_loader, accuracy_loader, record_basis):
     snap, calib = snapshot_loader()
     dropped = snap.get("dropped_sources") or []
@@ -155,7 +165,8 @@ def _page(adapter, snapshot_loader, accuracy_loader, record_basis):
     except Exception:
         pass
     market_view.render_page(snap, calib, adapter, accuracy_loader,
-                             recap_loader=load_recap)
+                             recap_loader=load_recap,
+                             history_loader=load_calibration_history)
 
 
 def robinhood_page():

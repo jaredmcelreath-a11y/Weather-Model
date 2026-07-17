@@ -663,6 +663,13 @@ def compute_and_save() -> dict:
     calib = compute()
     with open(_PATH, "w") as fh:
         json.dump(calib, fh, indent=2)
+    # Append a drift-history row for this recompute (best-effort: history logging
+    # must never break calibration). Deduped on the `computed` stamp inside record.
+    try:
+        import calibration_history
+        calibration_history.record(calib)
+    except Exception:
+        pass
     return calib
 
 
