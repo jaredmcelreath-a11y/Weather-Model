@@ -14,7 +14,8 @@ import statistics
 from datetime import date, timedelta
 
 import forecast_log
-from backtest import contract_points, reliability_bins, _brier, LABELS
+from backtest import contract_points, reliability_bins, _brier
+from model import bin_temp
 from config import CALIBRATION_WINDOW_DAYS
 from settlement import bin_for_temp
 from sources import station_history
@@ -125,7 +126,7 @@ def score(today: date | None = None, basis: str = "hourly") -> dict:
 
         peak_label = max(probs, key=probs.get)
         peak_hit = peak_label == actual_label
-        within1 = abs(LABELS.index(peak_label) - LABELS.index(actual_label)) <= 1
+        within1 = abs(bin_temp(peak_label) - bin_temp(actual_label)) <= 1
         lh = lead_hits.setdefault((r["lead_bucket"], var),
                                   {"peak": [], "consensus": [], "within1": []})
         for store in (var_hits[var], lh):

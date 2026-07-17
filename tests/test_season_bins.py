@@ -179,3 +179,29 @@ def test_hot_tail_contract_is_now_priceable():
     # 3 of 4018 days hit >= 110; 111 used to be unpriceable.
     from settlement import bin_for_temp
     assert bin_for_temp(111) == "111"
+
+
+import edge_report
+
+
+def test_is_boundary_edges_follow_the_config_range():
+    # A September front low near a Kalshi even|odd edge must register as a
+    # boundary case; the old hardcoded range(60, 120, 2) missed everything <60.
+    assert edge_report.is_boundary(58.5) is True     # on the 58|59 edge
+    assert edge_report.is_boundary(58.0) is True     # 0.5 away
+    assert edge_report.is_boundary(57.4) is False    # 0.9 from 56.5 and 58.5
+
+
+def test_is_boundary_unchanged_in_the_old_range():
+    # tests/test_edge_report.py:34 assertions must keep holding.
+    assert edge_report.is_boundary(96.5) is True
+    assert edge_report.is_boundary(97.0) is True
+    assert edge_report.is_boundary(95.4) is False
+    assert edge_report.is_boundary(97.6) is False
+
+
+def test_within1_matches_index_distance_on_legacy_tail_labels():
+    # bin_temp distance == LABELS.index distance, but can't ValueError on a
+    # legacy label absent from the widened LABELS.
+    assert abs(model.bin_temp("<= 60") - model.bin_temp("61")) == 1
+    assert abs(model.bin_temp("108") - model.bin_temp(">= 110")) == 2
