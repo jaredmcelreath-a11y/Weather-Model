@@ -1097,7 +1097,7 @@ def _open_positions():
 
 
 def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
-                    safe_min=None, today_iso=None):
+                    safe_min=None, today_iso=None, bankroll=None):
     if safe_min is None:
         safe_min = adapter.safe_hold_default
     with col:
@@ -1403,7 +1403,8 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                 "available (the market isn't underpricing a safe side).</p></div>",
                 unsafe_allow_html=True)
 
-        _kelly_sizing_box(contracts, probs, adapter, variable)
+        _kelly_sizing_box(contracts, probs, adapter, variable,
+                          bankroll_default=bankroll)
 
 
 def _kelly_pick(contracts, probs, adapter):
@@ -1425,11 +1426,12 @@ def _kelly_pick(contracts, probs, adapter):
     return (c, side, q)
 
 
-def _kelly_sizing_box(contracts, probs, adapter, variable):
+def _kelly_sizing_box(contracts, probs, adapter, variable, bankroll_default=None):
     """Interactive Kelly bet-sizing box for one market. Lets the user pick a
-    live contract, set a Kelly fraction, and see the recommended stake plus a
-    size-vs-return curve that shows where extra contracts stop being worth it.
-    Thin glue over kelly.optimal_size + the live order book + account balance."""
+    live contract and side, set a Kelly fraction, and see the recommended stake
+    plus a size-vs-return curve. `bankroll_default` is the pre-filled pool (the
+    live portfolio worth); falls back to cash balance then $100. Thin glue over
+    kelly.optimal_size + the live order book."""
     from sources import kalshi, kalshi_portfolio
 
     # The 'Safest hold' .wbox above carries only a 0.3rem bottom margin, so nudge
@@ -1474,13 +1476,14 @@ def _kelly_sizing_box(contracts, probs, adapter, variable):
     box.caption(f"Model {q*100:.0f}% · {side_label} ask {cents(ask)} · "
                 f"edge {(q - ask) * 100:+.0f}pp")
 
-    bal = kalshi_portfolio.balance()
+    default_bank = bankroll_default or kalshi_portfolio.balance()
     bankroll = box.number_input(
         "Bankroll ($)", min_value=1.0,
-        value=float(round(bal, 2)) if bal else 100.0, step=10.0,
+        value=float(round(default_bank, 2)) if default_bank else 100.0, step=10.0,
         key=f"kelly_bank_{variable}",
-        help="Auto-filled from your live Kalshi cash balance; edit to size against "
-             "a different pool." if bal else "Enter the pool you're sizing against.")
+        help="Auto-filled from your live Kalshi portfolio value (cash + open "
+             "positions marked to market); edit to size against a different pool."
+             if default_bank else "Enter the pool you're sizing against.")
     frac = box.slider("Kelly fraction", 0.25, 1.0, 0.5, 0.05,
                       key=f"kelly_frac_{variable}",
                       help="Fraction of full Kelly. 0.5 (half Kelly) is the safe "
@@ -1732,7 +1735,7 @@ def _render_accuracy(load_accuracy, calib=None, history_loader=None):
 
 
 def render_page(snap, calib, adapter, load_accuracy, recap_loader=None,
-                history_loader=None):
+                history_loader=None, bankroll=None):
     """Draw the full dashboard body for one market. `snap`/`calib` come from the
     cached snapshot loader; `adapter` selects the exchange; `load_accuracy` is the
     cached () -> (bt, live) callable for the accuracy expander; `recap_loader` is
@@ -1866,9 +1869,11 @@ def render_page(snap, calib, adapter, load_accuracy, recap_loader=None,
     with cols[1]:
         low_box = st.container(key="wx_sec_low")
     render_variable(high_box, "High", pred["high"], "high", pred["day"], adapter,
-                    featured=not feature_low, safe_min=safe_min, today_iso=today_iso)
+                    featured=not feature_low, safe_min=safe_min, today_iso=today_iso,
+                    bankroll=bankroll)
     render_variable(low_box, "Low", pred["low"], "low", pred["day"], adapter,
-                    featured=feature_low, safe_min=safe_min, today_iso=today_iso)
+                    featured=feature_low, safe_min=safe_min, today_iso=today_iso,
+                    bankroll=bankroll)
 
     with st.expander("Per-Source Breakdown"):
         src = snap["sources"][key]

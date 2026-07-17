@@ -150,6 +150,30 @@ def load_calibration_history():
         return []
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def load_portfolio_value():
+    """Total Kalshi portfolio worth = cash + open positions marked to market
+    (matches the My Bets page's Portfolio figure), the Kelly bankroll default.
+    Short TTL so it tracks the live total. None if the portfolio API isn't set up."""
+    try:
+        import bet_history
+        from sources import kalshi_portfolio
+        cash = kalshi_portfolio.balance() or 0.0
+        fills = kalshi_portfolio.fills(bet_history.BETS_START)
+        setts = kalshi_portfolio.settlements(bet_history.BETS_START)
+        meta = {t: kalshi_portfolio.market_meta(t) for t in {f["ticker"] for f in fills}}
+        rows = bet_history.build_rows(fills, setts, meta)
+        open_mv = 0.0
+        for r in rows:
+            if r["status"] == "open":
+                cv = kalshi_portfolio.market_price(r["ticker"], r["side"])
+                if cv is not None:
+                    open_mv += r["qty"] * cv
+        return cash + open_mv
+    except Exception:
+        return None
+
+
 def _page(adapter, snapshot_loader, accuracy_loader, record_basis):
     snap, calib = snapshot_loader()
     dropped = snap.get("dropped_sources") or []
@@ -178,9 +202,11 @@ def _page(adapter, snapshot_loader, accuracy_loader, record_basis):
         consensus_log.record(snap, basis=record_basis)  # intraday time series
     except Exception:
         pass
+    bankroll = load_portfolio_value() if record_basis == "cli" else None
     market_view.render_page(snap, calib, adapter, accuracy_loader,
                              recap_loader=load_recap,
-                             history_loader=load_calibration_history)
+                             history_loader=load_calibration_history,
+                             bankroll=bankroll)
 
 
 def robinhood_page():
