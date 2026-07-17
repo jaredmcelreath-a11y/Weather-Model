@@ -249,7 +249,10 @@ def _inject_theme(name):
         # shown only when the body carries wx-briefing-open.
         ".st-key-wx_briefing_bridge,.st-key-wx_briefing_bridge iframe{height:0!important;"
         "min-height:0!important;margin:0!important;border:0!important;}\n"
-        ".wx-fab{position:fixed;right:16px;bottom:16px;z-index:998;width:46px;height:46px;"
+        # Bottom-CENTER, not bottom-right: the right corner is covered by
+        # Streamlit's 'Manage app' button on desktop and mobile.
+        ".wx-fab{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;"
+        "z-index:998;width:46px;height:46px;"
         "border-radius:50%;display:flex;align-items:center;justify-content:center;"
         "cursor:pointer;user-select:none;font-size:1.25rem;color:var(--bg);"
         "background:var(--accent);border:1px solid var(--accent-strong);"
