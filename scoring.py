@@ -71,10 +71,17 @@ def _correction_residuals(today: date | None = None, basis: str = "hourly"
     return out
 
 
-def _settled_records(today: date | None = None) -> list[dict]:
+def _settled_records(today: date | None = None, cohort: str | None = None) -> list[dict]:
+    """Settled logged rows. `cohort` selects the capture cohort: the default None
+    returns the rolling rows (no capture_cohort) — so score(), the correction
+    residuals, and per_lead_sigma/bias all keep using the rolling captures and the
+    fixed-time cohort rows never pollute them. Pass a cohort id (e.g. "0900") for
+    that cohort's rows only."""
     rows = forecast_log.load()
     today = today or date.today()
-    return [r for r in rows if date.fromisoformat(r["target_date"]) < today]
+    return [r for r in rows
+            if date.fromisoformat(r["target_date"]) < today
+            and r.get("capture_cohort") == cohort]
 
 
 def _actuals_for(records: list[dict], basis: str = "hourly") -> dict[date, tuple[float, float]]:
@@ -86,16 +93,61 @@ def _actuals_for(records: list[dict], basis: str = "hourly") -> dict[date, tuple
     return fetch(min(days), max(days))
 
 
+def same_day_cohort(today: date | None = None, basis: str = "hourly",
+                    cohort: str = "0900") -> dict:
+    """Exact-bin accuracy of the fixed-time same-day cohort — an honest decision-
+    time same-day number, since the rolling lead-0 row is dominated by the
+    ~11:45pm capture (the day is already settled by then). {variable: {n,
+    exact_peak, exact_consensus, within1}} for the settled cohort rows; {} until
+    any settle."""
+    records = [r for r in _settled_records(today, cohort=cohort)
+               if r.get("basis", "hourly") == basis]
+    if not records:
+        return {}
+    actual = _actuals_for(records, basis)
+    if not actual:
+        return {}
+    hits: dict[str, dict[str, list[bool]]] = {
+        "high": {"peak": [], "consensus": [], "within1": []},
+        "low": {"peak": [], "consensus": [], "within1": []}}
+    for r in records:
+        d = date.fromisoformat(r["target_date"])
+        if d not in actual:
+            continue
+        var = r["variable"]
+        act = actual[d][0] if var == "high" else actual[d][1]
+        probs = r["probabilities"]
+        actual_label = bin_for_temp(act)
+        peak_label = max(probs, key=probs.get)
+        hits[var]["peak"].append(peak_label == actual_label)
+        hits[var]["within1"].append(abs(bin_temp(peak_label) - bin_temp(actual_label)) <= 1)
+        if r.get("consensus") is not None:
+            hits[var]["consensus"].append(bin_for_temp(r["consensus"]) == actual_label)
+
+    def _pct(flags: list[bool]) -> float | None:
+        return round(100 * sum(flags) / len(flags), 0) if flags else None
+
+    out = {}
+    for var in ("high", "low"):
+        if hits[var]["peak"]:
+            out[var] = {"n": len(hits[var]["peak"]),
+                        "exact_peak": _pct(hits[var]["peak"]),
+                        "exact_consensus": _pct(hits[var]["consensus"]),
+                        "within1": _pct(hits[var]["within1"])}
+    return out
+
+
 def score(today: date | None = None, basis: str = "hourly") -> dict:
     """Grade all settled logged predictions.
 
-    Returns per-variable Brier + reliability curve, and per-(lead, variable)
-    signed-error stats. Empty/unsettled log -> zeroed structure (never raises on
-    no data; network errors during the actuals fetch propagate to the caller).
+    Returns per-variable Brier + reliability curve, per-(lead, variable) signed-
+    error stats, and the fixed-time same-day cohort (same_day_0900). Empty/
+    unsettled log -> zeroed structure (never raises on no data; network errors
+    during the actuals fetch propagate to the caller).
     """
     records = [r for r in _settled_records(today)
                if r.get("basis", "hourly") == basis]
-    empty = {"n_settled": 0, "by_variable": {}, "by_lead": {}}
+    empty = {"n_settled": 0, "by_variable": {}, "by_lead": {}, "same_day_0900": {}}
     if not records:
         return empty
     actual = _actuals_for(records, basis)
@@ -171,7 +223,8 @@ def score(today: date | None = None, basis: str = "hourly") -> dict:
             entry["n_resid"] = len(errs)
         by_lead.setdefault(bucket, {})[var] = entry
 
-    return {"n_settled": n_settled, "by_variable": by_variable, "by_lead": by_lead}
+    return {"n_settled": n_settled, "by_variable": by_variable, "by_lead": by_lead,
+            "same_day_0900": same_day_cohort(today, basis)}
 
 
 def market_accuracy(today: date | None = None) -> dict:

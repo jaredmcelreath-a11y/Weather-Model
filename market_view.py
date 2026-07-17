@@ -1423,10 +1423,21 @@ def _render_accuracy(load_accuracy, calib=None):
         if lrows:
             _html_df(pd.DataFrame(lrows).set_index("variable"))
 
-        # Per-lead breakout: same-day (anchored) vs day-ahead exact-bin accuracy.
-        lead_names = {0: "same-day", 24: "day-ahead", 36: "2-day"}
+        # Per-lead breakout. The same-day row is the fixed 09:00 decision-time
+        # cohort (same_day_0900), NOT the rolling lead-0 row — that one lands
+        # ~11:45pm when the day is already settled and overstates skill, so it's
+        # suppressed here.
+        lead_names = {24: "day-ahead", 36: "2-day"}
         leadrows = []
+        for var, m in (live.get("same_day_0900") or {}).items():
+            leadrows.append({
+                "lead": "same-day", "variable": var, "days": m["n"],
+                "exact bin": _pct(m.get("exact_peak")),
+                "within ±1°F": _pct(m.get("within1")),
+            })
         for bucket, vars_ in sorted(live.get("by_lead", {}).items(), key=lambda kv: int(kv[0])):
+            if int(bucket) == 0:
+                continue                       # rolling same-day suppressed (see above)
             for var, m in vars_.items():
                 leadrows.append({
                     "lead": lead_names.get(int(bucket), f"{bucket}h"), "variable": var,
@@ -1434,8 +1445,8 @@ def _render_accuracy(load_accuracy, calib=None):
                     "within ±1°F": _pct(m.get("within1")),
                 })
         if leadrows:
-            st.caption("Exact-bin accuracy by lead time — same-day is anchored to live "
-                       "observations, so it should beat day-ahead.")
+            st.caption("Exact-bin accuracy by lead time — same-day is the fixed 9am "
+                       "decision-time capture (not the end-of-day snapshot).")
             _html_df(pd.DataFrame(leadrows).set_index(["lead", "variable"]))
 
         mkt = live.get("market")

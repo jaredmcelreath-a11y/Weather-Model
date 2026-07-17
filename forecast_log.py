@@ -23,10 +23,28 @@ from zoneinfo import ZoneInfo
 TZ = ZoneInfo(TIMEZONE)
 _PATH = os.path.join(os.path.dirname(__file__), "forecast_log.jsonl")
 
+# Fixed same-day capture cohort: an extra, distinctly-keyed snapshot near 09:00
+# local so the same-day accuracy reflects a real morning decision time rather than
+# the ~11:45pm rolling capture (which lands after the day has already settled and
+# so overstates decision-time skill). Only today's rows get a cohort twin.
+MORNING_COHORT = "0900"
+MORNING_COHORT_HOUR = 9
+COHORT_TOLERANCE_MIN = 8
+
+
+def morning_cohort(now: datetime) -> str | None:
+    """MORNING_COHORT if `now` is within COHORT_TOLERANCE_MIN of 09:00 local, else
+    None. The every-15-min scheduler always lands a run inside that window."""
+    local = now.astimezone(TZ)
+    anchor = local.replace(hour=MORNING_COHORT_HOUR, minute=0, second=0, microsecond=0)
+    if abs((local - anchor).total_seconds()) <= COHORT_TOLERANCE_MIN * 60:
+        return MORNING_COHORT
+    return None
+
 
 def _key(rec: dict) -> tuple:
     return (rec["target_date"], rec["variable"], rec["lead_bucket"],
-            rec.get("basis", "hourly"))
+            rec.get("basis", "hourly"), rec.get("capture_cohort"))
 
 
 def _github_cfg() -> dict | None:
@@ -131,6 +149,7 @@ def record(snapshot: dict, path: str | None = None, basis: str = "hourly") -> No
 
     sources = snapshot.get("sources", {})
     market = snapshot.get("market", {})
+    cohort = morning_cohort(now)
     new_recs = []
     for which in ("today", "tomorrow"):
         pred = snapshot.get(which)
@@ -176,6 +195,11 @@ def record(snapshot: dict, path: str | None = None, basis: str = "hourly") -> No
             if mkt:
                 rec["market"] = mkt
             new_recs.append(rec)
+            # Fixed-time same-day cohort twin: today's row, keyed distinctly by
+            # capture_cohort so the evening runs can't upsert it away. Same
+            # forecast content as the rolling row — only the persistence differs.
+            if which == "today" and cohort:
+                new_recs.append({**rec, "capture_cohort": cohort})
 
     target_path = path or _PATH
     rows = load(target_path)

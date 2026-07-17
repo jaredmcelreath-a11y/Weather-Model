@@ -167,7 +167,8 @@ def test_score_against_actuals(tmp_path, monkeypatch):
 
 def test_score_empty_log_is_graceful(tmp_path, monkeypatch):
     monkeypatch.setattr(forecast_log, "_PATH", str(tmp_path / "none.jsonl"))
-    assert scoring.score(today=TODAY) == {"n_settled": 0, "by_variable": {}, "by_lead": {}}
+    assert scoring.score(today=TODAY) == {"n_settled": 0, "by_variable": {},
+                                          "by_lead": {}, "same_day_0900": {}}
 
 
 def test_score_exact_bin_metrics(tmp_path, monkeypatch):
