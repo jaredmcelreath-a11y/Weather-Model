@@ -110,6 +110,22 @@ def load_accuracy_kalshi():
     return bt, live
 
 
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def load_recap():
+    """Yesterday's scorecard for the Morning Recap card (CLI/Kalshi settlement
+    basis). Changes at most once a day, so a long TTL is fine. None on any error
+    or before yesterday settles."""
+    from datetime import date
+    import forecast_log
+    import recap
+    import settlements
+    try:
+        return recap.yesterday_scorecard(date.today(), settlements.as_map("cli"),
+                                          forecast_log.load())
+    except Exception:
+        return None
+
+
 def _page(adapter, snapshot_loader, accuracy_loader, record_basis):
     snap, calib = snapshot_loader()
     dropped = snap.get("dropped_sources") or []
@@ -138,7 +154,8 @@ def _page(adapter, snapshot_loader, accuracy_loader, record_basis):
         consensus_log.record(snap, basis=record_basis)  # intraday time series
     except Exception:
         pass
-    market_view.render_page(snap, calib, adapter, accuracy_loader)
+    market_view.render_page(snap, calib, adapter, accuracy_loader,
+                             recap_loader=load_recap)
 
 
 def robinhood_page():

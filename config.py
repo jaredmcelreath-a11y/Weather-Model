@@ -202,28 +202,31 @@ CONVECTIVE_POP_MIN = 30      # % precip probability (remaining hours) that arms 
 CONVECTIVE_POP_FULL = 70     # % POP at/above which the full CONVECTIVE_SIGMA applies
 
 # NWS county UGC codes for the N/NW and SW/W storm approaches to KDFW plus the
-# metro counties themselves. A Severe Thunderstorm Warning intersecting this set
-# arms the upstream trigger. (TXC + 3-digit county FIPS.)
-CONVECTIVE_UPSTREAM_UGC = (
+# metro counties themselves, each mapped to (county name, approach direction). A
+# Severe Thunderstorm Warning intersecting this set arms the upstream trigger; the
+# name/direction feed the storm-watch panel. (TXC + 3-digit county FIPS.) This dict
+# is the single source of truth — CONVECTIVE_UPSTREAM_UGC is derived from its keys.
+CONVECTIVE_UPSTREAM_COUNTIES = {
     # N/NW approach (storms move SE toward the metroplex)
-    "TXC497",  # Wise
-    "TXC237",  # Jack
-    "TXC367",  # Parker
-    "TXC363",  # Palo Pinto
-    "TXC503",  # Young
-    "TXC121",  # Denton
-    "TXC097",  # Cooke
-    "TXC337",  # Montague
+    "TXC497": ("Wise", "NW"),
+    "TXC237": ("Jack", "NW"),
+    "TXC367": ("Parker", "W"),
+    "TXC363": ("Palo Pinto", "W"),
+    "TXC503": ("Young", "NW"),
+    "TXC121": ("Denton", "N"),
+    "TXC097": ("Cooke", "N"),
+    "TXC337": ("Montague", "NW"),
     # SW/W/S approach (storms track NE toward and over the metroplex)
-    "TXC251",  # Johnson (immediately S/SW of Tarrant)
-    "TXC221",  # Hood (SW)
-    "TXC425",  # Somervell (SW)
-    "TXC143",  # Erath (far SW, the NE-tracking approach)
-    "TXC139",  # Ellis (S of Dallas)
+    "TXC251": ("Johnson", "SW"),
+    "TXC221": ("Hood", "SW"),
+    "TXC425": ("Somervell", "SW"),
+    "TXC143": ("Erath", "SW"),
+    "TXC139": ("Ellis", "S"),
     # metro counties (the airport itself)
-    "TXC439",  # Tarrant (airport county)
-    "TXC113",  # Dallas
-)
+    "TXC439": ("Tarrant", "metro"),
+    "TXC113": ("Dallas", "metro"),
+}
+CONVECTIVE_UPSTREAM_UGC = tuple(CONVECTIVE_UPSTREAM_COUNTIES)
 
 # Disk cache TTL (seconds) for live API calls, to avoid hammering on refresh.
 CACHE_TTL_SECONDS = 600

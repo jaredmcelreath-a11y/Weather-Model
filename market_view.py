@@ -300,6 +300,79 @@ def metric_card(label, value, help_text=None):
             f'<div class="wxcard-v">{_h.escape(str(value))}</div></div>')
 
 
+_PANEL = ("background:rgba(255,255,255,0.03);border-radius:6px;"
+          "padding:0.55rem 0.9rem;margin:0.4rem 0;font-size:0.9rem;line-height:1.55;")
+
+
+def _fmt_temp(v):
+    return f"{v:.0f}°F" if v is not None else "—"
+
+
+def storm_watch_html(storm):
+    """Colored storm-watch panel: POP, any upstream severe warning (county +
+    direction), and the convective downside on today's low. '' when no storm
+    block is available (best-effort snapshot)."""
+    if not storm:
+        return ""
+    level = storm.get("level", "clear")
+    color, label = {"clear": ("#2f9e44", "all clear"),
+                    "watch": ("#f08c00", "watch"),
+                    "active": ("#e03131", "active")}.get(level, ("#2f9e44", "all clear"))
+    pop = storm.get("pop")
+    pop_txt = f"{pop:.0f}%" if pop is not None else "—"
+    up = storm.get("upstream") or {}
+    warn = (f"SVR warning: {up.get('county')} Co ({up.get('direction')})"
+            if up.get("active") else "No active severe warnings")
+    sigma = storm.get("sigma") or 0.0
+    low_line = (f"Low at risk: downside widened to ±{sigma:.0f}°F" if sigma > 0
+                else "Low: no convective downside")
+    return (
+        f'<div style="{_PANEL}border-left:4px solid {color};">'
+        f'<div style="font-weight:600">⚡ STORM WATCH — {label}</div>'
+        f'<div style="opacity:0.85">POP (remaining hrs): {pop_txt}</div>'
+        f'<div style="opacity:0.85">{warn}</div>'
+        f'<div style="opacity:0.85">{low_line}</div></div>')
+
+
+def morning_recap_html(today, yesterday):
+    """The Morning Recap card: yesterday's scorecard (if settled) above today's
+    setup. `today` is recap.today_setup(...), `yesterday` recap.yesterday_scorecard
+    (or None)."""
+    parts = [f'<div style="{_PANEL}border-left:4px solid #4dabf7;">',
+             '<div style="font-weight:600">MORNING RECAP</div>']
+    if yesterday:
+        parts.append(f'<div style="margin-top:0.2rem;opacity:0.7">Yesterday '
+                     f'({yesterday["date"]})</div>')
+        for var in ("high", "low"):
+            g = yesterday.get(var)
+            if not g:
+                continue
+            mark = "exact ✓" if g["exact"] else f"miss {g['diff']:+.0f}"
+            parts.append(f'<div style="opacity:0.9">{var.title()} settled '
+                         f'{g["settled"]:.0f} · model {g["model"]:.0f} ({mark})</div>')
+        closer = [("model" if not g["market_closer"] else "market", var)
+                  for var in ("high", "low")
+                  if (g := yesterday.get(var)) and g.get("market_closer") is not None]
+        if closer:
+            parts.append('<div style="opacity:0.7">vs market: '
+                         + "; ".join(f"{who} closer on the {var}" for who, var in closer)
+                         + "</div>")
+    if today:
+        parts.append(f'<div style="margin-top:0.2rem;opacity:0.7">Today '
+                     f'({today["date"]})</div>')
+        lo, hi = today["low"], today["high"]
+        lo_mkt = f' · mkt {lo["market_ev"]:.1f}' if lo["market_ev"] is not None else ""
+        parts.append(f'<div style="opacity:0.9">Overnight low {_fmt_temp(lo["observed"])} '
+                     f'({"locked" if lo["locked"] else "developing"}){lo_mkt}</div>')
+        tb = hi["top_bin"]
+        tb_txt = f" (top bin {tb[0]}, {tb[1] * 100:.0f}%)" if tb else ""
+        hi_mkt = f' · mkt {hi["market_ev"]:.1f}' if hi["market_ev"] is not None else ""
+        parts.append(f'<div style="opacity:0.9">High ~{_fmt_temp(hi["consensus"])}'
+                     f'{tb_txt}{hi_mkt}</div>')
+    parts.append("</div>")
+    return "".join(parts)
+
+
 def _chart_colors():
     """Chart hues for the active palette. Deep slate keeps the bright default
     red/blue/green; Charcoal softens them to terracotta (high), blue-grey (low),
@@ -1473,10 +1546,11 @@ def _render_accuracy(load_accuracy, calib=None):
                    "start settling (one day's lead).")
 
 
-def render_page(snap, calib, adapter, load_accuracy):
+def render_page(snap, calib, adapter, load_accuracy, recap_loader=None):
     """Draw the full dashboard body for one market. `snap`/`calib` come from the
     cached snapshot loader; `adapter` selects the exchange; `load_accuracy` is the
-    cached () -> (bt, live) callable for the accuracy expander."""
+    cached () -> (bt, live) callable for the accuracy expander; `recap_loader` is
+    the cached () -> yesterday-scorecard callable for the Morning Recap card."""
     st_autorefresh(interval=60_000, key=f"refresh_{adapter.name}")
     _inject_theme(_seed_theme())
 
@@ -1542,6 +1616,18 @@ def render_page(snap, calib, adapter, load_accuracy):
         st.caption(f"Kalshi market as of {_mkt_as_of} · model snapshot "
                    f"{_fmt_clock(snap['updated'], with_seconds=True)} "
                    "(both refresh every ~60s).")
+
+    # Top-of-page briefing: Morning Recap (yesterday's scorecard + today's setup),
+    # then the always-on Storm Watch panel. Both are about today regardless of the
+    # Today/Tomorrow toggle below. Best-effort — a failure here never blocks the page.
+    try:
+        import recap as _recap
+        yday = recap_loader() if recap_loader else None
+        setup = _recap.today_setup(snap, mkt_high=ki.get("high"), mkt_low=ki.get("low"))
+        st.markdown(morning_recap_html(setup, yday), unsafe_allow_html=True)
+    except Exception:
+        pass
+    st.markdown(storm_watch_html(snap.get("storm")), unsafe_allow_html=True)
 
     day = st.sidebar.radio("Day", ["Today", "Tomorrow"], index=0,
                            key=f"day_{adapter.name}")

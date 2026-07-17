@@ -31,6 +31,7 @@ from config import (BIN_HIGH, BIN_LOW, CACHE_TTL_SECONDS, CALM_WIND_MAX,
 from settlement import (covers_extreme, local_day_bounds, observed_so_far,
                         observed_so_far_robust, round_half_up,
                         _HIGH_WINDOW, _LOW_WINDOW)
+import convective
 from convective import convective_sigma
 import solar
 from sources import (open_meteo_ensemble, open_meteo_models, nws_forecast,
@@ -994,5 +995,15 @@ def snapshot(calib: dict | None = None, settle_offset=None,
         "current_hourly": current_hourly,
         "sources": {"today": per_source_extremes(series, today),
                     "tomorrow": per_source_extremes(series, tomorrow)},
+        "storm": _storm_status(today, now),
         "dropped_sources": dropped,
     }
+
+
+def _storm_status(today, now):
+    """Today's storm-watch summary for the dashboard panel. Best-effort: a data
+    or network hiccup yields None so the snapshot never breaks on it."""
+    try:
+        return convective.storm_status(today, now)
+    except Exception:
+        return None

@@ -18,10 +18,12 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from config import (CONVECTIVE_POP_FULL, CONVECTIVE_POP_MIN, CONVECTIVE_SIGMA,
-                    CONVECTIVE_SIGMA_MIN, CONVECTIVE_UPSTREAM_UGC)
+                    CONVECTIVE_SIGMA_MIN, CONVECTIVE_UPSTREAM_COUNTIES,
+                    CONVECTIVE_UPSTREAM_UGC)
 from sources import nws_alerts, open_meteo_models
 
 UPSTREAM_UGC = frozenset(CONVECTIVE_UPSTREAM_UGC)
+UPSTREAM_COUNTIES = dict(CONVECTIVE_UPSTREAM_COUNTIES)
 _SEVERE = "Severe Thunderstorm Warning"
 
 
@@ -51,6 +53,54 @@ def _upstream_triggered(alerts: dict, zones=UPSTREAM_UGC) -> bool:
         if zones.intersection(ugc):
             return True
     return False
+
+
+def _upstream_match(alerts: dict, counties=UPSTREAM_COUNTIES) -> dict | None:
+    """The first active Severe Thunderstorm Warning intersecting the upstream
+    counties, as {"county", "direction"} — or None. Feeds the storm-watch panel;
+    `_upstream_triggered` is the bool-only fast path used by the sigma floor."""
+    for f in (alerts or {}).get("features", []):
+        props = f.get("properties", {}) or {}
+        if props.get("event") != _SEVERE:
+            continue
+        for u in (props.get("geocode", {}) or {}).get("UGC", []) or []:
+            if u in counties:
+                name, direction = counties[u]
+                return {"county": name, "direction": direction}
+    return None
+
+
+def storm_status(day: date, now: datetime) -> dict:
+    """Storm-watch summary for the dashboard panel: remaining-hours POP, the
+    convective downside sigma for today's low, any upstream severe-warning
+    (county + approach direction), and an overall level (clear/watch/active).
+    Best-effort — any data/network failure degrades a field, never raises."""
+    try:
+        pop, _cape = open_meteo_models.convective_window(day, now)
+    except Exception:
+        pop = None
+    try:
+        upstream = _upstream_match(nws_alerts.fetch_active())
+    except Exception:
+        upstream = None
+    try:
+        sigma = convective_sigma(day, now)
+    except Exception:
+        sigma = 0.0
+    if upstream or sigma >= CONVECTIVE_SIGMA:
+        level = "active"
+    elif sigma > 0:
+        level = "watch"
+    else:
+        level = "clear"
+    return {
+        "level": level,
+        "pop": pop,
+        "sigma": round(sigma, 1),
+        "upstream": {"active": upstream is not None,
+                     "county": (upstream or {}).get("county"),
+                     "direction": (upstream or {}).get("direction")},
+    }
 
 
 def risk_label(low_pred: dict) -> str | None:

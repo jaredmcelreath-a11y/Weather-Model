@@ -136,6 +136,63 @@ def test_upstream_triggered():
     assert _upstream_triggered({}, zones) is False
 
 
+def test_upstream_match_returns_county_and_direction():
+    from convective import _upstream_match
+    svr = {"features": [{"properties": {
+        "event": "Severe Thunderstorm Warning",
+        "geocode": {"UGC": ["TXC221"]}}}]}     # Hood, SW
+    m = _upstream_match(svr)
+    assert m == {"county": "Hood", "direction": "SW"}
+    # wrong event / no match -> None
+    assert _upstream_match({"features": [{"properties": {
+        "event": "Flood Warning", "geocode": {"UGC": ["TXC221"]}}}]}) is None
+    assert _upstream_match({"features": []}) is None
+
+
+def test_storm_status_levels(monkeypatch):
+    import convective
+    from sources import nws_alerts, open_meteo_models
+    now = datetime(DAY.year, DAY.month, DAY.day, 16, tzinfo=TZ)
+    svr = {"features": [{"properties": {
+        "event": "Severe Thunderstorm Warning", "geocode": {"UGC": ["TXC251"]}}}]}
+    no_alerts = {"features": []}
+
+    # active: upstream SVR warning -> level active, county surfaced, full sigma
+    monkeypatch.setattr(open_meteo_models, "convective_window", lambda d, n: (10.0, 0.0))
+    monkeypatch.setattr(nws_alerts, "fetch_active", lambda: svr)
+    s = convective.storm_status(DAY, now)
+    assert s["level"] == "active"
+    assert s["upstream"] == {"active": True, "county": "Johnson", "direction": "SW"}
+    assert s["sigma"] == config.CONVECTIVE_SIGMA
+
+    # watch: POP armed but no warning -> partial downside
+    monkeypatch.setattr(open_meteo_models, "convective_window", lambda d, n: (50.0, 0.0))
+    monkeypatch.setattr(nws_alerts, "fetch_active", lambda: no_alerts)
+    s = convective.storm_status(DAY, now)
+    assert s["level"] == "watch"
+    assert s["pop"] == 50.0 and 0 < s["sigma"] < config.CONVECTIVE_SIGMA
+    assert s["upstream"]["active"] is False
+
+    # clear: quiet POP, no warning
+    monkeypatch.setattr(open_meteo_models, "convective_window", lambda d, n: (5.0, 0.0))
+    s = convective.storm_status(DAY, now)
+    assert s["level"] == "clear" and s["sigma"] == 0.0
+
+
+def test_storm_status_best_effort(monkeypatch):
+    import convective
+    from sources import nws_alerts, open_meteo_models
+    now = datetime(DAY.year, DAY.month, DAY.day, 16, tzinfo=TZ)
+
+    def boom(*a, **k):
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(open_meteo_models, "convective_window", boom)
+    monkeypatch.setattr(nws_alerts, "fetch_active", boom)
+    s = convective.storm_status(DAY, now)      # never raises
+    assert s["level"] == "clear" and s["pop"] is None
+
+
 def test_risk_label():
     from convective import risk_label
     assert risk_label({"convective_widened": True}) is not None
