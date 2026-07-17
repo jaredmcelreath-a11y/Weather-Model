@@ -70,3 +70,28 @@ def test_yesterday_scorecard_falls_back_to_day_ahead():
              "lead_bucket": 24, "consensus": 76.0, "probabilities": {"76": 1.0}}]
     out = recap.yesterday_scorecard(date(2026, 7, 18), _SETTLED, rows)
     assert out["low"]["model"] == 76.0 and "high" not in out
+
+
+_BETS = [
+    {"target_date": "2026-07-17", "status": "settled", "pnl": 30.0, "staked": 50.0},
+    {"target_date": "2026-07-17", "status": "closed", "pnl": 12.0, "staked": 40.0},
+    {"target_date": "2026-07-17", "status": "settled", "pnl": -8.0, "staked": 20.0},
+    {"target_date": "2026-07-16", "status": "settled", "pnl": 100.0, "staked": 10.0},
+    {"target_date": "2026-07-17", "status": "open", "pnl": None, "staked": 15.0},
+]
+
+
+def test_yesterday_pnl_sums_realized_for_that_weather_day():
+    out = recap.yesterday_pnl("2026-07-17", _BETS)
+    assert out["net"] == 34.0                       # 30 + 12 - 8 (open row excluded)
+    assert out["n"] == 3 and out["wins"] == 2 and out["losses"] == 1
+    assert out["pct"] == round(100 * 34.0 / 110.0, 1)   # staked 50+40+20
+
+
+def test_yesterday_pnl_none_when_no_settled_bets():
+    assert recap.yesterday_pnl("2026-07-15", _BETS) is None
+
+
+def test_yesterday_scorecard_attaches_pnl():
+    out = recap.yesterday_scorecard(date(2026, 7, 18), _SETTLED, _ROWS, bet_rows=_BETS)
+    assert out["pnl"]["net"] == 34.0 and out["pnl"]["n"] == 3

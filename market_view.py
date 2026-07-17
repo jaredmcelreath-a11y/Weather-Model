@@ -244,6 +244,27 @@ def _inject_theme(name):
         # keep the zero-height JS-bridge component from adding vertical space
         ".st-key-wx_bridge,.st-key-wx_bridge iframe{height:0!important;min-height:0!important;"
         "margin:0!important;border:0!important;}\n"
+        # Daily-briefing floating button + pop-up modal (client-side, see the JS
+        # bridge). FAB pinned bottom-right on desktop AND mobile; panel + backdrop
+        # shown only when the body carries wx-briefing-open.
+        ".st-key-wx_briefing_bridge,.st-key-wx_briefing_bridge iframe{height:0!important;"
+        "min-height:0!important;margin:0!important;border:0!important;}\n"
+        ".wx-fab{position:fixed;right:16px;bottom:16px;z-index:998;width:46px;height:46px;"
+        "border-radius:50%;display:flex;align-items:center;justify-content:center;"
+        "cursor:pointer;user-select:none;font-size:1.25rem;color:var(--bg);"
+        "background:var(--accent);border:1px solid var(--accent-strong);"
+        "box-shadow:0 4px 16px rgba(0,0,0,0.4);}\n"
+        ".wx-briefing-backdrop{display:none;position:fixed;inset:0;z-index:999;"
+        "background:rgba(0,0,0,0.55);}\n"
+        ".wx-briefing-panel{display:none;position:fixed;z-index:1000;left:50%;top:50%;"
+        "transform:translate(-50%,-50%);width:min(92vw,440px);max-height:82vh;"
+        "overflow:auto;background:var(--surface);border:1px solid var(--border);"
+        "border-radius:12px;padding:0.8rem 1rem 1rem;box-shadow:0 12px 44px rgba(0,0,0,0.55);}\n"
+        "body.wx-briefing-open .wx-briefing-backdrop,"
+        "body.wx-briefing-open .wx-briefing-panel{display:block;}\n"
+        ".wx-briefing-head{display:flex;justify-content:space-between;align-items:center;"
+        "font-family:'Bitter',serif;font-weight:700;margin-bottom:0.5rem;color:var(--ink);}\n"
+        ".wx-briefing-close{cursor:pointer;font-size:1.05rem;opacity:0.7;padding:0 0.3rem;}\n"
         # Custom metric card + hover/tap tooltip. Streamlit's native help= tooltip is
         # hover-only (needs a long-press on touch) and its box runs off the right edge on
         # phones; this bubble opens on hover OR a single tap (focusable), and its panel is
@@ -332,21 +353,21 @@ def storm_watch_html(storm):
     if not storm:
         return ""
     level = storm.get("level", "clear")
-    color, label = {"clear": ("#2f9e44", "all clear"),
-                    "watch": ("#f08c00", "watch"),
-                    "active": ("#e03131", "active")}.get(level, ("#2f9e44", "all clear"))
+    color, label = {"clear": ("#2f9e44", "All Clear"),
+                    "watch": ("#f08c00", "Watch"),
+                    "active": ("#e03131", "Active")}.get(level, ("#2f9e44", "All Clear"))
     pop = storm.get("pop")
     pop_txt = f"{pop:.0f}%" if pop is not None else "—"
     up = storm.get("upstream") or {}
-    warn = (f"SVR warning: {up.get('county')} Co ({up.get('direction')})"
-            if up.get("active") else "No active severe warnings")
+    warn = (f"SVR Warning: {up.get('county')} Co ({up.get('direction')})"
+            if up.get("active") else "No Active Severe Warnings")
     sigma = storm.get("sigma") or 0.0
-    low_line = (f"Low at risk: downside widened to ±{sigma:.0f}°F" if sigma > 0
-                else "Low: no convective downside")
+    low_line = (f"Low at Risk: Downside Widened to ±{sigma:.0f}°F" if sigma > 0
+                else "Low: No Convective Downside")
     return (
         f'<div style="{_PANEL}border-left:4px solid {color};">'
         f'<div style="font-weight:600">⚡ STORM WATCH — {label}</div>'
-        f'<div style="opacity:0.85">POP (remaining hrs): {pop_txt}</div>'
+        f'<div style="opacity:0.85">POP (Remaining Hrs): {pop_txt}</div>'
         f'<div style="opacity:0.85">{warn}</div>'
         f'<div style="opacity:0.85">{low_line}</div></div>')
 
@@ -364,30 +385,92 @@ def morning_recap_html(today, yesterday):
             g = yesterday.get(var)
             if not g:
                 continue
-            mark = "exact ✓" if g["exact"] else f"miss {g['diff']:+.0f}"
-            parts.append(f'<div style="opacity:0.9">{var.title()} settled '
-                         f'{g["settled"]:.0f} · model {g["model"]:.0f} ({mark})</div>')
-        closer = [("model" if not g["market_closer"] else "market", var)
+            # Miss shown as settled − model: +N = model came in N° under the
+            # settlement (actual was hotter), −N = model ran N° over.
+            mark = "Exact ✓" if g["exact"] else f"Miss {g['settled'] - g['model']:+.0f}"
+            parts.append(f'<div style="opacity:0.9">{var.title()} Settled '
+                         f'{g["settled"]:.0f} · Model {g["model"]:.0f} ({mark})</div>')
+        closer = [("Market" if g["market_closer"] else "Model", var.title())
                   for var in ("high", "low")
                   if (g := yesterday.get(var)) and g.get("market_closer") is not None]
         if closer:
-            parts.append('<div style="opacity:0.7">vs market: '
-                         + "; ".join(f"{who} closer on the {var}" for who, var in closer)
+            parts.append('<div style="opacity:0.7">Market: '
+                         + "; ".join(f"{who} Closer on the {var}" for who, var in closer)
                          + "</div>")
+        pnl = yesterday.get("pnl")
+        if pnl:
+            money = (f"+${pnl['net']:,.0f}" if pnl["net"] >= 0
+                     else f"−${abs(pnl['net']):,.0f}")
+            pct = f" ({pnl['pct']:+.0f}%)" if pnl.get("pct") is not None else ""
+            n = pnl["n"]
+            parts.append(f'<div style="opacity:0.9">P&amp;L: {money}{pct} on '
+                         f'{n} Settled Bet{"s" if n != 1 else ""}</div>')
     if today:
-        parts.append(f'<div style="margin-top:0.2rem;opacity:0.7">Today '
+        # Extra top margin = a blank line between this Today title and the
+        # Yesterday block above it.
+        parts.append(f'<div style="margin-top:0.9rem;opacity:0.7">Today '
                      f'({today["date"]})</div>')
         lo, hi = today["low"], today["high"]
-        lo_mkt = f' · mkt {lo["market_ev"]:.1f}' if lo["market_ev"] is not None else ""
-        parts.append(f'<div style="opacity:0.9">Overnight low {_fmt_temp(lo["observed"])} '
-                     f'({"locked" if lo["locked"] else "developing"}){lo_mkt}</div>')
+        lo_mkt = f' · Mkt {lo["market_ev"]:.1f}' if lo["market_ev"] is not None else ""
+        parts.append(f'<div style="opacity:0.9">Overnight Low {_fmt_temp(lo["observed"])} '
+                     f'({"Locked" if lo["locked"] else "Developing"}){lo_mkt}</div>')
         tb = hi["top_bin"]
-        tb_txt = f" (top bin {tb[0]}, {tb[1] * 100:.0f}%)" if tb else ""
-        hi_mkt = f' · mkt {hi["market_ev"]:.1f}' if hi["market_ev"] is not None else ""
+        tb_txt = f" (Top Bin {tb[0]}, {tb[1] * 100:.0f}%)" if tb else ""
+        hi_mkt = f' · Mkt {hi["market_ev"]:.1f}' if hi["market_ev"] is not None else ""
         parts.append(f'<div style="opacity:0.9">High ~{_fmt_temp(hi["consensus"])}'
                      f'{tb_txt}{hi_mkt}</div>')
     parts.append("</div>")
     return "".join(parts)
+
+
+def briefing_overlay_html(cards_html):
+    """The floating ▲ button + dimmed modal panel holding the briefing `cards_html`.
+    Hidden until <body> gets the wx-briefing-open class (toggled by the JS bridge);
+    the FAB / backdrop / ✕ carry data-wx-briefing hooks the bridge wires."""
+    return (
+        '<div class="wx-fab" data-wx-briefing="open" role="button" tabindex="0" '
+        'aria-label="Open daily briefing">▲</div>'
+        '<div class="wx-briefing-backdrop" data-wx-briefing="close"></div>'
+        '<div class="wx-briefing-panel"><div class="wx-briefing-head">'
+        '<span>Daily Briefing</span>'
+        '<span class="wx-briefing-close" data-wx-briefing="close" role="button" '
+        'tabindex="0" aria-label="Close briefing">✕</span></div>'
+        + (cards_html or "") + '</div>')
+
+
+def briefing_bridge_js():
+    """JS bridge (components.html) for the briefing modal — mirrors the mobile
+    toggle bar. Runs in the component iframe, reaches the parent document, wires
+    the open/close hooks to toggle a wx-briefing-open body class, and persists the
+    state in the URL hash so the 60s auto-refresh re-applies it (stays open)."""
+    return (
+        "<script>\n(function(){\n"
+        "  function apply(pdoc, open){\n"
+        "    pdoc.body.classList.toggle('wx-briefing-open', !!open);\n"
+        "  }\n"
+        "  function wire(){\n"
+        "    var pdoc, ploc, phist;\n"
+        "    try { pdoc = window.parent.document; ploc = window.parent.location;"
+        " phist = window.parent.history; }\n"
+        "    catch(e){ return true; }\n"
+        "    var els = pdoc.querySelectorAll('[data-wx-briefing]');\n"
+        "    if (!els.length) return false;\n"
+        "    for (var i=0;i<els.length;i++){\n"
+        "      (function(el){\n"
+        "        var open = el.getAttribute('data-wx-briefing') === 'open';\n"
+        "        el.onclick = function(){\n"
+        "          try { phist.replaceState(null, '',"
+        " open ? '#briefing' : (ploc.pathname + ploc.search)); } catch(e){}\n"
+        "          apply(pdoc, open);\n"
+        "        };\n"
+        "      })(els[i]);\n"
+        "    }\n"
+        "    apply(pdoc, (ploc.hash || '').replace('#','') === 'briefing');\n"
+        "    return true;\n"
+        "  }\n"
+        "  var n = 0, t = setInterval(function(){"
+        " if (wire() || ++n > 40) clearInterval(t); }, 50);\n"
+        "})();\n</script>")
 
 
 def _chart_colors():
@@ -1692,17 +1775,18 @@ def render_page(snap, calib, adapter, load_accuracy, recap_loader=None,
                    f"{_fmt_clock(snap['updated'], with_seconds=True)} "
                    "(both refresh every ~60s).")
 
-    # Top-of-page briefing: Morning Recap (yesterday's scorecard + today's setup),
-    # then the always-on Storm Watch panel. Both are about today regardless of the
-    # Today/Tomorrow toggle below. Best-effort — a failure here never blocks the page.
+    # Build the briefing cards (Morning Recap + Storm Watch). They're rendered at
+    # the bottom into a pop-up modal opened by a floating ▲ button — both are about
+    # today regardless of the Today/Tomorrow toggle. Best-effort: a failure just
+    # yields an empty card rather than blocking the page.
     try:
         import recap as _recap
         yday = recap_loader() if recap_loader else None
         setup = _recap.today_setup(snap, mkt_high=ki.get("high"), mkt_low=ki.get("low"))
-        st.markdown(morning_recap_html(setup, yday), unsafe_allow_html=True)
+        _recap_html = morning_recap_html(setup, yday)
     except Exception:
-        pass
-    st.markdown(storm_watch_html(snap.get("storm")), unsafe_allow_html=True)
+        _recap_html = ""
+    _briefing_html = _recap_html + storm_watch_html(snap.get("storm"))
 
     day = st.sidebar.radio("Day", ["Today", "Tomorrow"], index=0,
                            key=f"day_{adapter.name}")
@@ -1780,3 +1864,10 @@ def render_page(snap, calib, adapter, load_accuracy, recap_loader=None,
         _render_accuracy(load_accuracy, calib, history_loader=history_loader)
 
     st.caption(adapter.settle_footer)
+
+    # Daily-briefing modal: a floating ▲ button opens the recap + storm cards in a
+    # dimmed pop-up. Client-side (JS bridge toggles a body class, state kept in the
+    # URL hash) so the 60s auto-refresh doesn't slam a native st.dialog shut.
+    st.markdown(briefing_overlay_html(_briefing_html), unsafe_allow_html=True)
+    with st.container(key="wx_briefing_bridge"):
+        components.html(briefing_bridge_js(), height=0)

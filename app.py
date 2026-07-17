@@ -113,15 +113,29 @@ def load_accuracy_kalshi():
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
 def load_recap():
     """Yesterday's scorecard for the Morning Recap card (CLI/Kalshi settlement
-    basis). Changes at most once a day, so a long TTL is fine. None on any error
-    or before yesterday settles."""
+    basis), including realized bet P&L. Changes at most once a day, so a long TTL
+    is fine. None on any error or before yesterday settles."""
     from datetime import date
     import forecast_log
     import recap
     import settlements
+    # Realized bet P&L for the scorecard — best-effort (needs the Kalshi portfolio
+    # API; absent locally/without the [kalshi] secret, the P&L line just omits).
+    bet_rows = None
+    try:
+        import bet_history
+        from sources import kalshi_portfolio
+        fills = kalshi_portfolio.fills(bet_history.BETS_START)
+        setts = kalshi_portfolio.settlements(bet_history.BETS_START)
+        meta = {t: kalshi_portfolio.market_meta(t) for t in {f["ticker"] for f in fills}}
+        bet_rows = bet_history.build_rows(fills, setts, meta)
+        for r in bet_rows:
+            r["target_date"] = bet_history._ticker_date(r["ticker"])
+    except Exception:
+        bet_rows = None
     try:
         return recap.yesterday_scorecard(date.today(), settlements.as_map("cli"),
-                                          forecast_log.load())
+                                          forecast_log.load(), bet_rows=bet_rows)
     except Exception:
         return None
 

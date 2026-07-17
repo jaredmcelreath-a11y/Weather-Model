@@ -72,11 +72,31 @@ def _grade(row: dict, settled: float) -> dict | None:
     return entry
 
 
-def yesterday_scorecard(today: date, settled_map: dict, forecast_rows: list[dict]
-                        ) -> dict | None:
+def yesterday_pnl(day_iso: str, bet_rows: list[dict]) -> dict | None:
+    """Realized $ and % return for the Kalshi bets whose WEATHER day is `day_iso`
+    (bets settle the next morning, so attribute by target day, like the equity
+    curve). `bet_rows` are bet_history rows augmented with a 'target_date'. Only
+    realized (settled/closed) rows count; None when none settled that day."""
+    rows = [r for r in (bet_rows or [])
+            if r.get("target_date") == day_iso
+            and r.get("status") in ("settled", "closed")
+            and r.get("pnl") is not None]
+    if not rows:
+        return None
+    net = sum(r["pnl"] for r in rows)
+    staked = sum(r.get("staked") or 0.0 for r in rows)
+    wins = sum(1 for r in rows if r["pnl"] > 0)
+    return {"net": round(net, 2), "n": len(rows), "wins": wins,
+            "losses": len(rows) - wins,
+            "pct": round(100.0 * net / staked, 1) if staked else None}
+
+
+def yesterday_scorecard(today: date, settled_map: dict, forecast_rows: list[dict],
+                        bet_rows: list[dict] | None = None) -> dict | None:
     """Grade yesterday's high & low forecast against settlement. `settled_map` is
     {day: (high, low)} (e.g. settlements.as_map("cli")); `forecast_rows` is the
-    forecast log. None until yesterday is settled or if no forecast row exists."""
+    forecast log; `bet_rows` (optional) attaches realized P&L. None until yesterday
+    is settled or if no forecast row exists."""
     yday = today - timedelta(days=1)
     hl = settled_map.get(yday)
     if not hl:
@@ -91,4 +111,7 @@ def yesterday_scorecard(today: date, settled_map: dict, forecast_rows: list[dict
                 out[var] = g
     if "high" not in out and "low" not in out:
         return None
+    pnl = yesterday_pnl(day_iso, bet_rows) if bet_rows else None
+    if pnl:
+        out["pnl"] = pnl
     return out
