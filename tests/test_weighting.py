@@ -255,3 +255,22 @@ def test_system_extremes_survives_mos_fetch_failure(monkeypatch):
     ext = calibration._system_extremes(d, d)
     assert "det_gfs_seamless" in ext[d]           # NWP unaffected
     assert not any(s.startswith("mos_") for s in ext[d])
+
+
+def test_sample_weights_routes_mos_to_own_weight():
+    series = {"ens_a": None, "det_gfs_seamless": None,
+              "mos_lav": None, "mos_nbs": None, "nws_x": None}
+    weights = {"ensemble_mean": 0.2, "det_gfs_seamless": 0.2,
+               "mos_lav": 0.1, "mos_nbs": 0.4, "nws": 0.1}
+    w = model._sample_weights(series, weights)
+    assert abs(w["mos_nbs"] - 0.4) < 1e-9      # its own skill weight, not nws
+    assert abs(w["mos_lav"] - 0.1) < 1e-9
+    assert abs(w["nws_x"] - 0.1) < 1e-9        # nws still keys 'nws'
+
+
+def test_sample_weights_mos_falls_back_to_avg_when_absent():
+    series = {"det_gfs_seamless": None, "mos_nbs": None}
+    weights = {"det_gfs_seamless": 0.5, "nws": 0.5}   # no mos_nbs key
+    w = model._sample_weights(series, weights)
+    avg = sum(weights.values()) / len(weights)        # 0.5
+    assert abs(w["mos_nbs"] - avg) < 1e-9
