@@ -233,7 +233,9 @@ Characterization (no-regression on today's behavior):
 
 ## Acceptance criteria
 
-1. All 269 existing tests pass.
+1. No regression against the baseline: `python3 -m pytest -q --continue-on-collection-errors` gives
+   **325 passed** (plus the 4 `test_bet_view` failures and 3 collection errors that are the known
+   local `cryptography`/`streamlit` env gaps, not regressions — see the local-test-env notes).
 2. `P(low <= 55)` on a front-day distribution returns a real probability, not 0.
 3. No out-of-range contract can generate an edge signal, a Top-3 pick, a safe-hold, or a Kelly size.
 4. Legacy `forecast_log` rows score identically before and after the change.
