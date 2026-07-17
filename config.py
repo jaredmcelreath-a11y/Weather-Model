@@ -30,9 +30,16 @@ NWS_USER_AGENT = "kdfw-weather-model (jaredmcelreath@gmail.com)"
 # --- Market bins ---
 # Settlement rounds to a whole degree F, so each integer degree is its own bin:
 # the bin labelled T captures the event round(daily_high) == T. The two tails
-# capture "<= LOW" and ">= HIGH". Adjust LOW/HIGH to bracket the listed market.
-BIN_LOW = 60    # lowest explicit integer-degree bin
-BIN_HIGH = 110  # highest explicit integer-degree bin
+# capture "<= LOW" and ">= HIGH".
+#
+# The range brackets DFW's CLIMATE, not just the currently listed market. The
+# tails are open-ended: a query that needs to resolve INSIDE one can't be
+# answered and the model abstains (model.prob_at_most / prob_at_least), so a
+# range that real weather reaches would cost live pricing. DFW's all-time
+# records are about -8F and 113F; 11 years of dailies (2015-2025) span -2F to
+# 110F. -10..115 clears both with margin, so the tails stay negligible.
+BIN_LOW = -10   # lowest explicit integer-degree bin
+BIN_HIGH = 115  # highest explicit integer-degree bin
 
 
 def bin_labels() -> list[str]:

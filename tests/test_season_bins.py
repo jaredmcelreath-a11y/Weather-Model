@@ -143,3 +143,39 @@ def test_priceable_contract_still_picked_alongside_unpriceable():
     pick = market_view._kelly_pick(contracts, {}, _AbstainAdapter())
     assert pick is not None
     assert pick[0]["label"] == "90-91"
+
+
+import config
+
+
+def test_bin_range_brackets_dfw_climate():
+    # DFW all-time records are about -8 and 113; the sample low is -2 (Feb 2021)
+    # and the sample high is 110. The range must clear both with margin.
+    assert config.BIN_LOW == -10
+    assert config.BIN_HIGH == 115
+
+
+def test_bin_labels_span_the_new_range():
+    labels = config.bin_labels()
+    assert labels[0] == "<= -10"
+    assert labels[-1] == ">= 115"
+    assert len(labels) == 126
+
+
+def test_september_front_low_is_now_priceable():
+    # THE regression this whole change exists for. Under the old range this
+    # distribution was '<= 60': ~1.0 and P(low <= 55) came back a confident 0.
+    from settlement import bin_for_temp
+    assert bin_for_temp(55) == "55"          # 55 is its own bin now, not a tail
+    probs = {lbl: 0.0 for lbl in config.bin_labels()}
+    probs["55"] = 0.6
+    probs["56"] = 0.4
+    p = model.prob_at_most(probs, 55)
+    assert p is not None
+    assert abs(p - 0.6) < 1e-9
+
+
+def test_hot_tail_contract_is_now_priceable():
+    # 3 of 4018 days hit >= 110; 111 used to be unpriceable.
+    from settlement import bin_for_temp
+    assert bin_for_temp(111) == "111"

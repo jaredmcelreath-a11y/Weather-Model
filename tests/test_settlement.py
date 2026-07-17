@@ -134,7 +134,7 @@ def test_observed_so_far_respects_now():
 def test_bin_for_temp():
     assert S.bin_for_temp(95.4) == "95"
     assert S.bin_for_temp(95.6) == "96"
-    assert S.bin_for_temp(40) == f"<= {S.BIN_LOW}"
+    assert S.bin_for_temp(-20) == f"<= {S.BIN_LOW}"
     assert S.bin_for_temp(130) == f">= {S.BIN_HIGH}"
 
 
