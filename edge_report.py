@@ -8,6 +8,8 @@ import math
 import os
 from datetime import date as _date
 
+from config import BIN_HIGH, BIN_LOW
+
 
 def settled_bucket(temp: float, buckets: list) -> tuple | None:
     """The (lo, hi) Kalshi bucket that `temp` falls in; open ends use None."""
@@ -27,8 +29,13 @@ def top_bucket(buckets: list) -> tuple | None:
 
 
 def is_boundary(consensus: float, half_width: float = 0.5) -> bool:
-    """True when consensus is within half_width of an even|odd Kalshi edge (even+0.5)."""
-    edges = [e + 0.5 for e in range(60, 120, 2)]   # ...94.5, 96.5, 98.5...
+    """True when consensus is within half_width of an even|odd Kalshi edge (even+0.5).
+
+    Edges follow the model's bin range rather than a hardcoded span, so a winter
+    or front-day consensus is classified on the same footing as a summer one.
+    """
+    start = BIN_LOW if BIN_LOW % 2 == 0 else BIN_LOW + 1
+    edges = [e + 0.5 for e in range(start, BIN_HIGH + 1, 2)]
     return min(abs(consensus - e) for e in edges) <= half_width
 
 

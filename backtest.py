@@ -73,6 +73,8 @@ def contract_points(probs: dict, actual: float, variable: str) -> list[tuple]:
     pts = []
     for strike in range(BIN_LOW, BIN_HIGH + 1):
         p = model.prob_for_contract(probs, kind, strike)
+        if p is None:          # model can't price this strike (inside a tail)
+            continue
         if not (0.01 <= p <= 0.99):
             continue
         won = (actual > strike) if variable == "high" else (actual < strike)

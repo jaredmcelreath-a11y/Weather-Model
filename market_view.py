@@ -1035,6 +1035,22 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
         holds = []  # safe hold-to-settlement candidates, for the Safest-hold box
         for c in contracts:
             p = adapter.model_prob(probs, c)
+            # The model can't price this contract — it falls inside an
+            # open-ended bin tail. Show the market, abstain on the model:
+            # never a signal, a Top-3 pick, a safe hold, or a Kelly size.
+            # (A 0 here would read as "impossible" and manufacture a huge
+            # phantom edge on the opposite side.)
+            if p is None:
+                rows.append({
+                    "Contract": c["label"],
+                    "Model %": "—",
+                    "Yes (Bid/Ask)": f"{cents(c['yes_bid'])}/{cents(c['yes_ask'])}",
+                    "No (Bid/Ask)": f"{cents(c['no_bid'])}/{cents(c['no_ask'])}",
+                    "Spread": "—",
+                    "Last": cents(c["last"]),
+                    "Signal": "—",
+                })
+                continue
             ya, na = c["yes_ask"], c["no_ask"]
             yb, nb = c["yes_bid"], c["no_bid"]
             edge_yes = (p - ya) if ya is not None else -9
@@ -1089,12 +1105,12 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
             obox.markdown(f"**Your Open {variable.capitalize()} Contracts**")
             orows = []
             for p in open_here:
-                try:
-                    yes_p = adapter.model_prob(probs, p)
+                yes_p = adapter.model_prob(probs, p)
+                if yes_p is None:          # unpriceable — model abstains
+                    model_pct = "—"
+                else:
                     side_p = yes_p if p["side"] == "yes" else 1 - yes_p
                     model_pct = f"{side_p*100:.0f}%"
-                except Exception:
-                    model_pct = "—"
                 cv, en, qy = p.get("current_value"), p.get("entry"), p.get("qty")
                 unreal = (qy * (cv - en)) if (cv is not None and en is not None) else None
                 orows.append({

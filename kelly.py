@@ -64,7 +64,12 @@ def kelly_fraction(q, price):
 def best_side(p, yes_ask, no_ask):
     """The side to buy: whichever of YES (win-prob p) / NO (win-prob 1-p) has
     the larger positive edge vs its ask. None if neither side has an edge or
-    its ask is missing. Mirrors the market table's >0 edge signal."""
+    its ask is missing. Mirrors the market table's >0 edge signal.
+
+    `p` is None when the model can't price the contract (it falls inside an
+    open-ended bin tail) — an unpriceable contract isn't sizable."""
+    if p is None:
+        return None
     cands = []
     if yes_ask is not None:
         cands.append(("yes", p, yes_ask, p - yes_ask))
