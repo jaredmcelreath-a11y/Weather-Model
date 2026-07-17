@@ -304,25 +304,53 @@ def _chart_colors():
     return {"high": "#ff6b6b", "low": "#4dabf7", "kalshi": "#51cf66", "temp": "#adb5bd"}
 
 
+def _resolve_theme(session_theme, query_theme):
+    """Active palette from the persistent store, then the URL, then the default —
+    always a valid theme name so the UI never resolves to a blank/bogus palette."""
+    if session_theme in THEMES:
+        return session_theme
+    if query_theme in THEMES:
+        return query_theme
+    return DEFAULT_THEME
+
+
+def _theme_index(active):
+    """Radio index for `active`, falling back to the DEFAULT theme's index (never
+    a blind 0) so the picker can't silently snap to the first option."""
+    themes = list(THEMES)
+    return themes.index(active if active in THEMES else DEFAULT_THEME)
+
+
 def _seed_theme():
-    """Resolve the active palette, seeding session state from the URL query param
-    on a fresh load so a chosen theme survives a browser refresh."""
+    """Resolve the active palette, seeding the store from the URL query param on a
+    fresh load so a chosen theme survives a browser refresh.
+
+    `wx_theme` is a PLAIN session key, never a widget key — so Streamlit doesn't
+    garbage-collect it when the picker isn't on screen (e.g. the History page),
+    which is what used to purge the choice and let it revert on a page switch."""
     if "wx_theme" not in st.session_state:
-        qp = st.query_params.get("theme")
-        st.session_state["wx_theme"] = qp if qp in THEMES else DEFAULT_THEME
+        st.session_state["wx_theme"] = _resolve_theme(None, st.query_params.get("theme"))
     return st.session_state["wx_theme"]
 
 
 def _theme_controls():
     """Palette picker — lives in the left sidebar with the Day/Safe-hold controls,
-    inside a collapsible 'Settings' section. Persists the choice to the URL so it
-    becomes the default on the next load, then injects it."""
-    _seed_theme()
+    inside a collapsible 'Settings' section. Persists the choice to the store + URL
+    so it survives reruns and page switches, then injects it.
+
+    The radio owns its OWN widget key and gets an explicit index from the stored
+    theme: if Streamlit ever purges the radio's widget state (page switch/rerun),
+    it re-renders on the current theme instead of snapping back to option 0."""
+    active = _seed_theme()
     with st.sidebar.expander("Settings", expanded=False):
-        st.radio("Theme", list(THEMES), key="wx_theme")
-    if st.query_params.get("theme") != st.session_state["wx_theme"]:
-        st.query_params["theme"] = st.session_state["wx_theme"]
-    _inject_theme(st.session_state["wx_theme"])
+        choice = st.radio("Theme", list(THEMES), index=_theme_index(active),
+                          key="wx_theme_choice")
+    if choice != active:
+        st.session_state["wx_theme"] = choice   # mirror the pick into the store
+        active = choice
+    if st.query_params.get("theme") != active:
+        st.query_params["theme"] = active
+    _inject_theme(active)
 
 
 def _fmt_clock(iso, with_seconds=False):
