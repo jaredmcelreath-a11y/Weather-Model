@@ -96,3 +96,14 @@ def test_best_side_still_picks_the_edge_when_priced():
     assert side == "yes"
     assert win == 0.70
     assert ask == 0.55
+
+
+import backtest
+
+
+def test_contract_points_skips_unpriceable_strikes():
+    # A legacy-range row swept against the new wider strike range hits strikes
+    # the model can't price; those must be skipped, not crash.
+    pts = backtest.contract_points(_LEGACY_FRONT, 55.0, "low")
+    assert isinstance(pts, list)
+    assert all(p is not None and 0.01 <= p <= 0.99 for p, _won in pts)
