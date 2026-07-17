@@ -1,5 +1,15 @@
 # MOS/NBM Skill-Weighting Implementation Plan
 
+> **OUTCOME (2026-07-17):** Tasks 1, 3, 4, 6 shipped. **Task 2 was HELD** and
+> **Task 5's validation flipped the plan's assumption**: the Open-Meteo archive
+> measures the NWP systems at near-analysis (~0-hour) lead, so folding true
+> day-ahead MOS in *regressed* the consensus (+0.09 high, +0.14 low) and the
+> walk-forward gate can't catch it. MOS's day-ahead weight must come from the
+> forward log at matched lead — a follow-up. Full write-up:
+> `docs/benchmarks/2026-07-17-mos-weighting/ASSESSMENT.md`. What shipped: the MOS
+> archive fetch, `_sample_weights` routing (activates when a MOS weight exists),
+> and forward-logging MOS per-model (the enabler for the follow-up).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make IEM MOS (LAV + NBS) two first-class skill-weighted systems in the day-ahead consensus, measured from the IEM run archive and protected by the existing walk-forward OOS gate.

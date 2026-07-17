@@ -1,5 +1,5 @@
 """IEM MOS/LAMP guidance adapter — parsing and series construction."""
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 import model
@@ -66,3 +66,44 @@ def test_fetch_skips_a_failing_model(monkeypatch):
 def test_mos_label_routes_to_guidance_group():
     assert model._group_of("mos_lav") == "guidance"
     assert model._group_of("mos_nbs") == "guidance"
+
+
+def test_historical_extremes_uses_prior_day_12z_run(monkeypatch):
+    calls = []
+
+    def fake_get_json(url, params=None, **kwargs):
+        calls.append(params)
+        return {"data": [
+            _row("2026-06-03T11:00:00.000", 72),   # ~6am CDT low
+            _row("2026-06-03T20:00:00.000", 95),   # ~3pm CDT high
+        ]}
+
+    monkeypatch.setattr(iem_mos, "get_json", fake_get_json)
+    out = iem_mos.historical_extremes(date(2026, 6, 3), date(2026, 6, 3))
+
+    assert set(out[date(2026, 6, 3)]) == {"mos_lav", "mos_nbs"}
+    assert out[date(2026, 6, 3)]["mos_nbs"] == (95.0, 72.0)
+    # runtime must be the PRIOR day at 12Z, once per model (2 models).
+    assert all(p["runtime"] == "2026-06-02T12:00Z" for p in calls)
+    assert {p["model"] for p in calls} == {"LAV", "NBS"}
+
+
+def test_historical_extremes_skips_a_model_with_no_run(monkeypatch):
+    def fake_get_json(url, params=None, **kwargs):
+        if params["model"] == "LAV":
+            raise RuntimeError("no archived run")
+        return {"data": [
+            _row("2026-06-03T11:00:00.000", 72),
+            _row("2026-06-03T20:00:00.000", 95),
+        ]}
+
+    monkeypatch.setattr(iem_mos, "get_json", fake_get_json)
+    out = iem_mos.historical_extremes(date(2026, 6, 3), date(2026, 6, 3))
+    assert set(out[date(2026, 6, 3)]) == {"mos_nbs"}
+
+
+def test_historical_extremes_omits_day_with_no_data(monkeypatch):
+    monkeypatch.setattr(iem_mos, "get_json",
+                        lambda url, params=None, **kw: {"data": []})
+    out = iem_mos.historical_extremes(date(2026, 6, 3), date(2026, 6, 3))
+    assert out == {}

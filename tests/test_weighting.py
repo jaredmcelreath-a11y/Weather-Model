@@ -217,3 +217,22 @@ def test_backtest_uses_system_weights_when_provided(monkeypatch):
     res = backtest.run()
     # weighted high consensus = 0.9*90 + 0.1*96 = 90.6 -> MAE vs 90 = 0.6
     assert res["high"]["mae"] == 0.6
+
+
+def test_sample_weights_routes_mos_to_own_weight():
+    series = {"ens_a": None, "det_gfs_seamless": None,
+              "mos_lav": None, "mos_nbs": None, "nws_x": None}
+    weights = {"ensemble_mean": 0.2, "det_gfs_seamless": 0.2,
+               "mos_lav": 0.1, "mos_nbs": 0.4, "nws": 0.1}
+    w = model._sample_weights(series, weights)
+    assert abs(w["mos_nbs"] - 0.4) < 1e-9      # its own skill weight, not nws
+    assert abs(w["mos_lav"] - 0.1) < 1e-9
+    assert abs(w["nws_x"] - 0.1) < 1e-9        # nws still keys 'nws'
+
+
+def test_sample_weights_mos_falls_back_to_avg_when_absent():
+    series = {"det_gfs_seamless": None, "mos_nbs": None}
+    weights = {"det_gfs_seamless": 0.5, "nws": 0.5}   # no mos_nbs key
+    w = model._sample_weights(series, weights)
+    avg = sum(weights.values()) / len(weights)        # 0.5
+    assert abs(w["mos_nbs"] - avg) < 1e-9

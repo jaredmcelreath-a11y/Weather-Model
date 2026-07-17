@@ -95,12 +95,20 @@ def _write(rows: list[dict], path: str) -> None:
 
 
 def _source_means(per_source: dict, variable: str) -> dict:
-    """Collapse {group: {label: (high, low)}} to {group: mean extreme} for one
+    """Collapse {group: {label: (high, low)}} to {key: mean extreme} for one
     variable — the per-source predicted value we later difference against the
-    settlement to learn each group's (ensemble/deterministic/nws) own bias."""
+    settlement to learn each source's own bias. MOS models (the 'guidance'
+    group) are emitted PER MODEL (mos_lav/mos_nbs) rather than collapsed, so live
+    day-ahead skill-weighting can distinguish them; every other group collapses
+    to its mean as before."""
     idx = 0 if variable == "high" else 1
     out = {}
     for group, labels in (per_source or {}).items():
+        if group == "guidance":
+            for label, v in labels.items():
+                if v and v[idx] is not None:
+                    out[label] = round(v[idx], 2)
+            continue
         vals = [v[idx] for v in labels.values() if v and v[idx] is not None]
         if vals:
             out[group] = round(sum(vals) / len(vals), 2)

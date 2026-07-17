@@ -290,6 +290,14 @@ def _system_extremes(start, end):
     Systems = one combined 'ensemble_mean' (mean of all member extremes) plus
     each deterministic model by its label. NWS has no archive, so it is absent.
     Degrades to deterministic-only if the ensemble archive can't be fetched.
+
+    NOTE: MOS (lav/nbs) is deliberately NOT folded in here. The Open-Meteo
+    historical-forecast archive returns a near-analysis fit for the NWP models
+    (det_gfs_hrrr high MAE ~0.8°F over 46d — impossible for a genuine day-ahead
+    forecast), whereas MOS is measured at true day-ahead lead. Blending the two
+    is apples-to-oranges and regresses the consensus; MOS's day-ahead weight must
+    come from the forward log at matched lead instead (see
+    docs/benchmarks/2026-07-17-mos-weighting/ASSESSMENT.md).
     """
     det = open_meteo_models.fetch_historical(start, end)
     try:

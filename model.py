@@ -284,8 +284,9 @@ def _sample_weights(series, weights):
 
     The combined ensemble's mass (`weights['ensemble_mean']`) is split evenly
     across its members so they still shape the distribution; each deterministic
-    model keys by its own label; NWS keys by 'nws'. Missing systems fall back to
-    the average system weight so an unexpected label can't be silently dropped.
+    model keys by its own label; each MOS model (mos_lav/mos_nbs) keys by its own
+    label; NWS keys by 'nws'. Missing systems fall back to the average system
+    weight so an unexpected label can't be silently dropped.
     """
     avg = (sum(weights.values()) / len(weights)) if weights else 1.0
     m = sum(1 for label in series if label.startswith("ens_")) or 1
@@ -295,6 +296,8 @@ def _sample_weights(series, weights):
         if label.startswith("ens_"):
             out[label] = w_ens / m
         elif label.startswith("det_"):
+            out[label] = weights.get(label, avg)
+        elif label.startswith("mos_"):
             out[label] = weights.get(label, avg)
         else:
             out[label] = weights.get("nws", avg)
