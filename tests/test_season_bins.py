@@ -205,3 +205,29 @@ def test_within1_matches_index_distance_on_legacy_tail_labels():
     # legacy label absent from the widened LABELS.
     assert abs(model.bin_temp("<= 60") - model.bin_temp("61")) == 1
     assert abs(model.bin_temp("108") - model.bin_temp(">= 110")) == 2
+
+
+def test_summer_day_probabilities_are_effectively_unchanged():
+    # A typical summer high near 97: the old 60..110 tails held ~0 mass, so
+    # widening must not move the distribution.
+    samples = [95.0 + i * 0.3 for i in range(40)]
+    weights = [1.0] * len(samples)
+    probs = model._bin_probabilities(samples, 2.0, weights)
+
+    assert abs(sum(probs.values()) - 1.0) < 1e-9        # still normalized
+    assert probs["<= -10"] < 1e-12                      # tails hold nothing
+    assert probs[">= 115"] < 1e-12
+    # Mass sits where it did before, in the explicit bins.
+    assert sum(v for k, v in probs.items()
+               if k not in ("<= -10", ">= 115")) > 0.999
+
+
+def test_prob_table_thresholds_never_abstain():
+    # prob_table feeds bin_temp of the dict's OWN labels back into the
+    # cumulative helpers; those land ON tail edges, never inside them.
+    samples = [95.0 + i * 0.3 for i in range(40)]
+    probs = model._bin_probabilities(samples, 2.0, [1.0] * len(samples))
+    for label in probs:
+        t = model.bin_temp(label)
+        assert model.prob_at_least(probs, t) is not None
+        assert model.prob_at_most(probs, t) is not None
