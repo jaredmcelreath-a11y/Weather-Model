@@ -34,6 +34,45 @@ def test_implied_forecast_distills_ev_and_pmf(monkeypatch):
     assert out["volume"] == 160.0
 
 
+def test_market_min_bucket_price_config():
+    import config
+    assert 0 < config.MARKET_MIN_BUCKET_PRICE < 0.1
+
+
+def test_implied_forecast_trims_noise_tails(monkeypatch):
+    # A locked day: one bucket carries ~90c, flanked by 2c bid/ask-noise tails.
+    # Those tails drag the EV off the settled bucket, so trim them before
+    # normalizing (both the EV and the reported PMF).
+    contracts = [
+        {"strike_type": "less", "floor": None, "cap": 90,
+         "yes_bid": 0.01, "yes_ask": 0.03, "volume": 5},     # 2c noise, mid 89.5
+        {"strike_type": "between", "floor": 90, "cap": 92,
+         "yes_bid": 0.88, "yes_ask": 0.92, "volume": 100},   # 90c, mid 91
+        {"strike_type": "greater", "floor": 96, "cap": None,
+         "yes_bid": 0.01, "yes_ask": 0.03, "volume": 5},     # 2c noise, mid 96.5
+    ]
+    monkeypatch.setattr(kalshi, "fetch_contracts", lambda v, d: contracts)
+    out = kalshi.implied_forecast("high", date(2026, 6, 16))
+    assert len(out["buckets"]) == 1                          # only the 90c bucket survives
+    assert out["buckets"][0][:2] == [90, 92]
+    assert out["ev"] == 91.0                                 # not dragged by the tails
+    assert abs(sum(p for *_, p in out["buckets"]) - 1.0) < 1e-6
+    assert out["volume"] == 110.0                            # volume still counts all contracts
+
+
+def test_implied_forecast_keeps_all_when_every_bucket_below_floor(monkeypatch):
+    # A flat/illiquid market where every bucket is 1-2c must NOT trim to nothing.
+    contracts = [
+        {"strike_type": "between", "floor": 88, "cap": 90,
+         "yes_bid": 0.01, "yes_ask": 0.03, "volume": 1},
+        {"strike_type": "between", "floor": 90, "cap": 92,
+         "yes_bid": 0.01, "yes_ask": 0.01, "volume": 1},
+    ]
+    monkeypatch.setattr(kalshi, "fetch_contracts", lambda v, d: contracts)
+    out = kalshi.implied_forecast("high", date(2026, 6, 16))
+    assert out is not None and len(out["buckets"]) == 2      # guard kept both
+
+
 def test_implied_forecast_none_when_unpriced(monkeypatch):
     monkeypatch.setattr(kalshi, "fetch_contracts",
                         lambda v, d: [{"strike_type": "between", "floor": 88,

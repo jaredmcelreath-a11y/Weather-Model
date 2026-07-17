@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from config import MARKET_MIN_BUCKET_PRICE
 from sources.common import get_json
 
 BASE = "https://api.elections.kalshi.com/trade-api/v2"
@@ -140,13 +141,20 @@ def implied_forecast(variable: str, day: date) -> dict | None:
             continue
         rows.append((c.get("floor"), c.get("cap"), mid,
                      sum(quotes) / len(quotes), c.get("volume") or 0.0))
-    tot = sum(p for *_, p, _ in rows)
-    if not rows or tot <= 0:
+    if not rows:
+        return None
+    all_volume = sum(v for *_, v in rows)   # total across every priced contract
+    # Trim bid/ask-noise tails before normalizing so they don't drag the EV/PMF;
+    # keep all if the floor would empty the ladder (flat/illiquid market).
+    kept = [r for r in rows if r[3] >= MARKET_MIN_BUCKET_PRICE]
+    priced = kept or rows
+    tot = sum(p for *_, p, _ in priced)
+    if tot <= 0:
         return None
     return {
-        "ev": round(sum(mid * p for _, _, mid, p, _ in rows) / tot, 2),
-        "buckets": [[f, cap, round(p / tot, 4)] for f, cap, _, p, _ in rows],
-        "volume": round(sum(v for *_, v in rows), 1),
+        "ev": round(sum(mid * p for _, _, mid, p, _ in priced) / tot, 2),
+        "buckets": [[f, cap, round(p / tot, 4)] for f, cap, _, p, _ in priced],
+        "volume": round(all_volume, 1),
     }
 
 

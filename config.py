@@ -41,6 +41,13 @@ NWS_USER_AGENT = "kdfw-weather-model (jaredmcelreath@gmail.com)"
 BIN_LOW = -10   # lowest explicit integer-degree bin
 BIN_HIGH = 115  # highest explicit integer-degree bin
 
+# Market-implied forecast: drop buckets whose mid YES price is below this floor
+# before normalizing the PMF/EV. Far-out contracts often sit at 1-2c of bid/ask
+# noise; on a locked day that noise drags the market's implied EV off the settled
+# bucket, unfairly inflating its measured error vs the model. Guarded so a flat/
+# illiquid market (every bucket below the floor) is kept whole rather than emptied.
+MARKET_MIN_BUCKET_PRICE = 0.03  # 3c
+
 
 def bin_labels() -> list[str]:
     """Ordered bin labels including the open-ended tails."""
