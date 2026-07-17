@@ -94,9 +94,10 @@ def test_summary_and_curve_across_two_settled_bets():
     assert round(s["net_pnl"], 2) == 0.80             # +5.80 - 5.00
     assert round(s["staked"], 2) == 9.20              # 4.20 + 5.00
     assert round(s["pct_gain"], 1) == 8.0             # net 0.80 / $10 bankroll
-    # unweighted per-trade mean: (+5.80/4.20 - 5.00/5.00)/2 = (+138.1% - 100%)/2 ≈ +19.0%,
-    # distinct from the stake-weighted roi (0.80/9.20 ≈ +8.7%)
-    assert round(s["avg_trade_return"], 1) == 19.0
+    # median per-trade return: with two trades the median is the mean of the two,
+    # (+5.80/4.20 + -5.00/5.00)/2 = (+138.1% - 100%)/2 ≈ +19.0%, distinct from the
+    # stake-weighted roi (0.80/9.20 ≈ +8.7%)
+    assert round(s["median_trade_return"], 1) == 19.0
     assert round(s["roi"], 1) == 8.7
     curve = bh.equity_curve(rows)
     # Dated by WEATHER day (from the ticker), not the next-morning settlement.
@@ -354,17 +355,35 @@ def test_period_table_daily_weekly_monthly():
     assert round(monthly[0]["gain"], 2) == 8.00 and round(monthly[0]["total"], 2) == 18.00
 
 
+def test_summary_median_trade_return_is_robust_to_full_losses():
+    # Favorite-buying: five wins at +5% and one -100% loss. The equal-weighted MEAN
+    # washes toward zero/negative ((5*5 - 100)/6 ≈ -12.5%), hiding that the typical
+    # trade is +5%; the MEDIAN reflects that typical trade and ignores the -100% tail.
+    def _row(pnl):
+        return {"status": "settled", "entry": 0.95, "qty": 1, "pnl": pnl,
+                "staked": 1.0, "current_value": None, "agree": None}
+    rows = [_row(0.05) for _ in range(5)] + [_row(-1.0)]
+    s = bh.summary(rows)
+    # per-trade %: [-100, +5, +5, +5, +5, +5] -> median = (5th+6th)/2 sorted = +5.0
+    assert round(s["median_trade_return"], 1) == 5.0
+
+
+def test_summary_median_trade_return_empty_is_zero():
+    assert bh.summary([])["median_trade_return"] == 0.0
+
+
 def test_period_summary_over_multiple_periods():
     # Three periods: a win, a flat $0 (not green), and a loss.
     entries = [
-        {"label": date(2026, 6, 22), "pct": 0.20, "gain": 4.0, "total": 14.0},
-        {"label": date(2026, 6, 23), "pct": 0.00, "gain": 0.0, "total": 14.0},
-        {"label": date(2026, 6, 24), "pct": -0.10, "gain": -2.0, "total": 12.0},
+        {"label": date(2026, 6, 22), "pct": 0.20, "port_pct": 0.04, "gain": 4.0, "total": 14.0},
+        {"label": date(2026, 6, 23), "pct": 0.00, "port_pct": 0.00, "gain": 0.0, "total": 14.0},
+        {"label": date(2026, 6, 24), "pct": -0.10, "port_pct": -0.02, "gain": -2.0, "total": 12.0},
     ]
     s = bh.period_summary(entries, 180.0)
     assert s["count"] == 3
     assert round(s["avg_gain"], 4) == round((4.0 + 0.0 - 2.0) / 3, 4)
     assert round(s["avg_pct"], 4) == round((0.20 + 0.00 - 0.10) / 3, 4)
+    assert round(s["avg_port_pct"], 4) == round((0.04 + 0.00 - 0.02) / 3, 4)
     assert s["green_count"] == 1                      # flat $0 is NOT green
     assert round(s["green_rate"], 4) == round(1 / 3, 4)
     assert s["best_gain"] == 4.0 and s["worst_gain"] == -2.0
@@ -372,12 +391,14 @@ def test_period_summary_over_multiple_periods():
 
 
 def test_period_summary_single_period():
-    entries = [{"label": date(2026, 6, 22), "pct": 0.05, "gain": 1.5, "total": 11.5}]
+    entries = [{"label": date(2026, 6, 22), "pct": 0.05, "port_pct": 0.015,
+                "gain": 1.5, "total": 11.5}]
     s = bh.period_summary(entries, 15.0)
     assert s["count"] == 1
     assert s["best_gain"] == s["worst_gain"] == 1.5
     assert s["green_count"] == 1 and s["green_rate"] == 1.0
     assert round(s["avg_gain"], 4) == 1.5 and round(s["avg_pct"], 4) == 0.05
+    assert round(s["avg_port_pct"], 4) == 0.015
 
 
 def test_period_summary_empty_returns_none():

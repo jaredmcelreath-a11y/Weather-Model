@@ -169,10 +169,13 @@ def render():
                       "market) ÷ total staked. Buying near-certain contracts at high "
                       "prices (e.g. 97¢) yields small per-trade returns even on wins."),
                   unsafe_allow_html=True)
-    c[5].markdown(_mc("Avg % / Trade", f"{summ['avg_trade_return']:+.2f}%",
-                      "Simple (unweighted) average of each bet's own percent return "
-                      "(realized, or open marked to market) — every bet counts equally, "
-                      "unlike the stake-weighted Avg % Return."), unsafe_allow_html=True)
+    c[5].markdown(_mc("Median % / Trade", f"{summ['median_trade_return']:+.2f}%",
+                      "The typical trade's percent return — the median of each bet's own "
+                      "percent return (realized, or open marked to market), every bet "
+                      "counting equally. The median, not the mean: buying favorites pairs "
+                      "many small wins with rare −100% losses, and their mean washes to "
+                      "~0 even when you're profitable; the median ignores that tail."),
+                  unsafe_allow_html=True)
 
     if curve:
         st.altair_chart(equity_chart(curve, market_view._chart_colors()["kalshi"]),
@@ -245,7 +248,7 @@ def render():
             noun = {"day": "day", "week": "week", "month": "month"}[period]
             plural = noun + ("" if ps["count"] == 1 else "s")
             with st.container(key=f"period_metrics_{period}"):
-                pc = st.columns(6)
+                pc = st.columns(7)
             pc[0].markdown(_mc(f"{noun.capitalize()}s", f"{ps['count']} {plural}",
                                f"How many {plural} have trades (realized or still open) — "
                                f"the denominator for the averages here."),
@@ -258,14 +261,20 @@ def render():
                                f"Unweighted mean of each {noun}'s % Gain (its profit ÷ "
                                f"what you staked that {noun}); every {noun} counts equally. "
                                f"Open positions marked to market."), unsafe_allow_html=True)
-            pc[3].markdown(_mc("Green rate", f"{ps['green_rate'] * 100:.0f}%",
+            pc[3].markdown(_mc("Avg Portfolio %", f"{ps['avg_port_pct'] * 100:+.1f}%",
+                               f"Unweighted mean of each {noun}'s Portfolio % (its profit ÷ "
+                               f"your whole account balance entering that {noun}) — the "
+                               f"per-{noun} return on the full portfolio, not just what you "
+                               f"staked. Open positions marked to market."),
+                           unsafe_allow_html=True)
+            pc[4].markdown(_mc("Green rate", f"{ps['green_rate'] * 100:.0f}%",
                                f"Share of {plural} in the green — {ps['green_count']} of "
                                f"{ps['count']} {plural} (open periods marked to market)."),
                            unsafe_allow_html=True)
-            pc[4].markdown(_mc("Best", _fmt_pnl(ps["best_gain"]),
+            pc[5].markdown(_mc("Best", _fmt_pnl(ps["best_gain"]),
                                f"The single best {noun}'s $ gain (open marked to market)."),
                            unsafe_allow_html=True)
-            pc[5].markdown(_mc("Worst", _fmt_pnl(ps["worst_gain"]),
+            pc[6].markdown(_mc("Worst", _fmt_pnl(ps["worst_gain"]),
                                f"The single worst {noun}'s $ gain (open marked to market)."),
                            unsafe_allow_html=True)
             market_view._html_table(pd.DataFrame([{

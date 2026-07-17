@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 from datetime import date, datetime, timedelta
+from statistics import median
 
 BETS_START = date(2026, 6, 22)
 # Starting bankroll ($): the equity curve's baseline and the "Total % Gain"
@@ -155,17 +156,20 @@ def summary(rows: list[dict]) -> dict:
     staked = sum(r["staked"] for r in graded)
     annotated = [r for r in realized if r.get("agree") is not None]
     with_model = sum(1 for r in annotated if r["agree"])
-    # Simple (unweighted) mean of each bet's own % return — every bet counts equally,
-    # unlike `roi` which is stake-weighted (total profit / total staked).
+    # Median of each bet's own % return — the typical trade, every bet counting
+    # equally (unlike stake-weighted `roi`). The MEDIAN, not the mean: favorite-buying
+    # pairs many small wins (~+5%) with rare -100% losses, and the mean of those washes
+    # to ~0 even when you're net profitable. The median ignores that -100% tail and
+    # reports what a typical trade actually returns.
     per_trade = [100.0 * _pnl_mtm(r) / r["staked"] for r in graded if r["staked"]]
-    avg_trade_return = (sum(per_trade) / len(per_trade)) if per_trade else 0.0
+    median_trade_return = median(per_trade) if per_trade else 0.0
     return {
         "n_settled": len(realized), "wins": wins, "losses": losses,
         "win_rate": (100.0 * wins / len(realized)) if realized else 0.0,
         "net_pnl": net_pnl, "realized_pnl": sum(r["pnl"] for r in realized),
         "staked": staked,
         "roi": (100.0 * net_pnl / staked) if staked else 0.0,
-        "avg_trade_return": avg_trade_return,
+        "median_trade_return": median_trade_return,
         # Account growth: profit (realized + open marked to market) as a percent of the
         # starting bankroll (e.g. +$20 on a $10 start = +200%).
         "pct_gain": 100.0 * net_pnl / STARTING_BANKROLL if STARTING_BANKROLL else 0.0,
@@ -272,6 +276,9 @@ def period_summary(entries: list[dict], pct_gain: float) -> dict | None:
         "count": n,
         "avg_gain": sum(gains) / n,
         "avg_pct": sum(e["pct"] for e in entries) / n,
+        # Unweighted mean of each period's return on the WHOLE account (port_pct),
+        # parallel to avg_pct but on the full portfolio rather than just what was staked.
+        "avg_port_pct": sum(e.get("port_pct", 0.0) for e in entries) / n,
         "green_count": green,
         "green_rate": green / n,
         "best_gain": max(gains),
