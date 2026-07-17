@@ -783,46 +783,81 @@ def bin_temp(label: str) -> int:
     return int(label)
 
 
-def prob_at_least(probs: dict, threshold: int) -> float:
-    """P(value >= threshold) from a per-bin probability dict."""
+def _tail_edges(probs: dict) -> tuple[int | None, int | None]:
+    """(low_edge, high_edge) from the dict's OWN open-ended tail labels.
+
+    Read from the dict rather than from config so a row logged under an older
+    bin range is judged by the range it was written with. None where a tail is
+    absent (a closed dict has no unanswerable queries).
+    """
+    lo = hi = None
+    for k in probs:
+        if k.startswith("<="):
+            lo = bin_temp(k)
+        elif k.startswith(">="):
+            hi = bin_temp(k)
+    return lo, hi
+
+
+def prob_at_least(probs: dict, threshold: int) -> float | None:
+    """P(value >= threshold), or None if that cuts inside the high tail.
+
+    The ">= H" tail is open-ended: it holds the mass at H or hotter without
+    resolving how it splits, so P(value >= H+1) is genuinely unknown. Returning
+    None makes callers abstain; returning 0 would assert impossibility.
+    """
+    _lo, hi = _tail_edges(probs)
+    if hi is not None and threshold > hi:
+        return None
     return sum(v for k, v in probs.items() if bin_temp(k) >= threshold)
 
 
-def prob_at_most(probs: dict, threshold: int) -> float:
-    """P(value <= threshold) from a per-bin probability dict."""
+def prob_at_most(probs: dict, threshold: int) -> float | None:
+    """P(value <= threshold), or None if that cuts inside the low tail."""
+    lo, _hi = _tail_edges(probs)
+    if lo is not None and threshold < lo:
+        return None
     return sum(v for k, v in probs.items() if bin_temp(k) <= threshold)
 
 
-def prob_greater_than(probs: dict, threshold: int) -> float:
+def prob_greater_than(probs: dict, threshold: int) -> float | None:
     """P(value > threshold) under whole-degree settlement — i.e. value >= T+1.
     Matches a Robinhood 'Greater than T°' (high) contract resolving YES."""
     return prob_at_least(probs, threshold + 1)
 
 
-def prob_less_than(probs: dict, threshold: int) -> float:
+def prob_less_than(probs: dict, threshold: int) -> float | None:
     """P(value < threshold) under whole-degree settlement — i.e. value <= T-1.
     Matches a Robinhood 'Lower than T°' (low) contract resolving YES."""
     return prob_at_most(probs, threshold - 1)
 
 
-def prob_for_contract(probs: dict, kind: str, strike: int) -> float:
-    """Model YES probability for a Robinhood ladder contract ('>' high / '<' low)."""
+def prob_for_contract(probs: dict, kind: str, strike: int) -> float | None:
+    """Model YES probability for a Robinhood ladder contract ('>' high / '<' low).
+    None when the model can't price it (see prob_at_least/prob_at_most)."""
     return prob_greater_than(probs, strike) if kind == ">" \
         else prob_less_than(probs, strike)
 
 
-def prob_for_strike(probs: dict, strike_type: str, floor, cap) -> float:
+def prob_for_strike(probs: dict, strike_type: str, floor, cap) -> float | None:
     """Model YES probability for a Kalshi contract, from its strike fields.
 
     - 'less'    (e.g. cap=88, "87° or below"): value <= cap-1
     - 'greater' (e.g. floor=95, "96° or above"): value >= floor+1
     - 'between' (floor..cap inclusive): floor <= value <= cap
+
+    None when any leg falls inside an open tail — the model abstains rather than
+    reporting a false 0.
     """
     if strike_type == "less":
         return prob_at_most(probs, cap - 1)
     if strike_type == "greater":
         return prob_at_least(probs, floor + 1)
-    return prob_at_most(probs, cap) - prob_at_most(probs, floor - 1)
+    hi = prob_at_most(probs, cap)
+    lo = prob_at_most(probs, floor - 1)
+    if hi is None or lo is None:
+        return None
+    return hi - lo
 
 
 def _fetch_cli_daily(day: date) -> dict:
