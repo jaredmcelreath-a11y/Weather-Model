@@ -217,3 +217,41 @@ def test_backtest_uses_system_weights_when_provided(monkeypatch):
     res = backtest.run()
     # weighted high consensus = 0.9*90 + 0.1*96 = 90.6 -> MAE vs 90 = 0.6
     assert res["high"]["mae"] == 0.6
+
+
+def test_system_extremes_includes_mos_systems(monkeypatch):
+    from sources import iem_mos
+    d = date(2026, 6, 3)
+
+    def det(s, e):  # one continuous series per det label
+        base = datetime(d.year, d.month, d.day, tzinfo=_TZ)
+        times = [base + timedelta(hours=h) for h in range(24)]
+        return {"det_gfs_seamless": (times, [90 - abs(h - 15) for h in range(24)])}
+
+    monkeypatch.setattr(open_meteo_models, "fetch_historical", det)
+    monkeypatch.setattr(open_meteo_ensemble, "fetch_historical", lambda s, e: {})
+    monkeypatch.setattr(iem_mos, "historical_extremes",
+                        lambda s, e: {d: {"mos_lav": (91.0, 71.0),
+                                          "mos_nbs": (92.0, 72.0)}})
+    ext = calibration._system_extremes(d, d)
+    assert ext[d]["mos_nbs"] == {"high": 92.0, "low": 72.0}
+    assert ext[d]["mos_lav"] == {"high": 91.0, "low": 71.0}
+    assert "det_gfs_seamless" in ext[d]
+
+
+def test_system_extremes_survives_mos_fetch_failure(monkeypatch):
+    from sources import iem_mos
+    d = date(2026, 6, 3)
+
+    def det(s, e):
+        base = datetime(d.year, d.month, d.day, tzinfo=_TZ)
+        times = [base + timedelta(hours=h) for h in range(24)]
+        return {"det_gfs_seamless": (times, [90 - abs(h - 15) for h in range(24)])}
+
+    monkeypatch.setattr(open_meteo_models, "fetch_historical", det)
+    monkeypatch.setattr(open_meteo_ensemble, "fetch_historical", lambda s, e: {})
+    monkeypatch.setattr(iem_mos, "historical_extremes",
+                        lambda s, e: (_ for _ in ()).throw(RuntimeError("iem down")))
+    ext = calibration._system_extremes(d, d)
+    assert "det_gfs_seamless" in ext[d]           # NWP unaffected
+    assert not any(s.startswith("mos_") for s in ext[d])

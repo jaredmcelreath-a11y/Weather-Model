@@ -27,7 +27,8 @@ from datetime import date, datetime, timedelta
 
 from config import (CALIBRATION_WINDOW_DAYS, CALM_WIND_MAX, CLEAR_CLOUD_MAX,
                     WARM_LOW_THRESHOLD)
-from sources import open_meteo_ensemble, open_meteo_models, station_history
+from sources import (iem_mos, open_meteo_ensemble, open_meteo_models,
+                     station_history)
 from settlement import day_high_low
 
 _PATH = os.path.join(os.path.dirname(__file__), "calibration.json")
@@ -288,14 +289,19 @@ def _system_extremes(start, end):
     """{day: {system: {'high':v, 'low':v}}} over [start, end].
 
     Systems = one combined 'ensemble_mean' (mean of all member extremes) plus
-    each deterministic model by its label. NWS has no archive, so it is absent.
-    Degrades to deterministic-only if the ensemble archive can't be fetched.
+    each deterministic model by its label plus 'mos_lav'/'mos_nbs' (day-ahead
+    MOS from prior-day 12Z runs). NWS has no archive, so it is absent. Degrades
+    gracefully if any one archive can't be fetched.
     """
     det = open_meteo_models.fetch_historical(start, end)
     try:
         ens = open_meteo_ensemble.fetch_historical(start, end)
     except Exception:
         ens = {}
+    try:
+        mos = iem_mos.historical_extremes(start, end)
+    except Exception:
+        mos = {}
     out: dict = {}
     day = start
     while day <= end:
@@ -313,6 +319,9 @@ def _system_extremes(start, end):
         if ens_hi:
             systems["ensemble_mean"] = {"high": sum(ens_hi) / len(ens_hi),
                                         "low": sum(ens_lo) / len(ens_lo)}
+        for label, (hi, lo) in mos.get(day, {}).items():
+            if hi is not None:
+                systems[label] = {"high": hi, "low": lo}
         if systems:
             out[day] = systems
         day += timedelta(days=1)
