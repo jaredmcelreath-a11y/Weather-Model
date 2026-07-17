@@ -103,6 +103,12 @@ def _inject_theme(name):
         ".st-key-top_metrics [data-testid=\"stColumn\"],"
         "[class*=\"st-key-period_metrics_\"] [data-testid=\"stColumn\"]"
         "{flex:1 1 47%!important;min-width:47%!important;width:47%!important;}"
+        # the last period card (Avg Portfolio %) sits alone on the bottom row — stretch
+        # it full-width and enlarge its value so it reads as the headline stat on phones
+        "[class*=\"st-key-period_metrics_\"] [data-testid=\"stColumn\"]:last-child"
+        "{flex:1 1 100%!important;min-width:100%!important;width:100%!important;}"
+        "[class*=\"st-key-period_metrics_\"] [data-testid=\"stColumn\"]:last-child .wxcard-v"
+        "{font-size:2.1rem!important;}"
         # keep the High/Low Consensus/Spread/Resolved trio on one row on phones
         "[class*=\"st-key-mini_\"] [data-testid=\"stHorizontalBlock\"]"
         "{flex-wrap:nowrap!important;gap:0.35rem!important;}"

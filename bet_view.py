@@ -261,21 +261,23 @@ def render():
                                f"Unweighted mean of each {noun}'s % Gain (its profit ÷ "
                                f"what you staked that {noun}); every {noun} counts equally. "
                                f"Open positions marked to market."), unsafe_allow_html=True)
-            pc[3].markdown(_mc("Avg Portfolio %", f"{ps['avg_port_pct'] * 100:+.1f}%",
+            pc[3].markdown(_mc("Green rate", f"{ps['green_rate'] * 100:.0f}%",
+                               f"Share of {plural} in the green — {ps['green_count']} of "
+                               f"{ps['count']} {plural} (open periods marked to market)."),
+                           unsafe_allow_html=True)
+            pc[4].markdown(_mc("Best", _fmt_pnl(ps["best_gain"]),
+                               f"The single best {noun}'s $ gain (open marked to market)."),
+                           unsafe_allow_html=True)
+            pc[5].markdown(_mc("Worst", _fmt_pnl(ps["worst_gain"]),
+                               f"The single worst {noun}'s $ gain (open marked to market)."),
+                           unsafe_allow_html=True)
+            # Avg Portfolio % goes LAST so on phones (cards grid 2-per-row) it lands
+            # alone on the bottom row, where the mobile CSS stretches it full-width.
+            pc[6].markdown(_mc("Avg Portfolio %", f"{ps['avg_port_pct'] * 100:+.1f}%",
                                f"Unweighted mean of each {noun}'s Portfolio % (its profit ÷ "
                                f"your whole account balance entering that {noun}) — the "
                                f"per-{noun} return on the full portfolio, not just what you "
                                f"staked. Open positions marked to market."),
-                           unsafe_allow_html=True)
-            pc[4].markdown(_mc("Green rate", f"{ps['green_rate'] * 100:.0f}%",
-                               f"Share of {plural} in the green — {ps['green_count']} of "
-                               f"{ps['count']} {plural} (open periods marked to market)."),
-                           unsafe_allow_html=True)
-            pc[5].markdown(_mc("Best", _fmt_pnl(ps["best_gain"]),
-                               f"The single best {noun}'s $ gain (open marked to market)."),
-                           unsafe_allow_html=True)
-            pc[6].markdown(_mc("Worst", _fmt_pnl(ps["worst_gain"]),
-                               f"The single worst {noun}'s $ gain (open marked to market)."),
                            unsafe_allow_html=True)
             market_view._html_table(pd.DataFrame([{
                 label_col: e["label"].strftime(datefmt),
