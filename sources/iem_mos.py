@@ -19,7 +19,7 @@ average single-estimator weight. Skill-weighting it via the IEM run archive
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from config import STATION_ID, TIMEZONE
@@ -71,4 +71,39 @@ def fetch(forecast_days: int = 2) -> dict[str, tuple[list[datetime], list[float]
         times, temps = _parse(data)
         if times:
             out[f"mos_{m.lower()}"] = (times, temps)
+    return out
+
+
+def historical_extremes(start, end, ttl: int = 24 * 3600):
+    """{target_day: {'mos_lav'/'mos_nbs': (high, low)}} from each day's
+    prior-day 12Z run — a genuine ~24-38h day-ahead lead.
+
+    Each target day is forecast from a DIFFERENT run (the 12Z cycle issued the
+    day before), so unlike the NWP fetchers this returns per-day extremes rather
+    than one continuous series. A model whose run is missing/short for a day is
+    omitted; a day with no usable model is omitted entirely. Best-effort: any
+    per-call failure skips that model, never raises.
+    """
+    from settlement import day_high_low  # local import: avoid load-time cycle
+    out: dict = {}
+    day = start
+    while day <= end:
+        runtime = (datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
+                   - timedelta(days=1)).replace(hour=12).strftime("%Y-%m-%dT%H:%MZ")
+        systems: dict = {}
+        for m in MODELS:
+            try:
+                data = get_json(URL, {"station": STATION_ID, "model": m,
+                                      "runtime": runtime}, ttl=ttl)
+            except Exception:
+                continue
+            times, temps = _parse(data)
+            if not times:
+                continue
+            hi, lo = day_high_low(times, temps, day)
+            if hi is not None or lo is not None:
+                systems[f"mos_{m.lower()}"] = (hi, lo)
+        if systems:
+            out[day] = systems
+        day += timedelta(days=1)
     return out
