@@ -32,9 +32,18 @@ def test_current_slot_outside_tolerance_is_none():
     assert betting_log.current_slot(_at(15, 12)) is None      # 12 min off any slot
 
 
-def test_current_slot_all_five_slots_defined():
-    assert betting_log.SLOTS == ["15:00", "15:30", "16:00", "16:30", "17:00"]
+def test_current_slot_slot_sets_defined():
+    assert betting_log.LOW_SLOTS == ["05:00", "05:30", "06:00", "06:30", "07:00"]
+    assert betting_log.HIGH_SLOTS == ["15:00", "15:30", "16:00", "16:30", "17:00"]
+    assert betting_log.SLOTS == betting_log.LOW_SLOTS + betting_log.HIGH_SLOTS
     assert betting_log.SLOT_TOLERANCE_MIN == 8
+
+
+def test_current_slot_matches_morning_low_slots():
+    assert betting_log.current_slot(_at(6, 0)) == "06:00"
+    assert betting_log.current_slot(_at(5, 28)) == "05:30"    # -2 min
+    assert betting_log.current_slot(_at(7, 8)) == "07:00"     # +8 min, inclusive
+    assert betting_log.current_slot(_at(6, 12)) is None       # 12 min off any slot
 
 
 _CLI = {
@@ -57,11 +66,13 @@ _HOURLY = {"today": {"day": "2026-07-03",
 _CALIB = {"settlement_offset": {"high": 0.89, "high_std": 0.77, "low": -0.33, "low_std": 0.47}}
 
 
-def test_record_writes_today_high_and_low(tmp_path):
+def test_record_afternoon_slot_high_only(tmp_path):
+    # Afternoon slots capture the high (the low bottomed out at dawn and is
+    # settled by now, so no low row is written).
     p = str(tmp_path / "b.jsonl")
     betting_log.record(_CLI, _HOURLY, "15:30", _CALIB, path=p)
     rows = betting_log.load(p)
-    assert {r["variable"] for r in rows} == {"high", "low"}
+    assert {r["variable"] for r in rows} == {"high"}
     hi = next(r for r in rows if r["variable"] == "high")
     assert hi["capture_slot"] == "15:30"
     assert hi["target_date"] == "2026-07-03"
@@ -73,6 +84,26 @@ def test_record_writes_today_high_and_low(tmp_path):
     assert hi["market_ev"] == 96.9
     assert hi["model_bins"][0] == ["97", 0.4]      # top model bin
     assert hi["market_buckets"][1] == [97, 98, 0.6]
+
+
+def test_record_morning_slot_low_only(tmp_path):
+    # Morning slots capture the low as it bottoms out near the sunrise trough;
+    # the high is ~10h away (a day-ahead forecast, not a betting-time number), so
+    # no high row is written.
+    p = str(tmp_path / "b.jsonl")
+    betting_log.record(_CLI, _HOURLY, "06:00", _CALIB, path=p)
+    rows = betting_log.load(p)
+    assert {r["variable"] for r in rows} == {"low"}
+    lo = rows[0]
+    assert lo["capture_slot"] == "06:00"
+    assert lo["target_date"] == "2026-07-03"
+    assert lo["cli_consensus"] == 78.0
+    assert lo["hourly_consensus"] == 78.0
+    assert lo["flat_offset"] == -0.33
+    assert lo["peak_locked"] is True
+    assert lo["market_ev"] == 78.1
+    assert lo["model_bins"][0] == ["78", 0.5]      # top model bin
+    assert lo["market_buckets"][0] == [77, 78, 0.7]
 
 
 def test_record_upserts_same_slot(tmp_path):

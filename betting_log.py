@@ -1,6 +1,7 @@
 """Betting-time forward log — a slot-keyed snapshot of the model + Kalshi market
-at fixed afternoon clock times (15:00-17:00 CDT), so the model-vs-market edge and
-the settlement-gap predictor can be measured at the moment bets are placed.
+at fixed clock times (afternoon 15:00-17:00 CDT for the high, early-morning
+05:00-07:00 for the low), so the model-vs-market edge and the settlement-gap
+predictor can be measured at the moment bets are placed.
 
 Separate from forecast_log.jsonl on purpose: forecast_log upserts on
 (target_date, variable, lead_bucket) and would overwrite the same-day row every
@@ -20,7 +21,18 @@ import model
 TZ = ZoneInfo(TIMEZONE)
 _PATH = os.path.join(os.path.dirname(__file__), "betting_log.jsonl")
 
-SLOTS = ["15:00", "15:30", "16:00", "16:30", "17:00"]
+# Each slot captures the variable it sits closest to settling. Afternoon slots
+# capture the HIGH as it approaches its peak; the early-morning slots capture the
+# LOW as it bottoms out near the sunrise trough. The opposite variable at each
+# time is useless for edge measurement — an afternoon low is already settled, and
+# a dawn high is a ~10h day-ahead forecast — so SLOT_VARS records only the one
+# that matters. (Seasonal note: the low trough shifts with sunrise ~6:25 summer →
+# ~7:20 winter local; the fixed 05:00–07:00 window centers on summer troughs.)
+LOW_SLOTS = ["05:00", "05:30", "06:00", "06:30", "07:00"]
+HIGH_SLOTS = ["15:00", "15:30", "16:00", "16:30", "17:00"]
+SLOTS = LOW_SLOTS + HIGH_SLOTS
+SLOT_VARS = {**{s: ("low",) for s in LOW_SLOTS},
+             **{s: ("high",) for s in HIGH_SLOTS}}
 # The scheduler fires on a ~15-min cadence (GitHub cron at :07/:22/:37/:52 + the
 # external 15-min trigger). Slots sit at :00/:30, so the nearest run to any slot is
 # at most 7.5 min away. A ±8-min window therefore catches every slot regardless of
@@ -98,7 +110,8 @@ def _row(day: str, variable: str, slot: str, cli_var: dict, hourly_var: dict,
 
 def record(cli_snapshot: dict, hourly_snapshot: dict, slot: str, calib: dict,
            path: str | None = None) -> None:
-    """Upsert today's high & low betting-time rows for `slot`."""
+    """Upsert today's betting-time row(s) for `slot` — only the variable(s) that
+    slot captures (see SLOT_VARS: afternoon = high, morning = low)."""
     today = cli_snapshot.get("today")
     if not today:
         return
@@ -110,7 +123,7 @@ def record(cli_snapshot: dict, hourly_snapshot: dict, slot: str, calib: dict,
     hourly_today = (hourly_snapshot or {}).get("today", {})
 
     new_recs = []
-    for variable in ("high", "low"):
+    for variable in SLOT_VARS.get(slot, ("high", "low")):
         cli_var = today.get(variable)
         if not cli_var or not cli_var.get("probabilities"):
             continue

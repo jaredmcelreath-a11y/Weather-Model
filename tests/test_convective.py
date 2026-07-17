@@ -100,6 +100,24 @@ def test_cape_alone_no_longer_widens():
         mp.undo()
 
 
+def test_sw_counties_in_upstream_set():
+    # SW/W/S approach counties arm the same upstream trigger as the NW ones.
+    ugc = set(config.CONVECTIVE_UPSTREAM_UGC)
+    for sw in ("TXC251", "TXC221", "TXC425", "TXC143", "TXC139"):
+        # Johnson, Hood, Somervell, Erath, Ellis
+        assert sw in ugc
+
+
+def test_sw_severe_warning_arms_full_floor():
+    # A Severe Thunderstorm Warning in a SW approach county (Johnson) commands
+    # the full downside floor via the real upstream set, same as a NW warning.
+    from convective import _upstream_triggered
+    svr = {"features": [{"properties": {
+        "event": "Severe Thunderstorm Warning",
+        "geocode": {"UGC": ["TXC251"]}}}]}   # Johnson County, SW of Tarrant
+    assert _upstream_triggered(svr) is True   # default zones = real config set
+
+
 def test_upstream_triggered():
     from convective import _upstream_triggered
     zones = frozenset({"TXC497", "TXC237"})

@@ -185,18 +185,20 @@ WARM_LOW_THRESHOLD = 76
 # it spread the locked low downward almost every hot day; POP is the model's
 # actual expectation that storms fire. The downside scales with POP: a barely-
 # armed day earns CONVECTIVE_SIGMA_MIN, a near-certain-storm day the full
-# CONVECTIVE_SIGMA. An active severe-thunderstorm warning in the N/NW approach
-# counties (storms move SE toward the metroplex; the airport sits on its north
-# side) is direct evidence of storms and commands the full floor on its own.
+# CONVECTIVE_SIGMA. An active severe-thunderstorm warning in the N/NW/SW approach
+# counties (NW storms move SE toward the metroplex; SW/W storms track NE toward
+# and over it; the airport sits between Dallas and Fort Worth) is direct evidence
+# of storms and commands the full floor on its own.
 CONVECTIVE_SIGMA = 3.0       # °F max downside floor (near-certain evening storms / upstream warning)
 CONVECTIVE_SIGMA_MIN = 1.5   # °F downside floor the moment POP clears the arming threshold
 CONVECTIVE_POP_MIN = 30      # % precip probability (remaining hours) that arms the trigger
 CONVECTIVE_POP_FULL = 70     # % POP at/above which the full CONVECTIVE_SIGMA applies
 
-# NWS county UGC codes for the N/NW storm approach to KDFW plus the metro counties
-# themselves. A Severe Thunderstorm Warning intersecting this set arms the
-# upstream trigger. (TXC + 3-digit county FIPS.)
+# NWS county UGC codes for the N/NW and SW/W storm approaches to KDFW plus the
+# metro counties themselves. A Severe Thunderstorm Warning intersecting this set
+# arms the upstream trigger. (TXC + 3-digit county FIPS.)
 CONVECTIVE_UPSTREAM_UGC = (
+    # N/NW approach (storms move SE toward the metroplex)
     "TXC497",  # Wise
     "TXC237",  # Jack
     "TXC367",  # Parker
@@ -205,6 +207,13 @@ CONVECTIVE_UPSTREAM_UGC = (
     "TXC121",  # Denton
     "TXC097",  # Cooke
     "TXC337",  # Montague
+    # SW/W/S approach (storms track NE toward and over the metroplex)
+    "TXC251",  # Johnson (immediately S/SW of Tarrant)
+    "TXC221",  # Hood (SW)
+    "TXC425",  # Somervell (SW)
+    "TXC143",  # Erath (far SW, the NE-tracking approach)
+    "TXC139",  # Ellis (S of Dallas)
+    # metro counties (the airport itself)
     "TXC439",  # Tarrant (airport county)
     "TXC113",  # Dallas
 )
