@@ -120,6 +120,11 @@ def _row(day: str, variable: str, slot: str, cli_var: dict, hourly_var: dict,
         "front_widened": bool(cli_var.get("front_widened")),
         "model_bins": _top_bins(cli_var.get("probabilities") or {}),
     }
+    # Applied self-correction knobs baked into this row's consensus (only when
+    # non-empty) — same disentanglement purpose as in forecast_log.
+    corr = cli_var.get("corrections")
+    if corr:
+        rec["corrections"] = corr
     if market_var:
         rec["market_ev"] = market_var.get("ev")
         rec["market_buckets"] = market_var.get("buckets")

@@ -693,6 +693,11 @@ def predict_variable(series, obs_series, day, variable, now, calib,
         sigma_base = sigma_day_ahead * LEAD_SIGMA_INFLATION.get(bucket, 1.0)
     sigma = max(sigma_base * locked_ratio, _SIGMA_FLOOR)
 
+    # Applied self-correction knobs, surfaced so the logs can record them and the
+    # feedback loop can be disentangled: each value is the amount SUBTRACTED from
+    # the samples, so raw (pre-correction) consensus = consensus + sum(values).
+    corrections: dict[str, float] = {}
+
     # Lead-time residual de-bias (self-correction layer): the forward log measures
     # a persistent signed error for this (lead, variable). Subtract it from the
     # forecast samples so both the consensus and the bin mass shift together.
@@ -702,6 +707,7 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     bc = (bias_corr.get(str(bucket)) or bias_corr.get(bucket) or {}).get(variable)
     if bc and obs_now is None:
         samples = [s - bc for s in samples]
+        corrections["by_lead"] = round(bc, 3)
 
     # Warm-night low de-bias: on warm forecast nights the consensus runs cold in
     # a way the flat bias misses (warm/cool leans cancel). Add it back. Pure-
@@ -710,6 +716,7 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     if (wl and variable == "low" and obs_now is None
             and regime_low is not None and regime_low >= wl["threshold"]):
         samples = [s - wl["bias"] for s in samples]
+        corrections["warm_low"] = round(wl["bias"], 3)
 
     # The CLI settlement offset is an average; its gap has irreducible spread
     # (std from calibration) we can't observe live, so widen sigma by it in
@@ -770,6 +777,7 @@ def predict_variable(series, obs_series, day, variable, now, calib,
         "peak_locked": locked,
         "front_widened": front_widened,
         "convective_widened": convective_widened,
+        "corrections": corrections,
     }
 
 

@@ -158,6 +158,13 @@ def record(snapshot: dict, path: str | None = None, basis: str = "hourly") -> No
             for flag in ("convective_widened", "front_widened"):
                 if d.get(flag):
                     rec[flag] = True
+            # Applied self-correction knobs (by_lead / warm_low) baked into this
+            # row's consensus — recorded so scoring can back them out and not
+            # re-derive a correction from its own already-corrected forecast.
+            # Only when non-empty (calm/obs-anchored rows carry none).
+            corr = d.get("corrections")
+            if corr:
+                rec["corrections"] = corr
             # Per-source predicted extremes — present once the snapshot carries
             # them; lets scoring later learn ensemble/NWS bias from the live log.
             src = _source_means(sources.get(which, {}), variable)
