@@ -126,18 +126,14 @@ def _day_tables(rows: list[dict], today) -> list[dict]:
     } for g in groups]
 
 
-def _windy_radar_url(lat: float = KDFW_LAT, lon: float = KDFW_LON, zoom: int = 7) -> str:
-    """Windy radar-embed URL centered on KDFW. Windy's radar overlay carries its
-    own timeline covering recent past AND the modeled forecast (hours ahead) —
-    the reliable future-movement source after RainViewer's free nowcast went
-    empty. Rendered as an iframe, so it's Windy's own map UI, not our styling."""
-    params = (
-        f"overlay=radar&product=radar&level=surface&type=map"
-        f"&zoom={zoom}&lat={lat}&lon={lon}&detailLat={lat}&detailLon={lon}"
-        f"&marker=true&calendar=now&message=true"
-        f"&metricRain=default&metricTemp=default&metricWind=default"
-    )
-    return f"https://embed.windy.com/embed2.html?{params}"
+def _ventusky_radar_url(lat: float = KDFW_LAT, lon: float = KDFW_LON,
+                        zoom: int = 7) -> str:
+    """Ventusky radar-embed URL centered on KDFW. Ventusky's radar layer shows
+    actual precipitation/storms (not wind) with a timeline that scrubs into the
+    forecast; the in-map layer menu can switch to clouds. `p` is lat;lon;zoom.
+    Rendered as an iframe — Ventusky's own map UI, not our styling. (Windy led
+    with a wind overlay; RainViewer's free feed had no forecast.)"""
+    return f"https://embed.ventusky.com/?p={lat};{lon};{zoom}&l=radar"
 
 
 def render(load_hourly):
@@ -190,12 +186,13 @@ def render(load_hourly):
         st.caption(f"High {hi} · Low {lo} (forecast for the hours shown)")
         market_view._html_table(t["df"])
 
-    # Storm radar at the very bottom — a Windy radar embed. It has its own
-    # timeline (play + scrub) covering recent past and the modeled forecast hours
-    # ahead. Embedded as an iframe (Windy's UI), so nothing here can fail the page;
-    # we switched off RainViewer because its free feed stopped serving forecast
-    # frames.
+    # Storm radar at the very bottom — a Ventusky radar embed: actual
+    # precipitation/storms with a timeline that scrubs into the forecast, and a
+    # layer menu for clouds. Embedded as an iframe (Ventusky's UI), so nothing
+    # here can fail the page. (Windy led with a wind overlay; RainViewer's free
+    # feed served no forecast frames.)
     st.subheader("Radar")
-    st.caption("Live storms plus the modeled forecast — drag Windy's timeline at "
-               "the bottom to move through past and future.")
-    components.iframe(_windy_radar_url(), height=460)
+    st.caption("Actual storms and clouds with a forecast — drag Ventusky's "
+               "timeline to move through past and future; use its layer menu "
+               "to switch between radar and clouds.")
+    components.iframe(_ventusky_radar_url(), height=460)

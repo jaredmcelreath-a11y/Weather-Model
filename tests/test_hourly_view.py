@@ -99,20 +99,19 @@ def test_day_tables_highlow_none_when_all_temps_missing():
     assert t["high"] is None and t["low"] is None
 
 
-def test_windy_radar_url_is_a_radar_embed_at_kdfw():
+def test_ventusky_radar_url_is_a_radar_embed_at_kdfw():
     import hourly_view
-    url = hourly_view._windy_radar_url()
-    assert url.startswith("https://embed.windy.com/embed2.html?")
-    assert "overlay=radar" in url
-    # KDFW default center.
-    assert "lat=32.9" in url and "lon=-97.04" in url
+    url = hourly_view._ventusky_radar_url()
+    assert url.startswith("https://embed.ventusky.com/")
+    assert "l=radar" in url
+    # KDFW default center: p=lat;lon;zoom
+    assert "p=32.9;-97.04;7" in url
 
 
-def test_windy_radar_url_honors_custom_center_and_zoom():
+def test_ventusky_radar_url_honors_custom_center_and_zoom():
     import hourly_view
-    url = hourly_view._windy_radar_url(lat=40.0, lon=-105.0, zoom=9)
-    assert "lat=40.0" in url and "lon=-105.0" in url
-    assert "zoom=9" in url
+    url = hourly_view._ventusky_radar_url(lat=40.0, lon=-105.0, zoom=9)
+    assert "p=40.0;-105.0;9" in url
 
 
 def test_render_exposed_and_callable():
