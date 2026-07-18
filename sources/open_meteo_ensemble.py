@@ -24,7 +24,8 @@ def _parse(data: dict) -> dict[str, tuple[list[datetime], list[float]]]:
         if not key.startswith("temperature_2m"):
             continue
         label = key.replace("temperature_2m_", "ens_") if key != "temperature_2m" else "ens_control"
-        out[label] = (times, values)
+        pairs = [(t, v) for t, v in zip(times, values) if v is not None]
+        out[label] = ([t for t, _ in pairs], [v for _, v in pairs])
     return out
 
 
