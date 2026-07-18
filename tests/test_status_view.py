@@ -61,3 +61,21 @@ def test_missing_inputs_read_unknown():
     cards = status_view.checks({}, NOW)
     assert all(c["state"] == "unknown" for c in cards)
     assert all(c["value"] == "No Data" for c in cards)
+
+
+def test_render_smoke_with_and_without_snapshot():
+    snap = {"current": {"temp": 93.0, "time": "2026-07-18T11:55-05:00"},
+            "dropped_sources": []}
+    inputs = {"last_capture": NOW - timedelta(minutes=8),
+              "last_settled": date(2026, 7, 17), "betting_rows_today": 4}
+    status_view.render(snap, inputs, {"Forecast Log": 170, "Settlements": 64})
+    status_view.render(None, {}, {})
+
+
+def test_snapshot_inputs_extraction():
+    snap = {"current": {"temp": 93.0, "time": "2026-07-18T11:55-05:00"},
+            "dropped_sources": ["gem"]}
+    inputs = status_view.snapshot_inputs(snap)
+    assert inputs["dropped_sources"] == ["gem"]
+    assert inputs["obs_time"].tzinfo is not None
+    assert status_view.snapshot_inputs(None) == {}

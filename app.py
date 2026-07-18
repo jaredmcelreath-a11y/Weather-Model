@@ -21,6 +21,7 @@ import hourly_view
 import journal_view
 import lab_view
 import market_view
+import status_view
 import model
 from markets import KALSHI, ROBINHOOD
 
@@ -177,6 +178,69 @@ def load_lab():
 
 
 @st.cache_data(ttl=60, show_spinner=False)
+def load_status():
+    """Plain timestamps/counts for the Status page's checks. Each read is
+    best-effort — a missing log yields an 'unknown' card, never a crash."""
+    from datetime import date, datetime, timezone
+    inputs: dict = {}
+    counts: dict = {}
+
+    def _dt(iso):
+        # calibration's `computed` stamp is naive; the Action runner writes it
+        # in UTC, so read naive stamps as UTC (±5h skew vs a local recompute
+        # is immaterial against the 36h amber threshold).
+        try:
+            d = datetime.fromisoformat(iso)
+            return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+        except Exception:
+            return None
+
+    try:
+        import consensus_log
+        rows = consensus_log.load()
+        counts["Consensus History"] = len(rows)
+        cli = [r for r in rows if r.get("basis") == "cli"] or rows
+        if cli:
+            inputs["last_capture"] = _dt(cli[-1].get("captured_at"))
+    except Exception:
+        pass
+    try:
+        counts["Forecast Log"] = len(forecast_log.load())
+    except Exception:
+        pass
+    try:
+        import betting_log
+        rows = betting_log.load()
+        counts["Betting Log"] = len(rows)
+        today = date.today().isoformat()
+        inputs["betting_rows_today"] = sum(
+            1 for r in rows if r.get("target_date") == today)
+    except Exception:
+        pass
+    try:
+        import settlements
+        rows = settlements.load()
+        counts["Settlements"] = len(rows)
+        days = [date.fromisoformat(r["target_date"]) for r in rows
+                if r.get("basis") == "cli" and r.get("target_date")]
+        if days:
+            inputs["last_settled"] = max(days)
+    except Exception:
+        pass
+    try:
+        import calibration_history
+        counts["Calibration History"] = len(calibration_history.load())
+    except Exception:
+        pass
+    try:
+        calib = calibration.get(refresh=True) or {}
+        inputs["calib_computed"] = _dt(calib.get("computed"))
+    except Exception:
+        pass
+    return inputs, counts
+
+
+@st.cache_data(ttl=60, show_spinner=False)
 def load_portfolio_value():
     """Total Kalshi portfolio worth = cash + open positions marked to market
     (matches the My Bets page's Portfolio figure), the Kelly bankroll default.
@@ -265,6 +329,16 @@ def lab_page():
     lab_view.render(load_lab)
 
 
+def status_page():
+    snap = None
+    try:
+        snap, _calib = load_snapshot_kalshi()
+    except Exception:
+        snap = None
+    inputs, counts = load_status()
+    status_view.render(snap, inputs, counts)
+
+
 def accuracy_page():
     accuracy_view.render(load_accuracy_kalshi, load_calibration_history)
 
@@ -280,4 +354,5 @@ st.navigation([
     st.Page(bet_view.render, title="History"),
     st.Page(lab_page, title="Lab"),
     st.Page(journal_page, title="Journal"),
+    st.Page(status_page, title="Status"),
 ]).run()
