@@ -22,15 +22,15 @@ def headline_tiles(live: dict) -> list[dict]:
     """Glanceable accuracy tiles from scoring.score()'s live dict: settled-day
     count plus each variable's exact-bin %, within-±1 %, and Brier. Missing
     variables are skipped; None metrics render as an em dash."""
-    tiles = [{"label": "Settled days", "value": str(live.get("n_settled", 0) or 0)}]
+    tiles = [{"label": "Settled Days", "value": str(live.get("n_settled", 0) or 0)}]
     by_var = live.get("by_variable") or {}
     for var in ("high", "low"):
         m = by_var.get(var)
         if not m:
             continue
         cap = var.capitalize()
-        tiles.append({"label": f"{cap} exact-bin", "value": _pct(m.get("exact_peak"))})
-        tiles.append({"label": f"{cap} within ±1", "value": _pct(m.get("within1"))})
+        tiles.append({"label": f"{cap} Exact-Bin", "value": _pct(m.get("exact_peak"))})
+        tiles.append({"label": f"{cap} Within ±1", "value": _pct(m.get("within1"))})
         tiles.append({"label": f"{cap} Brier", "value": _num(m.get("brier"))})
     return tiles
 

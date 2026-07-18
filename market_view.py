@@ -1645,7 +1645,7 @@ def _render_accuracy(load_accuracy, calib=None, history_loader=None):
     bt, live = load_accuracy()
     corr = calibration.active_corrections(calib)
     if corr:
-        st.markdown("**Active self-corrections** — adjustments the model has "
+        st.markdown("**Active Self-Corrections** — adjustments the model has "
                     "learned from its own settled forecasts and is applying now: "
                     + "; ".join(corr) + ".")
     note = exclusion_note(_correction_exclusions())
@@ -1666,23 +1666,23 @@ def _render_accuracy(load_accuracy, calib=None, history_loader=None):
                 "50% Cov": f"{m['coverage_50']:.0f}%", "80% Cov": f"{m['coverage_80']:.0f}%",
             })
         _html_df(pd.DataFrame(mrows).set_index("Variable"))
-        st.caption("**exact bin** = how often the model's top (peak) bin is the exact "
-                   "settled degree; **within ±1°F** forgives a one-degree miss. These come "
+        st.caption("**Exact Bin** = how often the model's top (peak) bin is the exact "
+                   "settled degree; **Within ±1°F** forgives a one-degree miss. These come "
                    "from the deterministic backtest with a flat spread and no same-day "
                    "anchoring, so treat them as a *relative* A/B harness (config vs config "
                    "on the same days), not the live hit rate — see live self-scoring below.")
         st.markdown(
-            "**How to read this table** — each row scores the model's high (or low) "
+            "**How to Read This Table** — each row scores the model's high (or low) "
             "predictions over the last *days* settled days:\n"
             "- **Brier** — accuracy of the per-bin probabilities (0 = perfect, lower "
             "is better). Penalizes being both wrong *and* confident.\n"
             "- **CRPS** — like Brier but aware of *how far off* in degrees, so a near "
             "miss is forgiven more than a big one. Lower is better.\n"
             "- **MAE °F** — average error of the single best-guess (consensus) "
-            "temperature, in degrees. **MAE base** is the same for a dumb no-bias, "
+            "temperature, in degrees. **MAE Base** is the same for a dumb no-bias, "
             "wide-spread baseline; **MAE °F should be lower than MAE base** — that gap "
             "is what the calibration buys you.\n"
-            "- **50% cov / 80% cov** — how often the actual temperature landed inside "
+            "- **50% Cov / 80% Cov** — how often the actual temperature landed inside "
             "the model's stated 50% / 80% range. These should sit *near* 50% and 80%. "
             "Much higher = the model is too cautious (ranges too wide); much lower = "
             "overconfident (ranges too tight)."
@@ -1695,13 +1695,13 @@ def _render_accuracy(load_accuracy, calib=None, history_loader=None):
             if rdf is not None:
                 rc[i].caption(f"{var.title()} reliability — predicted vs observed")
                 rc[i].altair_chart(_reliability_chart(rdf), use_container_width=True)
-        st.caption("**Reliability charts:** x = the probability the model gave, y = how "
+        st.caption("**Reliability Charts:** x = the probability the model gave, y = how "
                    "often it actually happened. The closer the *observed* line hugs the "
                    "*ideal* diagonal, the better calibrated the model — e.g. things it "
                    "called 30% likely should happen ~30% of the time.")
 
     if live and live.get("n_settled"):
-        st.markdown(f"**Live self-scoring** — {live['n_settled']} settled predictions "
+        st.markdown(f"**Live Self-Scoring** — {live['n_settled']} settled predictions "
                     "logged from this dashboard (grows daily). This is the *honest* "
                     "exact-bin hit rate: the full live pipeline, graded against settlement.")
 
@@ -1750,7 +1750,7 @@ def _render_accuracy(load_accuracy, calib=None, history_loader=None):
 
         mkt = live.get("market")
         if mkt and mkt.get("n"):
-            st.markdown(f"**Market vs model** — {mkt['n']} settled days where the live "
+            st.markdown(f"**Market vs Model** — {mkt['n']} settled days where the live "
                         "Kalshi price was logged. Point-forecast error (°F) of the "
                         "market's implied temperature vs the model's consensus, against "
                         "CLI settlement. Lower is better.")

@@ -125,22 +125,22 @@ def render():
     else:
         with st.container(key="metrics2_edge_a"):
             c = st.columns(4)
-        c[0].markdown(market_view.metric_card("Settled slots", str(head["n"])),
+        c[0].markdown(market_view.metric_card("Settled Slots", str(head["n"])),
                       unsafe_allow_html=True)
         c[1].markdown(market_view.metric_card(
             "Disagreements", str(head["disagreements"]),
             "Days the model and market pointed at different bins."),
             unsafe_allow_html=True)
         c[2].markdown(market_view.metric_card(
-            "Model won", f"{head['model_wins']} ({_pct(head['model_wins'], head['disagreements'])})",
+            "Model Won", f"{head['model_wins']} ({_pct(head['model_wins'], head['disagreements'])})",
             "Of the disagreements, how often the model's bin was the settled one."),
             unsafe_allow_html=True)
         c[3].markdown(market_view.metric_card(
-            "Market won", f"{head['market_wins']} ({_pct(head['market_wins'], head['disagreements'])})"),
+            "Market Won", f"{head['market_wins']} ({_pct(head['market_wins'], head['disagreements'])})"),
             unsafe_allow_html=True)
         market_view._html_table(pd.DataFrame(_edge_rows(data["metrics"])))
         st.caption("Lower **MAE** (mean absolute error, °F) is the sharper forecast. "
-                   "When the two disagree on the bin, **model won / market won** is who "
+                   "When the two disagree on the bin, **Model Won / Market Won** is who "
                    "the settlement proved right. Both sides are scored by where their "
                    "expected value lands. A ⚠ marks a thin-market subset (low traded "
                    "volume), where the market's 'opinion' is weak.")
@@ -171,11 +171,11 @@ def render():
     with st.container(key="metrics2_edge_b"):
         c = st.columns(2)
     c[0].markdown(market_view.metric_card(
-        "Against-market P&L", f"${am['net_pnl']:+.2f}",
+        "Against-Market P&L", f"${am['net_pnl']:+.2f}",
         f"{am['wins']}–{am['losses']} on underdog bets — your true edge."),
         unsafe_allow_html=True)
     c[1].markdown(market_view.metric_card(
-        "With-market P&L", f"${wm['net_pnl']:+.2f}",
+        "With-Market P&L", f"${wm['net_pnl']:+.2f}",
         f"{wm['wins']}–{wm['losses']} riding the favorite."),
         unsafe_allow_html=True)
     market_view._html_table(pd.DataFrame([
