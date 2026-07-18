@@ -42,6 +42,44 @@ def test_bin_probabilities_weight_shifts_mass():
     assert model.prob_at_least(low_heavy, 95) < model.prob_at_least(high_heavy, 95)
 
 
+def _mixture_stats(probs):
+    """Weighted mean/std of a PMF over its integer bins (open tails ignored)."""
+    pts = [(int(k), p) for k, p in probs.items() if not k.startswith(("<", ">"))]
+    w = sum(p for _, p in pts) or 1.0
+    mean = sum(t * p for t, p in pts) / w
+    var = sum(p * (t - mean) ** 2 for t, p in pts) / w
+    return mean, var ** 0.5
+
+
+def test_variance_pinning_rescale_capped_no_phantom_tail():
+    # The live 2026-07-18 artifact: obs-anchored members cluster tightly while
+    # two tiny-weight ensemble members sit a couple °F cooler. Uncapped, the
+    # variance-pinning rescale (alpha = sqrt(needed/raw_var)) flings those
+    # members ~20°F into the tail, printing a phantom mode (a 59°F bin on a
+    # 78°F night). The rescale must be capped, with the residual variance
+    # absorbed by the kernel bandwidth instead.
+    samples = [78.98] * 7 + [78.98] * 29 + [77.0, 76.5]
+    weights = [0.15] * 7 + [0.15 / 31] * 31
+    probs = model._bin_probabilities(samples, 0.9, weights)
+    mean, std = _mixture_stats(probs)
+    # No meaningful mass far below the cluster (was ~0.001 at 70-73 uncapped).
+    far_tail = sum(p for k, p in probs.items()
+                   if not k.startswith(("<", ">")) and int(k) < mean - 6)
+    assert far_tail < 1e-4
+    # The spread is still pinned to the target sigma.
+    assert abs(std - 0.9) < 0.1
+
+
+def test_variance_pinning_unchanged_when_spread_is_normal():
+    # A normally-spread sample set never hits the cap, so behavior (and the
+    # exact variance pinning) is identical to the historical rescale.
+    samples = [88.0, 90.0, 92.0]
+    probs = model._bin_probabilities(samples, 2.0)
+    mean, std = _mixture_stats(probs)
+    assert abs(mean - 90.0) < 0.05
+    assert abs(std - 2.0) < 0.1
+
+
 def _member(day, peak):
     base = datetime(day.year, day.month, day.day, tzinfo=_TZ)
     times = [base + timedelta(hours=h) for h in range(24)]

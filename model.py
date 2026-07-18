@@ -46,6 +46,14 @@ _DEFAULT_SIGMA = 2.0       # fallback day-ahead spread when no calibration yet
 _MIN_SIGMA = 1.0           # floor on the day-ahead (pure-forecast) spread
 _SIGMA_FLOOR = 0.7         # fully-locked residual: observation + rounding noise
 _MIN_BANDWIDTH = 0.7       # kernel smoothing bandwidth
+_DEV_CAP_SIGMA = 3.0       # max distance (in target sigmas) a member may sit
+                           # from the mean after the variance-pinning rescale:
+                           # an obs-anchored cluster can be so tight that the
+                           # rescale flings a mildly-off member ~20°F into the
+                           # tail (a phantom 59°F bin on a 78°F night,
+                           # 2026-07-18); clamped members keep their side, and
+                           # the clamped-away variance widens the bandwidth
+                           # instead, so total spread stays pinned to sigma
 # A lone sub-hourly HIGH spike (above the corroborated peak) is trusted only when the
 # forecast gave its settled bin at least this probability — a plausible brief peak
 # vs a sensor glitch far above the forecast. (The low keeps strict ≥2-corroboration.)
@@ -335,9 +343,12 @@ def _bin_probabilities(samples, target_sigma, weights=None):
 
     `weights` are per-sample mixture weights (default uniform). The ensemble
     members supply the shape; the total spread is pinned to `target_sigma` by
-    scaling samples about their weighted mean with a fixed bandwidth, so total
-    variance == target_sigma^2 regardless of the raw spread. Uniform weights
-    reproduce the unweighted result exactly.
+    scaling samples about their weighted mean, so total variance ==
+    target_sigma^2 regardless of the raw spread. Rescaled members are clamped
+    to +/- _DEV_CAP_SIGMA target-sigmas of the mean (a tight cluster otherwise
+    flings a mild outlier into a phantom far-tail bin), with the clamped-away
+    variance absorbed by the kernel bandwidth so the pin stays exact. Uniform
+    weights reproduce the unweighted result exactly.
     """
     if weights is None:
         weights = [1.0] * len(samples)
@@ -353,7 +364,12 @@ def _bin_probabilities(samples, target_sigma, weights=None):
         bw = max(target_sigma, _MIN_BANDWIDTH)
     else:
         alpha = math.sqrt(needed / raw_var)
-        samples = [mean + alpha * (s - mean) for s in samples]
+        cap = _DEV_CAP_SIGMA * target_sigma
+        samples = [mean + max(-cap, min(cap, alpha * (s - mean))) for s in samples]
+        # Clamping can only remove variance; hand what it removed to the
+        # bandwidth so the total spread still equals target_sigma exactly.
+        clamped_var = sum(w * (s - mean) ** 2 for w, s in zip(weights, samples)) / W
+        bw = math.sqrt(max(_MIN_BANDWIDTH ** 2, target_sigma ** 2 - clamped_var))
 
     probs = {}
     for label in bin_labels():
