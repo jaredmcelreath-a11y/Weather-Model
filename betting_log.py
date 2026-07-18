@@ -44,12 +44,12 @@ HIGH_SLOTS = ["15:00", "15:30", "16:00", "16:30", "17:00"]
 SLOTS = [lbl for lbl, _off in LOW_SLOT_OFFSETS] + HIGH_SLOTS
 SLOT_VARS = {**{lbl: ("low",) for lbl, _off in LOW_SLOT_OFFSETS},
              **{s: ("high",) for s in HIGH_SLOTS}}
-# The scheduler fires on a ~15-min cadence (GitHub cron at :07/:22/:37/:52 + the
-# external 15-min trigger). A 15-min cadence puts a run within 7.5 min of ANY
+# The scheduler fires on a ~10-min cadence (GitHub cron at :03/:13/../:53 + the
+# external 10-min trigger). A 10-min cadence puts a run within 5 min of ANY
 # clock minute, so a ±8-min window catches every slot regardless of the cron's
 # phase — this holds for the fixed :00/:30 high slots and the arbitrary-minute
-# sunrise-anchored low slots alike. The per-slot upsert makes redundant runs
-# harmless.
+# sunrise-anchored low slots alike. The tighter cadence can now put two runs in
+# one window; the per-slot upsert makes those redundant runs harmless.
 SLOT_TOLERANCE_MIN = 8
 
 

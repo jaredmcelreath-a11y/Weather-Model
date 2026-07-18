@@ -34,7 +34,7 @@ COHORT_TOLERANCE_MIN = 8
 
 def morning_cohort(now: datetime) -> str | None:
     """MORNING_COHORT if `now` is within COHORT_TOLERANCE_MIN of 09:00 local, else
-    None. The every-15-min scheduler always lands a run inside that window."""
+    None. The every-10-min scheduler always lands a run inside that window."""
     local = now.astimezone(TZ)
     anchor = local.replace(hour=MORNING_COHORT_HOUR, minute=0, second=0, microsecond=0)
     if abs((local - anchor).total_seconds()) <= COHORT_TOLERANCE_MIN * 60:

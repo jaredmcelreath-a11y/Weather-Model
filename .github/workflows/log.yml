@@ -1,6 +1,6 @@
 name: Log forecast snapshot
 
-# Records a model snapshot to the forward log every 15 min so live self-scoring,
+# Records a model snapshot to the forward log every 10 min so live self-scoring,
 # per-lead sigma, and the intraday consensus history keep accumulating in the
 # cloud — independent of any computer. The logs live on an orphan `data` branch
 # (forecast_log.jsonl, consensus_history.jsonl, settlements.jsonl, betting_log.jsonl,
@@ -10,10 +10,13 @@ name: Log forecast snapshot
 on:
   # GitHub's own scheduler is best-effort and unreliable (it dropped most of the
   # 30-min runs, firing only ~3x/day). So the schedule is a free fallback only;
-  # the dependable 15-min cadence comes from an external cron (cron-job.org)
+  # the dependable 10-min cadence comes from an external cron (cron-job.org)
   # POSTing a repository_dispatch of type `log-snapshot` to the GitHub API.
+  # NOTE: set that external cron-job.org trigger to every 10 min too — this
+  # in-repo schedule is only GitHub's best-effort fallback; the reliable cadence
+  # is driven by cron-job.org, so the chart won't speed up until it's updated.
   schedule:
-    - cron: "7,22,37,52 * * * *"  # fallback every 15 min (GitHub honors this loosely)
+    - cron: "3,13,23,33,43,53 * * * *"  # fallback every 10 min (GitHub honors this loosely)
   workflow_dispatch: {}         # allow manual runs from the Actions tab
   repository_dispatch:
     types: [log-snapshot]       # external scheduler triggers this for reliable timing
@@ -24,7 +27,7 @@ permissions:
 concurrency:
   # One shared group across all triggers (external cron, schedule fallback, manual)
   # so they serialize on the data branch — never two force-pushes racing. With
-  # frequent 15-min runs the fallback schedule can fire alongside the external
+  # frequent 10-min runs the fallback schedule can fire alongside the external
   # cron; cancel-in-progress collapses such overlaps to the newest run. That's
   # safe and preferable here because every run captures a full fresh snapshot, so
   # a superseded in-flight run carries nothing the newer one doesn't recompute.

@@ -1,7 +1,7 @@
 """Intraday history of the model's consensus, for the 'consensus through the day' chart.
 
 Unlike forecast_log (which upserts one row per lead bucket, keeping only the
-latest capture), this keeps a *time series*: one point roughly every 15 minutes
+latest capture), this keeps a *time series*: one point roughly every 10 minutes
 per (target_date, variable, basis) so the dashboard can chart how the consensus
 drifts through the day as the peak/trough approaches. Records whose target_date
 is already in the past are pruned on write, so the file stays tiny (only today
@@ -24,13 +24,13 @@ from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo(TIMEZONE)
 _PATH = os.path.join(os.path.dirname(__file__), "consensus_history.jsonl")
-# Throttle floor per series. Must sit comfortably below the 15-min logging cron
-# (.github/workflows/log.yml): at exactly 15 the throttle equalled the cadence,
-# so normal Actions startup jitter pushed runs a few seconds under the interval
-# and dropped every other point, collapsing the chart to 30-min spacing. 10 min
-# keeps every scheduled run while still throttling an always-open local
-# dashboard that refreshes every minute.
-MIN_INTERVAL_MIN = 10
+# Throttle floor per series. Must sit comfortably below the 10-min logging cron
+# (.github/workflows/log.yml): if the throttle equals the cadence, normal Actions
+# startup jitter pushes runs a few seconds under the interval and drops every
+# other point, collapsing the chart to double spacing. 7 min keeps every
+# scheduled run (even one arriving ~3 min early) while still throttling an
+# always-open local dashboard that refreshes every minute.
+MIN_INTERVAL_MIN = 7
 
 
 def _github_cfg() -> dict | None:

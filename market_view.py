@@ -1178,7 +1178,7 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
         getattr(st, level)(f"**{headline}** — {detail}")
 
         # Consensus through the day: how the model's consensus has drifted (one
-        # point per ~15 min), with today's live temperature overlaid so you can
+        # point per ~10 min), with today's live temperature overlaid so you can
         # watch the reading climb/fall toward the predicted peak/trough.
         cbox = st.container(border=True)
         cbox.markdown("**Consensus Through the Day**")
@@ -1212,12 +1212,12 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                               "predicted peak/trough)")
             if "kalshi (market)" in hist.columns:
                 extras.append("Kalshi's market-implied forecast")
-            cbox.caption("Model consensus (°F) sampled every ~15 min" +
+            cbox.caption("Model consensus (°F) sampled every ~10 min" +
                          (", with " + " and ".join(extras) + " overlaid."
                           if extras else "."))
         else:
             cbox.caption("Consensus history builds through the day — a point every "
-                         "~15 minutes. Check back as it accumulates.")
+                         "~10 minutes. Check back as it accumulates.")
 
         probs = d["probabilities"]
         df = prob_table(probs, variable)
