@@ -12,6 +12,7 @@ import os
 
 import streamlit as st
 
+import accuracy_view
 import bet_view
 import calibration
 import edge_view
@@ -222,11 +223,16 @@ def edge_page():
     edge_view.render()
 
 
+def accuracy_page():
+    accuracy_view.render(load_accuracy_kalshi, load_calibration_history)
+
+
 # Robinhood (hourly-basis) page retired from the live site — the model is now
 # Kalshi/CLI-only. robinhood_page() and its hourly loaders are kept below,
 # unreferenced, so re-listing it here is a one-line revert if ever needed.
 st.navigation([
     st.Page(kalshi_page, title="Forecast", default=True),
+    st.Page(accuracy_page, title="Accuracy"),
     st.Page(edge_page, title="Edge"),
     st.Page(bet_view.render, title="History"),
 ]).run()

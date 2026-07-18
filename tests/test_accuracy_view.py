@@ -38,3 +38,9 @@ def test_headline_tiles_handles_missing_and_none():
     by = {t["label"]: t["value"] for t in tiles}
     assert by["High exact-bin"] == "—"
     assert by["High Brier"] == "—"
+
+
+def test_accuracy_view_exposes_render():
+    import accuracy_view
+    assert hasattr(accuracy_view, "render")
+    assert callable(accuracy_view.render)

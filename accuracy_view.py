@@ -3,6 +3,12 @@ the betting-P&L History page. Reuses market_view._render_accuracy for the detail
 body and adds glanceable headline tiles on top."""
 from __future__ import annotations
 
+import streamlit as st
+
+import calibration
+import market_view
+from markets import KALSHI
+
 
 def _pct(v) -> str:
     return f"{v:.0f}%" if v is not None else "—"
@@ -27,3 +33,33 @@ def headline_tiles(live: dict) -> list[dict]:
         tiles.append({"label": f"{cap} within ±1", "value": _pct(m.get("within1"))})
         tiles.append({"label": f"{cap} Brier", "value": _num(m.get("brier"))})
     return tiles
+
+
+def render(load_accuracy, history_loader=None):
+    """Draw the Accuracy Scorecard: headline tiles + the full self-scoring /
+    reliability / calibration-drift body (market_view._render_accuracy).
+    `load_accuracy` is the cached () -> (bt, live) callable; `history_loader`
+    the cached () -> calibration-history rows."""
+    market_view._inject_theme(market_view._seed_theme())
+    st.title("Accuracy")
+
+    try:
+        _bt, live = load_accuracy()
+    except Exception:
+        live = None
+    if live and live.get("n_settled"):
+        tiles = headline_tiles(live)
+        cols = st.columns(len(tiles))
+        for col, t in zip(cols, tiles):
+            col.markdown(market_view.metric_card(t["label"], t["value"]),
+                         unsafe_allow_html=True)
+
+    if KALSHI.accuracy_note:
+        st.caption(KALSHI.accuracy_note)
+
+    calib = None
+    try:
+        calib = calibration.get()
+    except Exception:
+        pass
+    market_view._render_accuracy(load_accuracy, calib, history_loader=history_loader)
