@@ -66,7 +66,7 @@ def load_snapshot_kalshi():
     settlement_offset (absent offset -> behaves like the hourly snapshot)."""
     calib = calibration.get(refresh=True)
     snap = model.snapshot(calib, settle_offset=(calib or {}).get("settlement_offset"),
-                          continuous_obs=True)
+                          continuous_obs=True, include_candidate=True)
     return snap, calib
 
 

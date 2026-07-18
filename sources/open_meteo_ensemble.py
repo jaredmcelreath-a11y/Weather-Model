@@ -24,7 +24,8 @@ def _parse(data: dict) -> dict[str, tuple[list[datetime], list[float]]]:
         if not key.startswith("temperature_2m"):
             continue
         label = key.replace("temperature_2m_", "ens_") if key != "temperature_2m" else "ens_control"
-        out[label] = (times, values)
+        pairs = [(t, v) for t, v in zip(times, values) if v is not None]
+        out[label] = ([t for t, _ in pairs], [v for _, v in pairs])
     return out
 
 
@@ -45,13 +46,16 @@ def _warn_if_thin(parsed: dict) -> dict:
     return parsed
 
 
-def fetch(forecast_days: int = 2) -> dict[str, tuple[list[datetime], list[float]]]:
-    """Return {member_label: (times, temps_f)} across all ensemble systems."""
+def fetch(forecast_days: int = 2, models=None) -> dict[str, tuple[list[datetime], list[float]]]:
+    """Return {member_label: (times, temps_f)} across all ensemble systems.
+
+    `models` overrides the production ENSEMBLE_MODELS (shadow consensus); None
+    keeps production behavior."""
     data = get_json(URL, {
         "latitude": LAT,
         "longitude": LON,
         "hourly": "temperature_2m",
-        "models": ",".join(ENSEMBLE_MODELS),
+        "models": ",".join(models or ENSEMBLE_MODELS),
         "temperature_unit": "fahrenheit",
         "timezone": TIMEZONE,
         "forecast_days": forecast_days,

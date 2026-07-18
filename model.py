@@ -884,8 +884,11 @@ def _fetch_cli_daily(day: date) -> dict:
 
 
 def gather_series(forecast_days: int = 2, continuous_obs: bool = False,
-                  now: datetime | None = None):
+                  now: datetime | None = None, det_models=None, ens_models=None):
     """All forecast series merged into one dict, plus the obs series.
+
+    `det_models`/`ens_models` override the production Open-Meteo model lists
+    (used by the shadow/candidate consensus); None keeps production behavior.
 
     `continuous_obs` adds the sub-hourly observation feed (for the CLI basis's
     spike-aware hard bound); the default hourly obs is always present. When set,
@@ -897,8 +900,8 @@ def gather_series(forecast_days: int = 2, continuous_obs: bool = False,
     series = {}
     dropped = []
     forecast_sources = [
-        ("open-meteo ensemble", lambda: open_meteo_ensemble.fetch(forecast_days)),
-        ("open-meteo models", lambda: open_meteo_models.fetch(forecast_days)),
+        ("open-meteo ensemble", lambda: open_meteo_ensemble.fetch(forecast_days, models=ens_models)),
+        ("open-meteo models", lambda: open_meteo_models.fetch(forecast_days, models=det_models)),
         ("nws forecast", lambda: nws_forecast.fetch()),
         ("iem mos", lambda: iem_mos.fetch(forecast_days)),
     ]
@@ -965,7 +968,7 @@ def per_source_extremes(series, day):
 
 
 def snapshot(calib: dict | None = None, settle_offset=None,
-             continuous_obs: bool = False) -> dict:
+             continuous_obs: bool = False, include_candidate: bool = False) -> dict:
     """Fetch all sources once and return everything the dashboard needs:
     today + tomorrow predictions, the current observation, and per-source
     extremes for both days. `continuous_obs` enables the CLI basis's sub-hourly
@@ -999,7 +1002,7 @@ def snapshot(calib: dict | None = None, settle_offset=None,
     else:
         current = current_hourly
 
-    return {
+    snap = {
         "updated": now.isoformat(timespec="seconds"),
         "today": _predict_from(series, obs, today, now, calib, settle_offset, live=True),
         "tomorrow": _predict_from(series, obs, tomorrow, now, calib, settle_offset, live=True),
@@ -1010,6 +1013,23 @@ def snapshot(calib: dict | None = None, settle_offset=None,
         "storm": _storm_status(today, now),
         "dropped_sources": dropped,
     }
+    if include_candidate:
+        # Fully isolated second fetch with the candidate model set. Best-effort:
+        # the shadow must never break the production snapshot.
+        try:
+            from config import (CANDIDATE_DETERMINISTIC_MODELS,
+                                 CANDIDATE_ENSEMBLE_MODELS)
+            c_series, c_obs, _c_dropped = gather_series(
+                forecast_days=3, continuous_obs=continuous_obs, now=now,
+                det_models=CANDIDATE_DETERMINISTIC_MODELS,
+                ens_models=CANDIDATE_ENSEMBLE_MODELS)
+            snap["candidate"] = {
+                "today": _predict_from(c_series, c_obs, today, now, calib, settle_offset, live=True),
+                "tomorrow": _predict_from(c_series, c_obs, tomorrow, now, calib, settle_offset, live=True),
+            }
+        except Exception:
+            pass
+    return snap
 
 
 def _storm_status(today, now):

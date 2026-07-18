@@ -174,7 +174,7 @@ from sources import open_meteo_models
 def test_backtest_cli_uses_cli_truth_and_applies_offset(monkeypatch):
     day = date(2026, 6, 10)
     series = {"det_a": _member(day, 90.0)}  # daily high 90, low 75
-    monkeypatch.setattr(open_meteo_models, "fetch_historical", lambda s, e: series)
+    monkeypatch.setattr(open_meteo_models, "fetch_historical", lambda s, e, **kw: series)
     monkeypatch.setattr(station_history, "fetch_actual",
                         lambda s, e: {day: (90.0, 75.0)})
     monkeypatch.setattr(station_history, "fetch_actual_cli",
@@ -201,8 +201,8 @@ def test_scheduled_log_records_cli_only(monkeypatch):
     monkeypatch.setattr(calibration, "get",
                         lambda refresh=True: {"settlement_offset": {"high": 1.0, "low": 0.0}})
     monkeypatch.setattr(model, "snapshot",
-                        lambda calib, settle_offset=None, continuous_obs=False:
-                        {"_off": settle_offset})
+                        lambda calib, settle_offset=None, continuous_obs=False,
+                        include_candidate=False: {"_off": settle_offset})
     calls = []
     monkeypatch.setattr(scheduled_log.forecast_log, "record",
                         lambda snap, basis="hourly": calls.append((snap.get("_off"), basis)))
@@ -329,7 +329,7 @@ def test_settle_offset_zero_std_matches_no_std():
 def test_backtest_cli_std_widens_distribution(monkeypatch):
     day = date(2026, 6, 10)
     series = {"det_a": _member(day, 90.0)}
-    monkeypatch.setattr(open_meteo_models, "fetch_historical", lambda s, e: series)
+    monkeypatch.setattr(open_meteo_models, "fetch_historical", lambda s, e, **kw: series)
     monkeypatch.setattr(station_history, "fetch_actual",
                         lambda s, e: {day: (90.0, 75.0)})
     monkeypatch.setattr(station_history, "fetch_actual_cli",

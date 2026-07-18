@@ -176,7 +176,7 @@ def test_backtest_applies_bucketed_offset_per_day(monkeypatch):
         t, v = _member(d, 90.0)
         base.setdefault("det_a", ([], []))
         base["det_a"] = (base["det_a"][0] + t, base["det_a"][1] + v)
-    monkeypatch.setattr(open_meteo_models, "fetch_historical", lambda s, e: base)
+    monkeypatch.setattr(open_meteo_models, "fetch_historical", lambda s, e, **kw: base)
     monkeypatch.setattr(open_meteo_models, "historical_night_conditions",
                         lambda s, e: {d_clear: (10.0, 5.0), d_cloud: (90.0, 25.0)})
     monkeypatch.setattr(station_history, "fetch_actual",

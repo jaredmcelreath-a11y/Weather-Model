@@ -205,7 +205,7 @@ def test_backtest_uses_system_weights_when_provided(monkeypatch):
     day = date(2026, 6, 10)
     det = {"det_gfs_seamless": _member(day, 90.0),
            "det_gem_seamless": _member(day, 96.0)}
-    monkeypatch.setattr(open_meteo_models, "fetch_historical", lambda s, e: det)
+    monkeypatch.setattr(open_meteo_models, "fetch_historical", lambda s, e, **kw: det)
     monkeypatch.setattr(open_meteo_ensemble, "fetch_historical", lambda s, e: {})
     monkeypatch.setattr(station_history, "fetch_actual",
                         lambda s, e: {day: (90.0, 75.0)})

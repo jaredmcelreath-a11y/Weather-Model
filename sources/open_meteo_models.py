@@ -29,17 +29,21 @@ def _parse(data: dict) -> dict[str, tuple[list[datetime], list[float]]]:
         if key == "time" or not key.startswith("temperature_2m"):
             continue
         label = key.replace("temperature_2m_", "det_")
-        out[label] = (times, values)
+        pairs = [(t, v) for t, v in zip(times, values) if v is not None]
+        out[label] = ([t for t, _ in pairs], [v for _, v in pairs])
     return out
 
 
-def fetch(forecast_days: int = 2) -> dict[str, tuple[list[datetime], list[float]]]:
-    """Live deterministic forecasts, {model_label: (times, temps_f)}."""
+def fetch(forecast_days: int = 2, models=None) -> dict[str, tuple[list[datetime], list[float]]]:
+    """Live deterministic forecasts, {model_label: (times, temps_f)}.
+
+    `models` overrides the production DETERMINISTIC_MODELS (used by the shadow
+    consensus); None keeps production behavior."""
     data = get_json(FORECAST_URL, {
         "latitude": LAT,
         "longitude": LON,
         "hourly": "temperature_2m",
-        "models": ",".join(DETERMINISTIC_MODELS),
+        "models": ",".join(models or DETERMINISTIC_MODELS),
         "temperature_unit": "fahrenheit",
         "timezone": TIMEZONE,
         "forecast_days": forecast_days,
@@ -48,17 +52,19 @@ def fetch(forecast_days: int = 2) -> dict[str, tuple[list[datetime], list[float]
 
 
 def fetch_historical(start: date, end: date,
-                     ttl: int = 24 * 3600) -> dict[str, tuple[list[datetime], list[float]]]:
+                     ttl: int = 24 * 3600, models=None) -> dict[str, tuple[list[datetime], list[float]]]:
     """Archived past *forecasts* over [start, end] for bias calibration.
 
     The historical-forecast archive stores what each model predicted, letting us
-    measure systematic error against what KDFW actually recorded.
+    measure systematic error against what KDFW actually recorded. `models`
+    overrides DETERMINISTIC_MODELS (for the shadow backtest); None keeps
+    production behavior.
     """
     data = get_json(HISTORICAL_URL, {
         "latitude": LAT,
         "longitude": LON,
         "hourly": "temperature_2m",
-        "models": ",".join(DETERMINISTIC_MODELS),
+        "models": ",".join(models or DETERMINISTIC_MODELS),
         "temperature_unit": "fahrenheit",
         "timezone": TIMEZONE,
         "start_date": start.isoformat(),

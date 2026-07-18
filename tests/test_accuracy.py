@@ -240,7 +240,7 @@ def test_run_intraday_anchors_to_observations(monkeypatch):
     monkeypatch.setattr(backtest, "_TZ", TZ)
     monkeypatch.setattr(station_history, "fetch_actual",
                         lambda s, e: {d: (95.0, 75.0) for d in days})
-    monkeypatch.setattr(open_meteo_models, "fetch_historical", lambda s, e: det)
+    monkeypatch.setattr(open_meteo_models, "fetch_historical", lambda s, e, **kw: det)
     monkeypatch.setattr(station_history, "_fetch_series", lambda s, e: (times, temps))
     monkeypatch.setattr(backtest, "to_hourly", lambda ti, te: (ti, te))
     monkeypatch.setattr(backtest.calibration, "get", lambda refresh=True: {})
