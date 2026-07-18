@@ -1,0 +1,11 @@
+parameter,current,range
+High bias,-0.9,-0.9
+Low bias,-0.2,-0.2
+Day-ahead sigma (high),1.0,1.0
+Day-ahead sigma (low),1.1,1.1
+Settle offset (high),+0.78,+0.78
+Settle offset (low),-0.37,-0.37
+Cooling offset,+0.06,+0.06
+Day-ahead corr (high),+0.61,+0.61
+Day-ahead corr (low),-0.45,-0.45
+Calib window (days),46,46

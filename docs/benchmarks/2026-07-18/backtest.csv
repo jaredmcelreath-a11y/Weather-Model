@@ -1,0 +1,3 @@
+variable,days,exact bin,within ±1°F,Brier,CRPS,MAE °F,MAE base,50% cov,80% cov
+high,61,33%,72%,0.788,0.705,1,1.88,77%,90%
+low,61,34%,85%,0.755,0.651,0.97,0.96,70%,92%
