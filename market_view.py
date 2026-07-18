@@ -1712,6 +1712,13 @@ def _render_accuracy(load_accuracy, calib=None, history_loader=None):
         if lrows:
             _html_df(pd.DataFrame(lrows).set_index("variable"))
 
+        rc = st.columns(2)
+        for i, var in enumerate(("high", "low")):
+            rdf = reliability_df(live.get("by_variable", {}).get(var, {}).get("reliability"))
+            if rdf is not None:
+                rc[i].caption(f"{var.title()} reliability (live) — predicted vs observed")
+                rc[i].altair_chart(_reliability_chart(rdf), use_container_width=True)
+
         # Per-lead breakout. The same-day row is the fixed 09:00 decision-time
         # cohort (same_day_0900), NOT the rolling lead-0 row — that one lands
         # ~11:45pm when the day is already settled and overstates skill, so it's
@@ -1921,11 +1928,6 @@ def render_page(snap, calib, adapter, load_accuracy, recap_loader=None,
             for c in ("High", "Low"):
                 disp[c] = disp[c].map(lambda v: "—" if v is None else f"{v:g}")
             _html_table(disp)
-
-    with st.expander("Model Accuracy"):
-        if adapter.accuracy_note:
-            st.caption(adapter.accuracy_note)
-        _render_accuracy(load_accuracy, calib, history_loader=history_loader)
 
     st.caption(adapter.settle_footer)
 
