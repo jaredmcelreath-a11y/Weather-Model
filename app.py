@@ -127,13 +127,7 @@ def load_recap():
     bet_rows = None
     try:
         import bet_history
-        from sources import kalshi_portfolio
-        fills = kalshi_portfolio.fills(bet_history.BETS_START)
-        setts = kalshi_portfolio.settlements(bet_history.BETS_START)
-        meta = {t: kalshi_portfolio.market_meta(t) for t in {f["ticker"] for f in fills}}
-        bet_rows = bet_history.build_rows(fills, setts, meta)
-        for r in bet_rows:
-            r["target_date"] = bet_history._ticker_date(r["ticker"])
+        bet_rows = bet_history.fetch_rows(bet_history.BETS_START)
     except Exception:
         bet_rows = None
     try:
@@ -162,10 +156,7 @@ def load_portfolio_value():
         import bet_history
         from sources import kalshi_portfolio
         cash = kalshi_portfolio.balance() or 0.0
-        fills = kalshi_portfolio.fills(bet_history.BETS_START)
-        setts = kalshi_portfolio.settlements(bet_history.BETS_START)
-        meta = {t: kalshi_portfolio.market_meta(t) for t in {f["ticker"] for f in fills}}
-        rows = bet_history.build_rows(fills, setts, meta)
+        rows = bet_history.fetch_rows(bet_history.BETS_START)
         open_mv = 0.0
         for r in rows:
             if r["status"] == "open":

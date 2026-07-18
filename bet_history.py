@@ -379,3 +379,20 @@ def annotate_rows(rows, betting_rows, consensus_rows, calib) -> None:
             betting_rows, consensus_rows, calib,
             target_date=_ticker_date(r["ticker"]))
         r["model_prob"], r["edge"], r["agree"] = p, edge, agree
+
+
+def fetch_rows(start: date) -> list[dict]:
+    """Live bet rows straight from the Kalshi portfolio API since `start`,
+    annotated with 'target_date' (ISO string — the WEATHER day the ticker
+    settles on) for per-day attribution. The single shared builder for the
+    Morning Recap, the portfolio-value card and the Journal page. Lazy import:
+    the Kalshi client needs `cryptography`, which local test envs lack. Raises
+    on missing creds or network failure — callers decide best-effort."""
+    from sources import kalshi_portfolio
+    fills = kalshi_portfolio.fills(start)
+    setts = kalshi_portfolio.settlements(start)
+    meta = {t: kalshi_portfolio.market_meta(t) for t in {f["ticker"] for f in fills}}
+    rows = build_rows(fills, setts, meta)
+    for r in rows:
+        r["target_date"] = _ticker_date(r["ticker"])
+    return rows
