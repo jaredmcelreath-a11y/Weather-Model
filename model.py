@@ -910,10 +910,20 @@ def gather_series(forecast_days: int = 2, continuous_obs: bool = False,
             # remaining models instead of taking the whole page down.
             dropped.append(label)
     # Observations are the settlement anchor — not degradable; let it raise.
-    obs = nws_observations.fetch(continuous=continuous_obs, now=now)
-    # CLI basis only (Kalshi): the whole-°F daily-summary min anchors today's low
-    # (predict_variable). Best-effort — a miss falls back to the hourly path.
+    # Always pull the sub-hourly (~5-min) feed: it's the SAME HTTP response as the
+    # hourly fetch (just also returning the pre-reduction series, so no extra call),
+    # and it lets the dashboard show a fresh 'Current Temp' on every page. But the
+    # sub-hourly bound/anchor carries CLI (Kalshi) settlement semantics, so expose it
+    # to the PREDICTION path (the `obs_continuous` key predict_variable reads) only
+    # when the caller opted into the CLI basis. The display-only copy lives under a
+    # separate key and never feeds predict_variable — keeping the hourly-basis pages
+    # unchanged while still showing the live 5-min reading.
+    obs = nws_observations.fetch(continuous=True, now=now)
+    obs["obs_continuous_display"] = obs.pop("obs_continuous", (None, None))
     if continuous_obs:
+        obs["obs_continuous"] = obs["obs_continuous_display"]
+        # CLI basis only (Kalshi): the whole-°F daily-summary min anchors today's low
+        # (predict_variable). Best-effort — a miss falls back to the hourly path.
         obs["cli_daily"] = _fetch_cli_daily((now or datetime.now(TZ)).date())
     return series, obs, dropped
 
@@ -978,8 +988,10 @@ def snapshot(calib: dict | None = None, settle_offset=None,
                           "time": obs_times[-1].isoformat(timespec="minutes")}
     # Prefer the sub-hourly (~5-min) feed for the live 'current' reading so it
     # refreshes every few minutes instead of only at the routine :53 METAR; fall
-    # back to the hourly series when the continuous feed isn't fetched.
-    cont = obs.get("obs_continuous")
+    # back to the hourly series when the continuous feed isn't fetched. The
+    # display-only copy is present on every basis (see gather_series), so the
+    # hourly-basis pages get the fresh reading without the CLI prediction plumbing.
+    cont = obs.get("obs_continuous") or obs.get("obs_continuous_display")
     if cont and cont[0]:
         cont_times, cont_temps = cont
         current = {"temp": round(cont_temps[-1], 1),

@@ -35,7 +35,11 @@ def fetch(limit: int = 500, continuous: bool = False, now: datetime | None = Non
     """
     now = now or datetime.now(TZ)
     start = datetime(now.year, now.month, now.day, tzinfo=TZ)  # local midnight
-    data = get_json(OBS_URL, {"limit": limit, "start": start.isoformat()}, ttl=300)
+    # Short cache so a newly-published reading surfaces within one page refresh.
+    # The dashboard re-blends every ~60s and NWS publishes a new 5-min reading only
+    # every 5 min, so 60s adds at most ~1 min of staleness on top of the feed's own
+    # ~20-min propagation lag (down from up to 5 min with the old 300s window).
+    data = get_json(OBS_URL, {"limit": limit, "start": start.isoformat()}, ttl=60)
     pairs = []
     for feature in data["features"]:
         props = feature["properties"]
