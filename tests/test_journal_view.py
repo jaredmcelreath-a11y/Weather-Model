@@ -72,3 +72,41 @@ def test_summary_hits_streak_and_pnl():
 def test_assemble_empty_inputs():
     out = journal_view.assemble(TODAY, {}, [])
     assert out["days"] == [] and out["summary"]["streak"] == 0
+
+
+def test_day_card_html_full_entry():
+    entry = {"date": "2026-07-17",
+             "high": {"settled": 94.0, "model": 94.0, "exact": True, "diff": 0.0,
+                      "market": 93.5, "market_closer": False},
+             "low": {"settled": 77.0, "model": 78.2, "exact": False, "diff": 1.2,
+                     "market": None, "market_closer": None},
+             "flags": ["front", "storm"],
+             "pnl": {"net": 42.0, "pct": 18.0, "n": 3, "wins": 2, "losses": 1}}
+    html = journal_view.day_card_html(entry)
+    assert "Friday, Jul 17" in html
+    assert "✓ Exact" in html
+    assert "+1.2°F" in html
+    assert "Model Closer" in html
+    assert "⛈" in html and "🌪" in html
+    assert "+$42.00" in html and "(+18%)" in html and "3 Settled Bets" in html
+
+
+def test_day_card_html_minimal_entry():
+    entry = {"date": "2026-07-16",
+             "low": {"settled": 75.0, "model": 75.4, "exact": True, "diff": 0.4,
+                     "market": None, "market_closer": None},
+             "flags": []}
+    html = journal_view.day_card_html(entry)
+    assert "High: —" in html
+    assert "P&amp;L" not in html and "P&L" not in html
+
+
+def test_render_smoke_empty_and_full():
+    journal_view.render(lambda: {"summary": {}, "days": []})
+    journal_view.render(lambda: {
+        "summary": {"high_hits7": [3, 7], "low_hits7": [5, 7],
+                    "pnl_total": 12.5, "streak": 2},
+        "days": [{"date": "2026-07-17",
+                  "high": {"settled": 94.0, "model": 94.0, "exact": True,
+                           "diff": 0.0, "market": None, "market_closer": None},
+                  "flags": []}]})

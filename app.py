@@ -18,6 +18,7 @@ import calibration
 import edge_view
 import forecast_log
 import hourly_view
+import journal_view
 import market_view
 import model
 from markets import KALSHI, ROBINHOOD
@@ -147,6 +148,23 @@ def load_calibration_history():
         return []
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_journal():
+    """Every settled day scored for the Journal page. Changes ~daily; 1h TTL
+    keeps same-day bet settlements reasonably fresh. Bet P&L is best-effort
+    (cloud-only)."""
+    from datetime import date
+    import settlements
+    bet_rows = None
+    try:
+        import bet_history
+        bet_rows = bet_history.fetch_rows(bet_history.BETS_START)
+    except Exception:
+        bet_rows = None
+    return journal_view.assemble(date.today(), settlements.as_map("cli"),
+                                 forecast_log.load(), bet_rows)
+
+
 @st.cache_data(ttl=60, show_spinner=False)
 def load_portfolio_value():
     """Total Kalshi portfolio worth = cash + open positions marked to market
@@ -228,6 +246,10 @@ def edge_page():
     edge_view.render()
 
 
+def journal_page():
+    journal_view.render(load_journal)
+
+
 def accuracy_page():
     accuracy_view.render(load_accuracy_kalshi, load_calibration_history)
 
@@ -241,4 +263,5 @@ st.navigation([
     st.Page(accuracy_page, title="Accuracy"),
     st.Page(edge_page, title="Edge"),
     st.Page(bet_view.render, title="History"),
+    st.Page(journal_page, title="Journal"),
 ]).run()
