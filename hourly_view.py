@@ -135,9 +135,6 @@ _RADAR_TEMPLATE = """<!doctype html>
   html,body{height:100%;margin:0;background:__BG__;
     font-family:'Bitter',Georgia,serif;}
   #map{position:absolute;inset:0;border-radius:10px;background:__BG__;}
-  /* warm the base map toward the charcoal palette without touching the radar
-     overlay (a separate layer that doesn't get this class) */
-  .wx-base{filter:brightness(0.9) saturate(0.85) sepia(0.22) hue-rotate(-8deg);}
   .bar{position:absolute;top:10px;left:10px;z-index:500;display:flex;
     align-items:center;gap:8px;background:__SURFACE__;
     border:1px solid __BORDER__;border-radius:8px;
@@ -163,11 +160,19 @@ _RADAR_TEMPLATE = """<!doctype html>
               .setView([__LAT__, __LON__], __ZOOM__);
   L.control.zoom({position:'topright'}).addTo(map);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    {attribution:'&copy; OpenStreetMap, &copy; CARTO', subdomains:'abcd',
-     maxZoom:19, className:'wx-base'})
+    {attribution:'&copy; OpenStreetMap, &copy; CARTO', subdomains:'abcd', maxZoom:19})
     .addTo(map);
-  L.circleMarker([__LAT__, __LON__], {radius:4, color:'__ACCENT__', weight:2,
-    fill:true, fillColor:'__ACCENT__', fillOpacity:0.9}).addTo(map);
+  // Warm the base map toward the charcoal theme with a translucent tint on its
+  // own pane — above the base tiles but below the radar (which sits on a higher
+  // pane and keeps its true precipitation colors). The marker rides on top.
+  map.createPane('tint');  map.getPane('tint').style.zIndex = 350;
+  map.getPane('tint').style.pointerEvents = 'none';
+  map.createPane('radar'); map.getPane('radar').style.zIndex = 400;
+  map.createPane('mark');  map.getPane('mark').style.zIndex = 500;
+  L.rectangle([[-89, -180], [89, 180]], {pane:'tint', stroke:false,
+    fillColor:'__BG__', fillOpacity:0.55, interactive:false}).addTo(map);
+  L.circleMarker([__LAT__, __LON__], {pane:'mark', radius:4, color:'__ACCENT__',
+    weight:2, fill:true, fillColor:'__ACCENT__', fillOpacity:0.9}).addTo(map);
 
   var host='', frames=[], layers={}, idx=0, playing=true, timer=null;
   var COLOR=4, OPTS='1_1';
@@ -181,7 +186,7 @@ _RADAR_TEMPLATE = """<!doctype html>
     var f=frames[i]; if(!f) return;
     if(!layers[f.path]){
       layers[f.path]=L.tileLayer(host+f.path+'/256/{z}/{x}/{y}/'+COLOR+'/'+OPTS+'.png',
-        {opacity:0, maxZoom:19, tileSize:256}).addTo(map);
+        {opacity:0, maxZoom:19, tileSize:256, pane:'radar'}).addTo(map);
     }
     for(var k in layers){ layers[k].setOpacity(0); }
     layers[f.path].setOpacity(0.7);
@@ -244,8 +249,8 @@ def _radar_html(lat: float = KDFW_LAT, lon: float = KDFW_LON, zoom: int = 7,
 def render(load_hourly):
     """Draw the Hourly page. `load_hourly` is the cached () -> (rows, pws) callable
     where `rows` is wunderground.hourly() and `pws` is wunderground.pws_current()."""
+    market_view._theme_controls()  # sidebar Settings (theme picker) + injects theme
     theme = market_view._seed_theme()
-    market_view._inject_theme(theme)
     st_autorefresh(interval=60_000, key="refresh_hourly")
     st.title("Hourly")
     st.caption("Tracking Wunderground's KDFW hourly forecast (The Weather Company).")

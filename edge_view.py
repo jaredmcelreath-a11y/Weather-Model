@@ -103,7 +103,7 @@ def _edge_rows(metrics: dict) -> list[dict]:
 def render():
     import pandas as pd
 
-    market_view._inject_theme(market_view._seed_theme())
+    market_view._theme_controls()  # sidebar Settings (theme picker) + injects theme
     st.title("Edge")
 
     # --- Part A: forecast edge vs. market (needs no credentials) ---

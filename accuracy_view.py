@@ -41,7 +41,7 @@ def render(load_accuracy, history_loader=None):
     reliability / calibration-drift body (market_view._render_accuracy).
     `load_accuracy` is the cached () -> (bt, live) callable; `history_loader`
     the cached () -> calibration-history rows."""
-    market_view._inject_theme(market_view._seed_theme())
+    market_view._theme_controls()  # sidebar Settings (theme picker) + injects theme
     st.title("Accuracy")
 
     try:

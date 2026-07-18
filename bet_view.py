@@ -114,7 +114,7 @@ def _pct_gain_cell(r):
 
 
 def render():
-    market_view._inject_theme(market_view._seed_theme())
+    market_view._theme_controls()  # sidebar Settings (theme picker) + injects theme
     st.title("History")
 
     try:
