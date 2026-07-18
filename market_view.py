@@ -513,10 +513,15 @@ def _chart_colors():
     """Chart hues for the active palette. Deep slate keeps the bright default
     red/blue/green; Charcoal softens them to terracotta (high), blue-grey (low),
     and puts the Kalshi line on the table-header accent."""
+    # `shadow` (the candidate model set) is an off-white on both the high and low
+    # charts and in both palettes — a neutral cream that reads on the dark themes
+    # without competing with the red/blue production line or the green Kalshi line.
     if st.session_state.get("wx_theme") == "Charcoal":
         return {"high": "#C97B5E", "low": "#8794A6",
-                "kalshi": THEMES["Charcoal"]["accent_strong"], "temp": "#B7A99A"}
-    return {"high": "#ff6b6b", "low": "#4dabf7", "kalshi": "#51cf66", "temp": "#adb5bd"}
+                "kalshi": THEMES["Charcoal"]["accent_strong"], "temp": "#B7A99A",
+                "shadow": "#EDE6D3"}
+    return {"high": "#ff6b6b", "low": "#4dabf7", "kalshi": "#51cf66",
+            "temp": "#adb5bd", "shadow": "#EDE6D3"}
 
 
 def _resolve_theme(session_theme, query_theme):
@@ -714,6 +719,10 @@ def consensus_history_df(rows, day_iso, variable, basis, include_temp,
         # so the chart can carry Kalshi's own forecast line next to the model's.
         if r.get("market_ev") is not None:
             row["kalshi (market)"] = r["market_ev"]
+        # The shadow/candidate consensus (expanded model set) at this sample, so
+        # it can be compared against production consensus and Kalshi through the day.
+        if r.get("candidate_consensus") is not None:
+            row["shadow"] = r["candidate_consensus"]
         data.append(row)
     if len(data) < 2:
         return None
@@ -744,9 +753,11 @@ def consensus_chart(hist, variable, day_iso=None, is_today=False, view_window=No
     line_color = colors.get("high" if variable == "high" else "low") or (
         "#ff6b6b" if variable == "high" else "#4dabf7")
     others = [c for c in value_cols if c != "consensus"]
-    # Distinct hue for the Kalshi market line; the live-temp overlay stays muted gray.
+    # Distinct hue for the Kalshi market line; the live-temp overlay stays muted gray;
+    # the shadow (candidate model set) is an off-white on both variables' charts.
     series_color = {"kalshi (market)": colors.get("kalshi", "#51cf66"),
-                    "current temp": colors.get("temp", "#adb5bd")}
+                    "current temp": colors.get("temp", "#adb5bd"),
+                    "shadow": colors.get("shadow", "#EDE6D3")}
     color_scale = alt.Scale(domain=["consensus"] + others,
                             range=[line_color] + [series_color.get(c, "#adb5bd")
                                                   for c in others])

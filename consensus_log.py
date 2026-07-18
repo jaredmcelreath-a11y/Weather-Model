@@ -146,6 +146,13 @@ def record(snapshot: dict, path: str | None = None, basis: str = "hourly") -> No
             mev = (snapshot.get("market", {}).get(which, {}).get(variable) or {}).get("ev")
             if mev is not None:
                 rec["market_ev"] = mev
+            # The shadow/candidate consensus at this capture, so the chart can
+            # trace the expanded model set through the day next to production and
+            # Kalshi. Present only when the snapshot carries a candidate block.
+            cand = (snapshot.get("candidate", {}).get(which, {}).get(variable)
+                    or {}).get("consensus")
+            if cand is not None:
+                rec["candidate_consensus"] = cand
             rows.append(rec)
             appended = True
 
