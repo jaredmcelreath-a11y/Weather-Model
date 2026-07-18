@@ -99,6 +99,25 @@ def test_day_tables_highlow_none_when_all_temps_missing():
     assert t["high"] is None and t["low"] is None
 
 
+def test_radar_html_contains_source_map_and_controls():
+    import hourly_view
+    html = hourly_view._radar_html()
+    # RainViewer client-side source + dark base map + Leaflet + a play/pause hook.
+    assert "api.rainviewer.com/public/weather-maps.json" in html
+    assert "leaflet" in html.lower()
+    assert "basemaps.cartocdn.com/dark" in html
+    assert "playpause" in html.lower() or "play/pause" in html.lower()
+    # KDFW default center.
+    assert "32.9" in html and "-97.04" in html
+
+
+def test_radar_html_honors_custom_center_and_zoom():
+    import hourly_view
+    html = hourly_view._radar_html(lat=40.0, lon=-105.0, zoom=9)
+    assert "40.0" in html and "-105.0" in html
+    assert "9" in html
+
+
 def test_render_exposed_and_callable():
     import hourly_view
     assert callable(hourly_view.render)
