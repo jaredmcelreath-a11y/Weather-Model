@@ -64,9 +64,9 @@ det_jma_seamless         high=4.11  low=1.87     *NEW  <-- outlier, poisons the 
   call and lets the **forward log** (Task 7) accumulate a head-to-head at true
   day-ahead lead, where the live skill-weighting applies and the near-analysis
   flattering does not. That is the fair judge this backtest cannot be.
-- **JMA recommendation:** drop `jma_seamless` from `CANDIDATE_DETERMINISTIC_MODELS`
-  even for the shadow — a 4.11°F model tells the forward-log comparison nothing
-  useful. (Pending user call; the shadow is harmless either way.)
+- **JMA:** dropped from `CANDIDATE_DETERMINISTIC_MODELS` (2026-07-18) — a 4.11°F
+  model tells the forward-log comparison nothing useful. Shadow candidate set is
+  now AIFS + UKMO + ARPEGE (deterministic) plus the UKMO ensemble.
 
 This is the measure-first design working as intended: the caution surfaced
 before anything touched the live number.

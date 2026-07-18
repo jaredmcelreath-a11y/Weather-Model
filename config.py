@@ -87,11 +87,12 @@ ENSEMBLE_MODELS = [
 # reads these. Promotion = move a model from here into the production list above.
 # Contents fixed by the 2026-07-18 probe (docs/benchmarks/2026-07-18-model-
 # diversity/probe_results.md): GraphCast + BOM ensemble returned all-null
-# temperature at KDFW and were dropped.
+# temperature at KDFW and were dropped. jma_seamless was then dropped too — the
+# do-no-harm assessment measured it at 4.11°F high MAE at KDFW (unusable), so it
+# adds no signal to the shadow comparison.
 CANDIDATE_DETERMINISTIC_MODELS = DETERMINISTIC_MODELS + [
     "ecmwf_aifs025_single",  # ECMWF AIFS (AI)
     "ukmo_seamless",         # UK Met Office
-    "jma_seamless",          # JMA
     "meteofrance_seamless",  # Meteo-France ARPEGE/AROME
 ]
 CANDIDATE_ENSEMBLE_MODELS = ENSEMBLE_MODELS + [
