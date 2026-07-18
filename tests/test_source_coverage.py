@@ -48,6 +48,30 @@ def test_evening_only_series_misses_both():
     assert covers_extreme(times, temps, DAY, "high") is False
 
 
+def test_morning_start_series_misses_the_low():
+    # A same-day now-forward fetch from 7am on (LAMP/NWS refreshed mid-morning):
+    # the dawn low already passed, so its forward hours at clock 7-9 must not
+    # count as low coverage — otherwise it reports the evening tail as the "low"
+    # (live 2026-07-18: mos_lav logged 83-84 against a settled-77 night).
+    times, temps = _series(DAY, range(7, 24))
+    assert covers_extreme(times, temps, DAY, "low") is False
+    assert covers_extreme(times, temps, DAY, "high") is True
+
+
+def test_pre_dawn_start_series_covers_the_low():
+    # A fetch from 5am still has the dawn minimum ahead of it.
+    times, temps = _series(DAY, range(5, 24))
+    assert covers_extreme(times, temps, DAY, "low") is True
+
+
+def test_summer_tail_alone_is_not_low_coverage():
+    # Under the LST window the day's final hour is clock 00:xx of the next
+    # day. A series holding only the evening plus that tail (hour 24 below)
+    # never saw dawn, so it cannot claim the day's low.
+    times, temps = _series(DAY, range(20, 25))
+    assert covers_extreme(times, temps, DAY, "low") is False
+
+
 def test_per_source_extremes_nulls_uncovered_low():
     series = {"nws_ndfd": _series(DAY, range(12, 24))}
     out = model.per_source_extremes(series, DAY)

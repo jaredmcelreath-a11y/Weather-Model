@@ -82,29 +82,49 @@ def day_high_low(times: list[datetime], temps: list[float],
 # spurious extreme (e.g. an afternoon minimum as the "low").
 _LOW_WINDOW = (0, 9)    # overnight / sunrise
 _HIGH_WINDOW = (12, 18)  # mid-afternoon peak
+# The low counts as covered only if the series was already watching within the
+# first N hours of the climate day. A now-forward feed refreshed mid-morning
+# has samples at clock 7-9 (and tonight's post-midnight tail) that land inside
+# _LOW_WINDOW even though the dawn minimum was never in its series — it would
+# report the evening tail as the "low" (mos_lav logged 83-84 on a settled-77
+# night, 2026-07-18). Dawn at KDFW is ~5.5-7.5h into the window year-round, so
+# a series starting later than this has missed (or is missing) the minimum.
+_LOW_COVER_HOURS = 6
 
 
 def covers_extreme(times: list[datetime], temps: list[float], day: date,
                    variable: str) -> bool:
     """Whether `times` covers the window in which `day`'s high/low occurs.
 
-    True only if at least one non-null sample falls inside the variable's
-    occurrence window for `day`. Lets a now-forward source abstain from an
-    extreme it never observed instead of reporting the wrong tail value.
+    High: true if at least one non-null sample falls inside the mid-afternoon
+    occurrence window. Low: true only if the series' earliest in-window sample
+    lies within the first _LOW_COVER_HOURS of the climate day, i.e. the source
+    was watching before the dawn minimum — samples in the low's clock-hour
+    window alone don't suffice, because a now-forward feed sees hours 7-9 and
+    the post-midnight tail without ever having seen dawn. Lets such a source
+    abstain instead of reporting the wrong tail value.
 
-    Under the LST settlement window, `day`'s final hour is clock 00:00-00:59
-    of the next clock day (the post-midnight tail in summer). A reading there
-    has clock hour 0, which falls inside `_LOW_WINDOW` (0, 9) -- it correctly
-    counts as low-window coverage (it's an overnight reading), so no source
-    wrongly abstains on it.
+    Full-day series still pass on both variables, including evening-front
+    nights whose true low is the post-midnight tail: coverage requires having
+    watched since early morning, while the min itself is still taken over the
+    whole window (tail included) by the callers.
     """
-    lo_h, hi_h = _HIGH_WINDOW if variable == "high" else _LOW_WINDOW
     start, end = local_day_bounds(day)
+    if variable == "high":
+        lo_h, hi_h = _HIGH_WINDOW
+        for t, v in zip(times, temps):
+            if v is None:
+                continue
+            t = t.astimezone(TZ)
+            if start <= t < end and lo_h <= t.hour <= hi_h:
+                return True
+        return False
+    dawn_cutoff = start + timedelta(hours=_LOW_COVER_HOURS)
     for t, v in zip(times, temps):
         if v is None:
             continue
         t = t.astimezone(TZ)
-        if start <= t < end and lo_h <= t.hour <= hi_h:
+        if start <= t < dawn_cutoff:
             return True
     return False
 
