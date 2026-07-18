@@ -58,10 +58,14 @@ def head_to_head(rows: list[dict], settled: dict) -> dict:
     return out
 
 
-# Same-day mos_lav lows logged before this date carry the wrong-tail
-# covers_extreme bug (fixed 2026-07-18, commit 14a2a3a) — a now-forward LAMP
-# feed reported the evening tail (~84) as the "low" on settled-77 nights.
-_MOS_LAV_LOW_FIX = "2026-07-19"
+# Same-day lows logged by now-forward feeds before this date carry the
+# wrong-tail covers_extreme bug (fixed 2026-07-18, commit 14a2a3a) — a feed
+# refreshed mid-morning reported the evening tail (~84) as the "low" on
+# settled-77 nights. Verified in the live log: nws/guidance/mos_lav same-day
+# lows all show the +2 to +3.5 evening-tail bias signature pre-fix, while the
+# full-day feeds (deterministic/ensemble) are clean.
+_NOW_FORWARD = ("mos_lav", "mos_nbs", "nws", "guidance")
+_SAME_DAY_LOW_FIX = "2026-07-19"
 
 
 def per_model_scores(rows: list[dict], settled: dict) -> dict:
@@ -91,8 +95,8 @@ def per_model_scores(rows: list[dict], settled: dict) -> dict:
         for name, val in src.items():
             if val is None:
                 continue
-            if (name == "mos_lav" and r.get("variable") == "low" and lead == 0
-                    and r["target_date"] < _MOS_LAV_LOW_FIX):
+            if (name in _NOW_FORWARD and r.get("variable") == "low"
+                    and lead == 0 and r["target_date"] < _SAME_DAY_LOW_FIX):
                 continue
             g = out.setdefault((name, r["variable"], lead),
                                {"n": 0, "_a": 0.0, "_s": 0.0})

@@ -55,13 +55,19 @@ def test_per_model_scores_mae_and_bias():
     assert out[("mos_nbs", "high", 24)] == {"n": 2, "mae": 0.5, "bias": 0.5}
 
 
-def test_per_model_scores_excludes_prefix_mos_lav_same_day_low():
-    # Same-day mos_lav lows logged before the 2026-07-19 covers_extreme fix
-    # were the wrong-tail bug (14a2a3a) - they must not poison the scoreboard.
-    rows = [_row("2026-07-17", "low", 0, 77.0, sources={"mos_lav": 84.0}),
+def test_per_model_scores_excludes_prefix_now_forward_same_day_lows():
+    # Same-day lows logged by now-forward feeds (mos_lav/mos_nbs/nws/guidance)
+    # before the 2026-07-19 covers_extreme fix were the wrong-tail bug
+    # (14a2a3a) - they must not poison the scoreboard. Full-day feeds
+    # (deterministic/ensemble) and day-ahead rows are unaffected.
+    rows = [_row("2026-07-17", "low", 0, 77.0,
+                 sources={"mos_lav": 84.0, "nws": 80.5, "guidance": 79.0,
+                          "deterministic": 77.2}),
             _row("2026-07-17", "low", 24, 77.0, sources={"mos_lav": 78.0})]
     out = lab_view.per_model_scores(rows, SETTLED)
-    assert ("mos_lav", "low", 0) not in out
+    for src in ("mos_lav", "nws", "guidance"):
+        assert (src, "low", 0) not in out
+    assert out[("deterministic", "low", 0)]["n"] == 1
     assert out[("mos_lav", "low", 24)]["n"] == 1
 
 
