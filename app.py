@@ -17,6 +17,7 @@ import bet_view
 import calibration
 import edge_view
 import forecast_log
+import hourly_view
 import market_view
 import model
 from markets import KALSHI, ROBINHOOD
@@ -219,6 +220,19 @@ def kalshi_page():
     _page(KALSHI, load_snapshot_kalshi, load_accuracy_kalshi, "cli")
 
 
+@st.cache_data(ttl=60, show_spinner="Fetching Wunderground hourly forecast…")
+def load_hourly():
+    """Wunderground/TWC hourly forecast + Euless PWS current temp for the Hourly
+    page. 60s TTL matches the page autorefresh; the source layer's own TTLs
+    (300s hourly, 60s PWS) keep this from refetching every cycle."""
+    from sources import wunderground
+    return wunderground.hourly(), wunderground.pws_current()
+
+
+def hourly_page():
+    hourly_view.render(load_hourly)
+
+
 def edge_page():
     edge_view.render()
 
@@ -232,6 +246,7 @@ def accuracy_page():
 # unreferenced, so re-listing it here is a one-line revert if ever needed.
 st.navigation([
     st.Page(kalshi_page, title="Forecast", default=True),
+    st.Page(hourly_page, title="Hourly"),
     st.Page(accuracy_page, title="Accuracy"),
     st.Page(edge_page, title="Edge"),
     st.Page(bet_view.render, title="History"),
