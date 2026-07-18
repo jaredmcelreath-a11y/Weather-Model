@@ -56,3 +56,50 @@ def head_to_head(rows: list[dict], settled: dict) -> dict:
         g["cand_mae"] = round(g.pop("_ca") / g["n"], 2)
         g["days"].sort(key=lambda d: d["date"])
     return out
+
+
+# Same-day mos_lav lows logged before this date carry the wrong-tail
+# covers_extreme bug (fixed 2026-07-18, commit 14a2a3a) — a now-forward LAMP
+# feed reported the evening tail (~84) as the "low" on settled-77 nights.
+_MOS_LAV_LOW_FIX = "2026-07-19"
+
+
+def per_model_scores(rows: list[dict], settled: dict) -> dict:
+    """{(source, variable, lead_bucket): {n, mae, bias}} from the per-source
+    means the forecast log records (ensemble / deterministic / nws / mos_*).
+    bias = mean(model − settled): positive means the source ran hot. Rolling
+    rows only, matched lead by construction (the sources were captured at the
+    same moment as the row's consensus)."""
+    out: dict = {}
+    for r in rows:
+        src = r.get("sources")
+        if not src or r.get("capture_cohort"):
+            continue
+        if r.get("basis", "hourly") != "cli":
+            continue
+        try:
+            day = date.fromisoformat(r["target_date"])
+        except (KeyError, ValueError):
+            continue
+        hl = settled.get(day)
+        if not hl:
+            continue
+        actual = hl[0] if r.get("variable") == "high" else hl[1]
+        if actual is None:
+            continue
+        lead = r.get("lead_bucket") or 0
+        for name, val in src.items():
+            if val is None:
+                continue
+            if (name == "mos_lav" and r.get("variable") == "low" and lead == 0
+                    and r["target_date"] < _MOS_LAV_LOW_FIX):
+                continue
+            g = out.setdefault((name, r["variable"], lead),
+                               {"n": 0, "_a": 0.0, "_s": 0.0})
+            g["n"] += 1
+            g["_a"] += abs(val - actual)
+            g["_s"] += val - actual
+    for g in out.values():
+        g["mae"] = round(g.pop("_a") / g["n"], 2)
+        g["bias"] = round(g.pop("_s") / g["n"], 2)
+    return out

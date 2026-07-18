@@ -43,3 +43,29 @@ def test_head_to_head_skips_cohort_unsettled_and_candidateless():
             _row("2026-07-18", "high", 24, 95.0, cand=94.0),   # unsettled
             _row("2026-07-17", "high", 24, 94.0)]              # no candidate
     assert lab_view.head_to_head(rows, SETTLED) == {}
+
+
+def test_per_model_scores_mae_and_bias():
+    rows = [_row("2026-07-16", "high", 24, 92.0,
+                 sources={"nws": 92.0, "mos_nbs": 94.0}),
+            _row("2026-07-17", "high", 24, 94.0,
+                 sources={"nws": 95.0, "mos_nbs": 94.0})]
+    out = lab_view.per_model_scores(rows, SETTLED)
+    assert out[("nws", "high", 24)] == {"n": 2, "mae": 1.0, "bias": 0.0}
+    assert out[("mos_nbs", "high", 24)] == {"n": 2, "mae": 0.5, "bias": 0.5}
+
+
+def test_per_model_scores_excludes_prefix_mos_lav_same_day_low():
+    # Same-day mos_lav lows logged before the 2026-07-19 covers_extreme fix
+    # were the wrong-tail bug (14a2a3a) - they must not poison the scoreboard.
+    rows = [_row("2026-07-17", "low", 0, 77.0, sources={"mos_lav": 84.0}),
+            _row("2026-07-17", "low", 24, 77.0, sources={"mos_lav": 78.0})]
+    out = lab_view.per_model_scores(rows, SETTLED)
+    assert ("mos_lav", "low", 0) not in out
+    assert out[("mos_lav", "low", 24)]["n"] == 1
+
+
+def test_per_model_scores_skips_cohort_rows():
+    rows = [_row("2026-07-17", "high", 0, 94.0, sources={"nws": 94.0},
+                 capture_cohort="0900")]
+    assert lab_view.per_model_scores(rows, SETTLED) == {}
