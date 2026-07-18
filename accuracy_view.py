@@ -49,7 +49,8 @@ def render(load_accuracy, history_loader=None):
         live = None
     if live and live.get("n_settled"):
         tiles = headline_tiles(live)
-        cols = st.columns(len(tiles))
+        with st.container(key="metrics2_accuracy"):
+            cols = st.columns(len(tiles))
         for col, t in zip(cols, tiles):
             col.markdown(market_view.metric_card(t["label"], t["value"]),
                          unsafe_allow_html=True)

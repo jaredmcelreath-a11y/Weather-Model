@@ -98,10 +98,12 @@ def _inject_theme(name):
         # one-per-row (desktop keeps the 6-across row — this only fires ≤640px).
         "@media (max-width:640px){"
         ".st-key-top_metrics [data-testid=\"stHorizontalBlock\"],"
-        "[class*=\"st-key-period_metrics_\"] [data-testid=\"stHorizontalBlock\"]"
+        "[class*=\"st-key-period_metrics_\"] [data-testid=\"stHorizontalBlock\"],"
+        "[class*=\"st-key-metrics2_\"] [data-testid=\"stHorizontalBlock\"]"
         "{flex-wrap:wrap!important;gap:0.8rem!important;}"
         ".st-key-top_metrics [data-testid=\"stColumn\"],"
-        "[class*=\"st-key-period_metrics_\"] [data-testid=\"stColumn\"]"
+        "[class*=\"st-key-period_metrics_\"] [data-testid=\"stColumn\"],"
+        "[class*=\"st-key-metrics2_\"] [data-testid=\"stColumn\"]"
         "{flex:1 1 47%!important;min-width:47%!important;width:47%!important;}"
         # the last period card (Avg Portfolio %) sits alone on the bottom row — stretch
         # it full-width and enlarge its value so it reads as the headline stat on phones
@@ -127,7 +129,8 @@ def _inject_theme(name):
         # runs off the left/right screen edge. Pin it to a fixed full-width bottom sheet
         # (8px insets) so it always stays fully on-screen, whichever box you tap.
         ".st-key-top_metrics .wxqt,[class*=\"st-key-mini_\"] .wxqt,"
-        "[class*=\"st-key-period_metrics_\"] .wxqt,[class*=\"st-key-kelly_box_\"] .wxqt"
+        "[class*=\"st-key-period_metrics_\"] .wxqt,[class*=\"st-key-kelly_box_\"] .wxqt,"
+        "[class*=\"st-key-metrics2_\"] .wxqt"
         "{position:fixed!important;left:8px!important;right:8px!important;bottom:auto!important;"
         "top:7rem!important;width:auto!important;max-width:none!important;}"
         # the History page has no High/Low bar to clear, so its tooltip sits nearer the top
@@ -1623,11 +1626,11 @@ def _render_calibration_drift(history):
         # magnitude; the range column anchors it (a jagged line spanning a tiny
         # range is just noise, not real drift).
         rng = fmt.format(lo) if lo == hi else f"{fmt.format(lo)} … {fmt.format(hi)}"
-        rows.append({"parameter": label, "trend": sparkline(series),
-                     "current": fmt.format(present[-1]) + (f" {unit}" if unit else ""),
-                     "range": rng})
+        rows.append({"Parameter": label, "Trend": sparkline(series),
+                     "Current": fmt.format(present[-1]) + (f" {unit}" if unit else ""),
+                     "Range": rng})
     if rows:
-        _html_df(pd.DataFrame(rows).set_index("parameter"))
+        _html_df(pd.DataFrame(rows).set_index("Parameter"))
         st.caption("The trend sparkline is scaled to each parameter's own min–max, "
                    "so it shows *shape* not magnitude — read it with the range "
                    "column (a jagged line over a tiny range is just noise)."
@@ -1656,13 +1659,13 @@ def _render_accuracy(load_accuracy, calib=None, history_loader=None):
         mrows = []
         for var, m in bt.items():
             mrows.append({
-                "variable": var, "days": m["n_days"],
-                "exact bin": f"{m['exact_peak']:.0f}%", "within ±1°F": f"{m['within1']:.0f}%",
+                "Variable": var, "Days": m["n_days"],
+                "Exact Bin": f"{m['exact_peak']:.0f}%", "Within ±1°F": f"{m['within1']:.0f}%",
                 "Brier": m["brier"], "CRPS": m["crps"],
-                "MAE °F": m["mae"], "MAE base": m["mae_baseline"],
-                "50% cov": f"{m['coverage_50']:.0f}%", "80% cov": f"{m['coverage_80']:.0f}%",
+                "MAE °F": m["mae"], "MAE Base": m["mae_baseline"],
+                "50% Cov": f"{m['coverage_50']:.0f}%", "80% Cov": f"{m['coverage_80']:.0f}%",
             })
-        _html_df(pd.DataFrame(mrows).set_index("variable"))
+        _html_df(pd.DataFrame(mrows).set_index("Variable"))
         st.caption("**exact bin** = how often the model's top (peak) bin is the exact "
                    "settled degree; **within ±1°F** forgives a one-degree miss. These come "
                    "from the deterministic backtest with a flat spread and no same-day "
@@ -1705,12 +1708,12 @@ def _render_accuracy(load_accuracy, calib=None, history_loader=None):
         def _pct(v):
             return f"{v:.0f}%" if v is not None else "—"
 
-        lrows = [{"variable": var, "days": m["n"],
-                  "exact bin": _pct(m.get("exact_peak")),
-                  "within ±1°F": _pct(m.get("within1")), "Brier": m["brier"]}
+        lrows = [{"Variable": var, "Days": m["n"],
+                  "Exact Bin": _pct(m.get("exact_peak")),
+                  "Within ±1°F": _pct(m.get("within1")), "Brier": m["brier"]}
                  for var, m in live.get("by_variable", {}).items()]
         if lrows:
-            _html_df(pd.DataFrame(lrows).set_index("variable"))
+            _html_df(pd.DataFrame(lrows).set_index("Variable"))
 
         rc = st.columns(2)
         for i, var in enumerate(("high", "low")):
@@ -1727,23 +1730,23 @@ def _render_accuracy(load_accuracy, calib=None, history_loader=None):
         leadrows = []
         for var, m in (live.get("same_day_0900") or {}).items():
             leadrows.append({
-                "lead": "same-day", "variable": var, "days": m["n"],
-                "exact bin": _pct(m.get("exact_peak")),
-                "within ±1°F": _pct(m.get("within1")),
+                "Lead": "same-day", "Variable": var, "Days": m["n"],
+                "Exact Bin": _pct(m.get("exact_peak")),
+                "Within ±1°F": _pct(m.get("within1")),
             })
         for bucket, vars_ in sorted(live.get("by_lead", {}).items(), key=lambda kv: int(kv[0])):
             if int(bucket) == 0:
                 continue                       # rolling same-day suppressed (see above)
             for var, m in vars_.items():
                 leadrows.append({
-                    "lead": lead_names.get(int(bucket), f"{bucket}h"), "variable": var,
-                    "days": m["n"], "exact bin": _pct(m.get("exact_peak")),
-                    "within ±1°F": _pct(m.get("within1")),
+                    "Lead": lead_names.get(int(bucket), f"{bucket}h"), "Variable": var,
+                    "Days": m["n"], "Exact Bin": _pct(m.get("exact_peak")),
+                    "Within ±1°F": _pct(m.get("within1")),
                 })
         if leadrows:
             st.caption("Exact-bin accuracy by lead time — same-day is the fixed 9am "
                        "decision-time capture (not the end-of-day snapshot).")
-            _html_df(pd.DataFrame(leadrows).set_index(["lead", "variable"]))
+            _html_df(pd.DataFrame(leadrows).set_index(["Lead", "Variable"]))
 
         mkt = live.get("market")
         if mkt and mkt.get("n"):
@@ -1751,12 +1754,12 @@ def _render_accuracy(load_accuracy, calib=None, history_loader=None):
                         "Kalshi price was logged. Point-forecast error (°F) of the "
                         "market's implied temperature vs the model's consensus, against "
                         "CLI settlement. Lower is better.")
-            mrows = [{"variable": var, "days": m["n"],
-                      "model MAE": m["model_mae"], "market MAE": m["market_mae"],
-                      "market closer": f"{m['market_closer_pct']:.0f}%"}
+            mrows = [{"Variable": var, "Days": m["n"],
+                      "Model MAE": m["model_mae"], "Market MAE": m["market_mae"],
+                      "Market Closer": f"{m['market_closer_pct']:.0f}%"}
                      for var, m in mkt.get("by_variable", {}).items()]
             if mrows:
-                _html_df(pd.DataFrame(mrows).set_index("variable"))
+                _html_df(pd.DataFrame(mrows).set_index("Variable"))
             st.caption("If *market MAE* beats *model MAE* (and 'market closer' > 50%), the "
                        "market is the sharper forecast and deserves weight; if not, the "
                        "model's independence is the edge. Builds as days settle.")

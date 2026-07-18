@@ -119,11 +119,11 @@ def test_edge_rows_shows_volume_and_thin_marker():
             "market_volume": None, "thin": False},
     }
     rows = edge_view._edge_rows(metrics)
-    by_type = {r["day type"]: r for r in rows}
+    by_type = {r["Day Type"]: r for r in rows}
     assert "⚠ all" in by_type                     # thin subset flagged
-    assert by_type["⚠ all"]["volume"] == "7.5"
+    assert by_type["⚠ all"]["Volume"] == "7.5"
     assert "mid-bin" in by_type                    # not thin, no marker
-    assert by_type["mid-bin"]["volume"] == "—"     # unknown volume
+    assert by_type["mid-bin"]["Volume"] == "—"     # unknown volume
 
 
 def test_render_imports_kalshi_auth_from_sources_package():

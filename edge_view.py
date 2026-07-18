@@ -89,13 +89,13 @@ def _edge_rows(metrics: dict) -> list[dict]:
             metrics.items(), key=lambda kv: (kv[0][0], kv[0][1], order.get(kv[0][2], 9))):
         vol = m.get("market_volume")
         rows.append({
-            "slot": slot, "variable": variable,
-            "day type": ("⚠ " if m.get("thin") else "") + subset.replace("_", "-"),
-            "n": m["n"],
-            "model MAE": m["model_mae"], "market MAE": m["market_mae"],
-            "volume": "—" if vol is None else f"{vol:g}",
-            "disagree": m["disagreements"],
-            "model won": m["model_bin_wins"], "market won": m["market_bin_wins"],
+            "Slot": slot, "Variable": variable,
+            "Day Type": ("⚠ " if m.get("thin") else "") + subset.replace("_", "-"),
+            "Number": m["n"],
+            "Model MAE": m["model_mae"], "Market MAE": m["market_mae"],
+            "Volume": "—" if vol is None else f"{vol:g}",
+            "Disagree": m["disagreements"],
+            "Model Won": m["model_bin_wins"], "Market Won": m["market_bin_wins"],
         })
     return rows
 
@@ -123,7 +123,8 @@ def render():
         st.info("Accumulating — no settled betting-time rows yet. This fills in as "
                 "days settle (one day's lead after each slot).")
     else:
-        c = st.columns(4)
+        with st.container(key="metrics2_edge_a"):
+            c = st.columns(4)
         c[0].markdown(market_view.metric_card("Settled slots", str(head["n"])),
                       unsafe_allow_html=True)
         c[1].markdown(market_view.metric_card(
@@ -167,7 +168,8 @@ def render():
 
     attr = pnl_attribution(bet_rows)
     wm, am = attr["with_market"], attr["against_market"]
-    c = st.columns(2)
+    with st.container(key="metrics2_edge_b"):
+        c = st.columns(2)
     c[0].markdown(market_view.metric_card(
         "Against-market P&L", f"${am['net_pnl']:+.2f}",
         f"{am['wins']}–{am['losses']} on underdog bets — your true edge."),
@@ -177,8 +179,8 @@ def render():
         f"{wm['wins']}–{wm['losses']} riding the favorite."),
         unsafe_allow_html=True)
     market_view._html_table(pd.DataFrame([
-        {"bet type": "against-market (underdog)", "n": am["n"],
-         "wins": am["wins"], "losses": am["losses"], "net P&L": f"${am['net_pnl']:+.2f}"},
-        {"bet type": "with-market (favorite)", "n": wm["n"],
-         "wins": wm["wins"], "losses": wm["losses"], "net P&L": f"${wm['net_pnl']:+.2f}"},
+        {"Bet Type": "against-market (underdog)", "Number": am["n"],
+         "Wins": am["wins"], "Losses": am["losses"], "Net P&L": f"${am['net_pnl']:+.2f}"},
+        {"Bet Type": "with-market (favorite)", "Number": wm["n"],
+         "Wins": wm["wins"], "Losses": wm["losses"], "Net P&L": f"${wm['net_pnl']:+.2f}"},
     ]))
