@@ -19,6 +19,7 @@ import edge_view
 import forecast_log
 import hourly_view
 import journal_view
+import lab_view
 import market_view
 import model
 from markets import KALSHI, ROBINHOOD
@@ -165,6 +166,16 @@ def load_journal():
                                  forecast_log.load(), bet_rows)
 
 
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def load_lab():
+    """Scored forward-log experiments for the Lab page. Changes ~daily."""
+    import settlements
+    rows = forecast_log.load()
+    settled = settlements.as_map("cli")
+    return (lab_view.head_to_head(rows, settled),
+            lab_view.per_model_scores(rows, settled))
+
+
 @st.cache_data(ttl=60, show_spinner=False)
 def load_portfolio_value():
     """Total Kalshi portfolio worth = cash + open positions marked to market
@@ -250,6 +261,10 @@ def journal_page():
     journal_view.render(load_journal)
 
 
+def lab_page():
+    lab_view.render(load_lab)
+
+
 def accuracy_page():
     accuracy_view.render(load_accuracy_kalshi, load_calibration_history)
 
@@ -263,5 +278,6 @@ st.navigation([
     st.Page(accuracy_page, title="Accuracy"),
     st.Page(edge_page, title="Edge"),
     st.Page(bet_view.render, title="History"),
+    st.Page(lab_page, title="Lab"),
     st.Page(journal_page, title="Journal"),
 ]).run()

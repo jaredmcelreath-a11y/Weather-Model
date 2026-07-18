@@ -69,3 +69,27 @@ def test_per_model_scores_skips_cohort_rows():
     rows = [_row("2026-07-17", "high", 0, 94.0, sources={"nws": 94.0},
                  capture_cohort="0900")]
     assert lab_view.per_model_scores(rows, SETTLED) == {}
+
+
+def test_chart_frame_long_form():
+    h2h = {("high", 24): {"n": 1, "prod_mae": 1.0, "cand_mae": 0.5,
+                          "prod_wins": 0, "cand_wins": 1, "ties": 0,
+                          "days": [{"date": "2026-07-16", "prod_err": 1.0,
+                                    "cand_err": 0.5}]}}
+    recs = lab_view.chart_frame(h2h)
+    assert {r["series"] for r in recs} == {"Production", "Candidate"}
+    assert all(r["variable"] == "high" and r["lead"] == 24 for r in recs)
+    assert recs[0]["date"] == "2026-07-16"
+
+
+def test_render_smoke_empty_and_full():
+    lab_view.render(lambda: ({}, {}))
+    h2h = {("high", 24): {"n": 2, "prod_mae": 0.5, "cand_mae": 1.25,
+                          "prod_wins": 1, "cand_wins": 1, "ties": 0,
+                          "days": [{"date": "2026-07-16", "prod_err": 1.0,
+                                    "cand_err": 0.5},
+                                   {"date": "2026-07-17", "prod_err": 0.0,
+                                    "cand_err": 2.0}]}}
+    models = {("nws", "high", 24): {"n": 2, "mae": 1.0, "bias": 0.0},
+              ("mos_nbs", "low", 0): {"n": 3, "mae": 0.4, "bias": -0.1}}
+    lab_view.render(lambda: (h2h, models))

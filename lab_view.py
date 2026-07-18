@@ -103,3 +103,125 @@ def per_model_scores(rows: list[dict], settled: dict) -> dict:
         g["mae"] = round(g.pop("_a") / g["n"], 2)
         g["bias"] = round(g.pop("_s") / g["n"], 2)
     return out
+
+
+_LEAD_LABEL = {0: "Same-Day", 24: "Day-Ahead"}
+
+
+def chart_frame(h2h: dict) -> list[dict]:
+    """Long-form records for the per-day error chart: one Production and one
+    Candidate point per scored (day, variable, lead)."""
+    recs = []
+    for (variable, lead), g in sorted(h2h.items()):
+        for d in g["days"]:
+            for series, key in (("Production", "prod_err"),
+                                ("Candidate", "cand_err")):
+                recs.append({"date": d["date"], "variable": variable,
+                             "lead": lead, "series": series,
+                             "abs_err": d[key]})
+    return recs
+
+
+def _error_chart(recs: list[dict]):
+    """Tap-to-pin absolute-error chart (same touch pattern as the History
+    page's equity curve: click/tap a point to pin its readout)."""
+    import altair as alt
+    import pandas as pd
+    df = pd.DataFrame(recs)
+    enc = alt.Chart(df).encode(
+        x=alt.X("date:T", title=None),
+        y=alt.Y("abs_err:Q", title="Abs Error (°F)"),
+        color=alt.Color("series:N", legend=alt.Legend(title=None, orient="top")))
+    line = enc.mark_line(strokeWidth=2)
+    pick = alt.selection_point(on="click", nearest=True,
+                               fields=["date", "series"], empty=False,
+                               clear="dblclick")
+    dots = enc.mark_point(filled=True, opacity=1).encode(
+        size=alt.condition(pick, alt.value(150), alt.value(60)),
+        tooltip=[alt.Tooltip("date:T", title="date"),
+                 alt.Tooltip("series:N", title="series"),
+                 alt.Tooltip("abs_err:Q", title="abs error", format=".1f")],
+    ).add_params(pick)
+    labels = df.assign(label=df.apply(
+        lambda r: (f"{r['series']} · "
+                   f"{pd.to_datetime(r['date']).strftime('%b %-d')}\n"
+                   f"{r['abs_err']:.1f}°F Off"), axis=1))
+    pinned = alt.Chart(labels).mark_text(
+        align="left", baseline="top", x=6, y=4, fontSize=13, fontWeight="bold",
+        lineBreak="\n", lineHeight=15,
+    ).encode(text="label:N", color="series:N").transform_filter(pick)
+    return ((line + dots + pinned)
+            .properties(height=240, background="transparent")
+            .configure_view(fill=None, strokeWidth=0))
+
+
+def render(lab_loader) -> None:
+    import pandas as pd
+
+    market_view._theme_controls()
+    st.title("Lab")
+    try:
+        h2h, models = lab_loader()
+    except Exception:
+        h2h, models = {}, {}
+
+    # --- Section A: shadow consensus vs production ---
+    st.subheader("Shadow Consensus vs Production")
+    st.caption("The candidate model set runs silently beside production; both "
+               "are scored here once days settle. Promotion needs the "
+               "candidate to win at true day-ahead lead.")
+    if not h2h:
+        st.info("Accumulating — no settled shadow days yet. This fills in "
+                "daily as candidate-logged days settle.")
+    else:
+        n = sum(g["n"] for g in h2h.values())
+        pw = sum(g["prod_wins"] for g in h2h.values())
+        cw = sum(g["cand_wins"] for g in h2h.values())
+        with st.container(key="metrics2_lab"):
+            c = st.columns(3)
+        c[0].markdown(market_view.metric_card(
+            "Scored Rows", str(n),
+            "Settled (day, variable, lead) rows where both consensuses were "
+            "logged."), unsafe_allow_html=True)
+        c[1].markdown(market_view.metric_card(
+            "Production Wins", str(pw),
+            "Rows where the live consensus was closer to settlement."),
+            unsafe_allow_html=True)
+        c[2].markdown(market_view.metric_card(
+            "Candidate Wins", str(cw),
+            "Rows where the shadow (expanded model set) consensus was closer."),
+            unsafe_allow_html=True)
+        table = [{"Variable": v.capitalize(),
+                  "Lead": _LEAD_LABEL.get(lead, f"{lead}h"),
+                  "Number": g["n"],
+                  "Production MAE": g["prod_mae"], "Candidate MAE": g["cand_mae"],
+                  "Ahead": ("Tie" if g["prod_mae"] == g["cand_mae"] else
+                            "Production" if g["prod_mae"] < g["cand_mae"]
+                            else "Candidate")}
+                 for (v, lead), g in sorted(h2h.items())]
+        market_view._html_table(pd.DataFrame(table))
+        recs = chart_frame(h2h)
+        for variable in ("high", "low"):
+            sub = [r for r in recs if r["variable"] == variable]
+            if sub:
+                st.caption(f"{variable.capitalize()} — Absolute Error By Day "
+                           "(Tap A Point To Pin Its Readout)")
+                st.altair_chart(_error_chart(sub), use_container_width=True)
+
+    # --- Section B: per-model scoreboard ---
+    st.markdown("---")
+    st.subheader("Per-Model Scoreboard")
+    st.caption("Each source's own logged forecast vs settlement at matched "
+               "lead — the evidence base for MOS weighting. Bias is model "
+               "minus settled: positive ran hot, negative ran cold.")
+    if not models:
+        st.info("Accumulating — per-model source logging began 2026-07-17; "
+                "rows appear as those days settle.")
+        return
+    for lead in (24, 0):
+        rows = [{"Source": name, "Variable": v.capitalize(), "Number": g["n"],
+                 "MAE": g["mae"], "Bias": f'{g["bias"]:+.2f}'}
+                for (name, v, ld), g in sorted(models.items()) if ld == lead]
+        if rows:
+            st.markdown(f"**{_LEAD_LABEL.get(lead, f'{lead}h')}**")
+            market_view._html_table(pd.DataFrame(rows))
