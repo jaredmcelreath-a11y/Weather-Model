@@ -132,21 +132,24 @@ _RADAR_TEMPLATE = """<!doctype html>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
-  html,body{height:100%;margin:0;background:#12151b;
+  html,body{height:100%;margin:0;background:__BG__;
     font-family:'Bitter',Georgia,serif;}
-  #map{position:absolute;inset:0;border-radius:10px;background:#12151b;}
+  #map{position:absolute;inset:0;border-radius:10px;background:__BG__;}
+  /* warm the base map toward the charcoal palette without touching the radar
+     overlay (a separate layer that doesn't get this class) */
+  .wx-base{filter:brightness(0.9) saturate(0.85) sepia(0.22) hue-rotate(-8deg);}
   .bar{position:absolute;top:10px;left:10px;z-index:500;display:flex;
-    align-items:center;gap:8px;background:rgba(18,21,27,0.82);
-    border:1px solid rgba(255,255,255,0.14);border-radius:8px;
-    padding:5px 9px;color:#e9e6df;font-size:13px;}
-  .bar button{cursor:pointer;background:transparent;border:none;color:#e9e6df;
+    align-items:center;gap:8px;background:__SURFACE__;
+    border:1px solid __BORDER__;border-radius:8px;
+    padding:5px 9px;color:__INK__;font-size:13px;}
+  .bar button{cursor:pointer;background:transparent;border:none;color:__INK__;
     font-size:15px;line-height:1;padding:0 2px;}
-  .bar input[type=range]{width:150px;accent-color:#f0b34a;cursor:pointer;
+  .bar input[type=range]{width:150px;accent-color:__ACCENT__;cursor:pointer;
     vertical-align:middle;}
   #ts{min-width:104px;display:inline-block;}
-  .fc{color:#f0b34a;font-weight:700;letter-spacing:0.03em;}
+  .fc{color:__ACCENT_STRONG__;font-weight:700;letter-spacing:0.03em;}
   .msg{position:absolute;top:50%;left:0;right:0;text-align:center;z-index:400;
-    color:#b9b4ab;font-size:14px;display:none;}
+    color:__MUTED__;font-size:14px;display:none;}
 </style></head>
 <body>
 <div id="map"></div>
@@ -160,10 +163,11 @@ _RADAR_TEMPLATE = """<!doctype html>
               .setView([__LAT__, __LON__], __ZOOM__);
   L.control.zoom({position:'topright'}).addTo(map);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    {attribution:'&copy; OpenStreetMap, &copy; CARTO', subdomains:'abcd', maxZoom:19})
+    {attribution:'&copy; OpenStreetMap, &copy; CARTO', subdomains:'abcd',
+     maxZoom:19, className:'wx-base'})
     .addTo(map);
-  L.circleMarker([__LAT__, __LON__], {radius:4, color:'#f0b34a', weight:2,
-    fill:true, fillColor:'#f0b34a', fillOpacity:0.9}).addTo(map);
+  L.circleMarker([__LAT__, __LON__], {radius:4, color:'__ACCENT__', weight:2,
+    fill:true, fillColor:'__ACCENT__', fillOpacity:0.9}).addTo(map);
 
   var host='', frames=[], layers={}, idx=0, playing=true, timer=null;
   var COLOR=4, OPTS='1_1';
@@ -217,19 +221,31 @@ _RADAR_TEMPLATE = """<!doctype html>
 </body></html>"""
 
 
-def _radar_html(lat: float = KDFW_LAT, lon: float = KDFW_LON, zoom: int = 7) -> str:
+def _radar_html(lat: float = KDFW_LAT, lon: float = KDFW_LON, zoom: int = 7,
+                palette: dict | None = None) -> str:
     """Self-contained dark Leaflet radar (RainViewer past loop + ~30 min nowcast),
-    fetched client-side so the Python page never depends on RainViewer being up."""
+    fetched client-side so the Python page never depends on RainViewer being up.
+    `palette` is a market_view THEMES entry so the control bar, slider, and base
+    map match the active dashboard theme; defaults to Charcoal."""
+    p = palette or market_view.THEMES["Charcoal"]
     return (_RADAR_TEMPLATE
             .replace("__LAT__", str(lat))
             .replace("__LON__", str(lon))
-            .replace("__ZOOM__", str(zoom)))
+            .replace("__ZOOM__", str(zoom))
+            .replace("__BG__", p["bg"])
+            .replace("__SURFACE__", p["surface"])
+            .replace("__BORDER__", p["border"])
+            .replace("__INK__", p["ink"])
+            .replace("__MUTED__", p["muted"])
+            .replace("__ACCENT_STRONG__", p["accent_strong"])
+            .replace("__ACCENT__", p["accent"]))
 
 
 def render(load_hourly):
     """Draw the Hourly page. `load_hourly` is the cached () -> (rows, pws) callable
     where `rows` is wunderground.hourly() and `pws` is wunderground.pws_current()."""
-    market_view._inject_theme(market_view._seed_theme())
+    theme = market_view._seed_theme()
+    market_view._inject_theme(theme)
     st_autorefresh(interval=60_000, key="refresh_hourly")
     st.title("Hourly")
     st.caption("Tracking Wunderground's KDFW hourly forecast (The Weather Company).")
@@ -284,4 +300,5 @@ def render(load_hourly):
     st.subheader("Radar")
     st.caption("Past ~2 h of storm movement, continuing into RainViewer's "
                "~30-minute forecast nowcast. Tap ⏸ to pause.")
-    components.html(_radar_html(), height=460)
+    palette = market_view.THEMES.get(theme, market_view.THEMES[market_view.DEFAULT_THEME])
+    components.html(_radar_html(palette=palette), height=460)

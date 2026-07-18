@@ -128,6 +128,26 @@ def test_radar_html_honors_custom_center_and_zoom():
     assert "9" in html
 
 
+def test_radar_html_defaults_to_charcoal_palette():
+    import hourly_view
+    import market_view
+    html = hourly_view._radar_html()
+    ch = market_view.THEMES["Charcoal"]
+    # charcoal background + green accent replace the old cool-black/amber
+    assert ch["bg"] in html
+    assert ch["accent"] in html
+    assert "#f0b34a" not in html  # old amber accent gone
+
+
+def test_radar_html_uses_supplied_palette():
+    import hourly_view
+    pal = {"bg": "#010203", "surface": "#040506", "ink": "#0a0b0c",
+           "muted": "#0d0e0f", "accent": "#123456", "accent_strong": "#654321",
+           "border": "rgba(9,8,7,0.2)"}
+    html = hourly_view._radar_html(palette=pal)
+    assert "#010203" in html and "#123456" in html and "#654321" in html
+
+
 def test_render_exposed_and_callable():
     import hourly_view
     assert callable(hourly_view.render)
