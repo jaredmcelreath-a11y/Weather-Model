@@ -47,5 +47,5 @@ def test_history_df_has_shadow_column():
          "candidate_consensus": 96.5},
     ]
     df = consensus_history_df(rows, day, "high", "cli", include_temp=True)
-    assert "shadow" in df.columns
-    assert list(df["shadow"]) == [96.4, 96.5]
+    assert "Shadow" in df.columns
+    assert list(df["Shadow"]) == [96.4, 96.5]

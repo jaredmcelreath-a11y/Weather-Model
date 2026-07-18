@@ -712,17 +712,19 @@ def consensus_history_df(rows, day_iso, variable, basis, include_temp,
         t = datetime.fromisoformat(r["captured_at"]).replace(tzinfo=None)
         if window and not (window[0] <= t <= window[1]):
             continue
-        row = {"time": t, "consensus": r.get("consensus")}
+        # Display/legend names (order applied in consensus_chart): Current,
+        # Consensus, Kalshi, Shadow.
+        row = {"time": t, "Consensus": r.get("consensus")}
         if include_temp and r.get("current_temp") is not None:
-            row["current temp"] = r["current_temp"]
+            row["Current"] = r["current_temp"]
         # The market's implied extreme at this sample (CLI/Kalshi snapshots only),
         # so the chart can carry Kalshi's own forecast line next to the model's.
         if r.get("market_ev") is not None:
-            row["kalshi (market)"] = r["market_ev"]
+            row["Kalshi"] = r["market_ev"]
         # The shadow/candidate consensus (expanded model set) at this sample, so
         # it can be compared against production consensus and Kalshi through the day.
         if r.get("candidate_consensus") is not None:
-            row["shadow"] = r["candidate_consensus"]
+            row["Shadow"] = r["candidate_consensus"]
         data.append(row)
     if len(data) < 2:
         return None
@@ -752,15 +754,17 @@ def consensus_chart(hist, variable, day_iso=None, is_today=False, view_window=No
     colors = colors or {}
     line_color = colors.get("high" if variable == "high" else "low") or (
         "#ff6b6b" if variable == "high" else "#4dabf7")
-    others = [c for c in value_cols if c != "consensus"]
-    # Distinct hue for the Kalshi market line; the live-temp overlay stays muted gray;
-    # the shadow (candidate model set) is an off-white on both variables' charts.
-    series_color = {"kalshi (market)": colors.get("kalshi", "#51cf66"),
-                    "current temp": colors.get("temp", "#adb5bd"),
-                    "shadow": colors.get("shadow", "#EDE6D3")}
-    color_scale = alt.Scale(domain=["consensus"] + others,
-                            range=[line_color] + [series_color.get(c, "#adb5bd")
-                                                  for c in others])
+    # Fixed legend order and per-series hue. "Consensus" takes the variable's
+    # red/blue; the rest are fixed across both charts — Kalshi green, Current a
+    # muted gray, Shadow (candidate model set) an off-white on both charts.
+    name_color = {"Consensus": line_color,
+                  "Kalshi": colors.get("kalshi", "#51cf66"),
+                  "Current": colors.get("temp", "#adb5bd"),
+                  "Shadow": colors.get("shadow", "#EDE6D3")}
+    order = [c for c in ("Current", "Consensus", "Kalshi", "Shadow")
+             if c in value_cols]
+    color_scale = alt.Scale(domain=order,
+                            range=[name_color.get(c, "#adb5bd") for c in order])
 
     # Pad the y-window 10°F past the lowest/highest point so the lines fill the
     # plot instead of bunching against a fixed 50–100 axis (which left big dead
@@ -795,7 +799,7 @@ def consensus_chart(hist, variable, day_iso=None, is_today=False, view_window=No
     # running off the right edge and hiding the last value (e.g. Kalshi's).
     def _readout(row):
         parts = [pd.to_datetime(row["time"]).strftime("%-I:%M %p")]
-        parts += [f"{c} {row[c]:.1f}°" for c in value_cols if pd.notna(row[c])]
+        parts += [f"{c} {row[c]:.1f}°" for c in order if pd.notna(row[c])]
         return "\n".join(parts)
     labels = df.assign(label=df.apply(_readout, axis=1))
 
@@ -805,7 +809,8 @@ def consensus_chart(hist, variable, day_iso=None, is_today=False, view_window=No
                               labelOverlap=True, labelAngle=-40)),
         y=alt.Y("degF:Q", title="°F", scale=alt.Scale(domain=[lo, hi])),
         color=alt.Color("series:N", scale=color_scale,
-                        legend=alt.Legend(title=None, orient="top")),
+                        legend=alt.Legend(title=None, orient="top-left",
+                                          direction="horizontal", offset=2)),
     )
     lines = base.mark_line(strokeWidth=2.5, clip=True)
 
@@ -821,7 +826,7 @@ def consensus_chart(hist, variable, day_iso=None, is_today=False, view_window=No
         size=alt.condition(pick, alt.value(140), alt.value(55)),
         tooltip=[alt.Tooltip("time:T", title="time", format="%-I:%M %p")] +
                 [alt.Tooltip(f"{c}:Q", title=c, format=".1f")
-                 for c in value_cols],
+                 for c in order],
     ).add_params(pick)
     # Pinned readout for the tapped point, anchored top-left so it never clips off
     # the plot edge. One line per series (lineBreak) so the full readout stays in
@@ -1222,10 +1227,10 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                                 colors=_chart_colors()),
                 use_container_width=True)
             extras = []
-            if "current temp" in hist.columns:
+            if "Current" in hist.columns:
                 extras.append("the live temperature (watch it converge on the "
                               "predicted peak/trough)")
-            if "kalshi (market)" in hist.columns:
+            if "Kalshi" in hist.columns:
                 extras.append("Kalshi's market-implied forecast")
             cbox.caption("Model consensus (°F) sampled every ~10 min" +
                          (", with " + " and ".join(extras) + " overlaid."

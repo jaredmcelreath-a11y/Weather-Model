@@ -153,8 +153,8 @@ def test_consensus_history_df_includes_kalshi_line():
     ]
     df = market_view.consensus_history_df(rows, "2026-06-16", "high", "cli",
                                           include_temp=False)
-    assert "kalshi (market)" in df.columns
-    assert list(df["kalshi (market)"]) == [94.0, 94.5]
+    assert "Kalshi" in df.columns
+    assert list(df["Kalshi"]) == [94.0, 94.5]
 
 
 # --- per-variable time window (declutter the through-the-day chart) ---
