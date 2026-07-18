@@ -37,3 +37,29 @@ def test_pnl_attribution_empty():
     out = edge_view.pnl_attribution([])
     assert out["with_market"] == {"n": 0, "wins": 0, "losses": 0, "net_pnl": 0.0}
     assert out["against_market"] == {"n": 0, "wins": 0, "losses": 0, "net_pnl": 0.0}
+
+
+from datetime import date
+
+
+def test_assemble_headline_rolls_up_all_subset():
+    import edge_view
+    rows = [
+        {"target_date": "2026-07-01", "variable": "high", "capture_slot": "15:30",
+         "cli_consensus": 97.9, "flat_offset": 0.89, "live_gap": 1.2,
+         "market_ev": 96.0, "market_buckets": [[None, 96, 0.6], [97, 98, 0.4]]},
+    ]
+    cli_map = {date(2026, 7, 1): (98.0, 79.0)}       # actual high 98 -> bucket (97,98)
+    hourly_map = {date(2026, 7, 1): (97.0, 79.0)}
+    out = edge_view.assemble(rows, cli_map, hourly_map)
+    h = out["headline"]
+    # model 97.9 -> (97,98) == actual; market top bucket (None,96) != actual -> model wins
+    assert h == {"n": 1, "disagreements": 1, "model_wins": 1, "market_wins": 0}
+    assert ("15:30", "high", "all") in out["metrics"]
+
+
+def test_assemble_empty_is_zeroed():
+    import edge_view
+    out = edge_view.assemble([], {}, {})
+    assert out["headline"] == {"n": 0, "disagreements": 0, "model_wins": 0, "market_wins": 0}
+    assert out["metrics"] == {}

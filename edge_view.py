@@ -8,6 +8,26 @@ Two independent sections so one failing does not blank the other:
 """
 from __future__ import annotations
 
+import edge_report
+
+
+def assemble(betting_rows: list[dict], cli_map: dict, hourly_map: dict) -> dict:
+    """Join betting-log rows to settlements and compute the forecast-edge metrics
+    (edge_report.metrics), plus a headline roll-up summed across the 'all' subset
+    of every (slot, variable) group. Empty/unsettled input -> zeroed headline,
+    empty metrics."""
+    joined = edge_report.join(betting_rows, cli_map, hourly_map)
+    metrics = edge_report.metrics(joined)
+    head = {"n": 0, "disagreements": 0, "model_wins": 0, "market_wins": 0}
+    for (_slot, _var, subset), m in metrics.items():
+        if subset != "all":
+            continue
+        head["n"] += m["n"]
+        head["disagreements"] += m["disagreements"]
+        head["model_wins"] += m["model_bin_wins"]
+        head["market_wins"] += m["market_bin_wins"]
+    return {"metrics": metrics, "headline": head}
+
 
 def pnl_attribution(bet_rows: list[dict]) -> dict:
     """Split realized bets by entry price: with-market (entry >= 0.50, you bought
