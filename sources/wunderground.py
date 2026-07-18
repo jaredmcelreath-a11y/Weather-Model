@@ -44,6 +44,7 @@ def hourly() -> list[dict]:
             "time": datetime.fromtimestamp(epoch, TZ),
             "temp": _at(data, "temperature", i),
             "feels": _at(data, "temperatureFeelsLike", i),
+            "dew": _at(data, "temperatureDewPoint", i),
             "precip_pct": _at(data, "precipChance", i),
             "cloud_pct": _at(data, "cloudCover", i),
             "humidity": _at(data, "relativeHumidity", i),

@@ -18,9 +18,10 @@ from config import TIMEZONE
 _TZ = ZoneInfo(TIMEZONE)
 
 
-def _row(dt, temp=90, feels=98, precip=5, cloud=40, hum=45, wind=8, wdir="S"):
-    return {"time": dt, "temp": temp, "feels": feels, "precip_pct": precip,
-            "cloud_pct": cloud, "humidity": hum, "wind_mph": wind, "wind_dir": wdir}
+def _row(dt, temp=90, feels=98, dew=70, precip=5, cloud=40, hum=45, wind=8, wdir="S"):
+    return {"time": dt, "temp": temp, "feels": feels, "dew": dew,
+            "precip_pct": precip, "cloud_pct": cloud, "humidity": hum,
+            "wind_mph": wind, "wind_dir": wdir}
 
 
 def test_chart_frame_two_series_per_hour():
@@ -55,6 +56,47 @@ def test_cell_formatters():
     assert hourly_view.fmt_pct(None) == "—"
     assert hourly_view.fmt_wind(8, "S") == "S 8"
     assert hourly_view.fmt_wind(None, None) == "—"
+
+
+def test_day_tables_splits_by_day_with_highlow_and_dew():
+    import hourly_view
+    today = date(2026, 7, 18)
+    rows = [
+        _row(datetime(2026, 7, 18, 23, tzinfo=_TZ), temp=95),
+        _row(datetime(2026, 7, 19, 0, tzinfo=_TZ), temp=80),
+        _row(datetime(2026, 7, 19, 1, tzinfo=_TZ), temp=79),
+    ]
+    tables = hourly_view._day_tables(rows, today)
+    assert [t["label"] for t in tables] == ["Today", "Tomorrow"]
+    today_t = tables[0]
+    assert list(today_t["df"].columns) == ["Time", "Temp", "Feels", "Dew",
+                                           "Rain %", "Cloud", "Wind", "Humidity"]
+    assert "Day" not in today_t["df"].columns
+    assert (today_t["high"], today_t["low"]) == (95, 95)
+    assert len(today_t["df"]) == 1
+    tomorrow_t = tables[1]
+    assert (tomorrow_t["high"], tomorrow_t["low"]) == (80, 79)
+    assert len(tomorrow_t["df"]) == 2
+
+
+def test_day_tables_highlow_ignores_missing_temps():
+    import hourly_view
+    today = date(2026, 7, 18)
+    rows = [
+        _row(datetime(2026, 7, 18, 12, tzinfo=_TZ), temp=None),
+        _row(datetime(2026, 7, 18, 13, tzinfo=_TZ), temp=98),
+        _row(datetime(2026, 7, 18, 14, tzinfo=_TZ), temp=88),
+    ]
+    (t,) = hourly_view._day_tables(rows, today)
+    assert (t["high"], t["low"]) == (98, 88)
+
+
+def test_day_tables_highlow_none_when_all_temps_missing():
+    import hourly_view
+    today = date(2026, 7, 18)
+    rows = [_row(datetime(2026, 7, 18, 13, tzinfo=_TZ), temp=None)]
+    (t,) = hourly_view._day_tables(rows, today)
+    assert t["high"] is None and t["low"] is None
 
 
 def test_render_exposed_and_callable():

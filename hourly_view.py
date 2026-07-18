@@ -86,24 +86,39 @@ def _temp_chart(rows: list[dict]):
             .configure_view(fill=None, strokeWidth=0))
 
 
-def _table_df(rows: list[dict], today) -> pd.DataFrame:
-    """Display-string DataFrame; the Day cell shows only on each day's first row."""
-    records = []
-    last_day = None
+_TABLE_COLS = ["Time", "Temp", "Feels", "Dew", "Rain %", "Cloud", "Wind", "Humidity"]
+
+
+def _day_tables(rows: list[dict], today) -> list[dict]:
+    """Group the hours into one day per section (the feed is chronological, so
+    grouping consecutive rows suffices). Each item is a dict with the day `label`,
+    the forecast `high`/`low` across that day's shown hours (None if all temps
+    missing), and a display-string `df`. The day is the section header, not a
+    column."""
+    groups: list[dict] = []
     for r in rows:
-        d = day_label(r["time"], today)
-        records.append({
-            "Day": d if d != last_day else "",
+        label = day_label(r["time"], today)
+        if not groups or groups[-1]["label"] != label:
+            groups.append({"label": label, "temps": [], "recs": []})
+        g = groups[-1]
+        if r.get("temp") is not None:
+            g["temps"].append(r["temp"])
+        g["recs"].append({
             "Time": r["time"].strftime("%-I %p"),
             "Temp": fmt_temp(r.get("temp")),
             "Feels": fmt_temp(r.get("feels")),
+            "Dew": fmt_temp(r.get("dew")),
             "Rain %": fmt_pct(r.get("precip_pct")),
             "Cloud": fmt_pct(r.get("cloud_pct")),
             "Wind": fmt_wind(r.get("wind_mph"), r.get("wind_dir")),
-            "Hum": fmt_pct(r.get("humidity")),
+            "Humidity": fmt_pct(r.get("humidity")),
         })
-        last_day = d
-    return pd.DataFrame(records)
+    return [{
+        "label": g["label"],
+        "high": max(g["temps"]) if g["temps"] else None,
+        "low": min(g["temps"]) if g["temps"] else None,
+        "df": pd.DataFrame(g["recs"], columns=_TABLE_COLS),
+    } for g in groups]
 
 
 def render(load_hourly):
@@ -126,7 +141,11 @@ def render(load_hourly):
     pws_val = f"{pws['temp']:.0f}°F" if pws and pws.get("temp") is not None else _EM
     kdfw_cap = kdfw["time"].strftime("%-I:%M %p") if kdfw else None
     pws_cap = pws["obs_time"].astimezone(TZ).strftime("%-I:%M %p") if pws else None
-    cols = st.columns(2)
+    # Wrap in a metrics2_ container so the boxes and their tap tooltips get the
+    # shared mobile treatment (2-per-row ≤640px; tooltip as a fixed bottom sheet
+    # that never clips off-screen). See the metrics2_ CSS in market_view.
+    with st.container(key="metrics2_hourly"):
+        cols = st.columns(2)
     cols[0].markdown(
         market_view.metric_card("KDFW (official)", kdfw_val,
                                  help_text="Latest KDFW airport ASOS reading — the "
@@ -145,4 +164,9 @@ def render(load_hourly):
         return
     st.altair_chart(_temp_chart(rows), use_container_width=True)
     today = datetime.now(TZ).date()
-    market_view._html_table(_table_df(rows, today))
+    for t in _day_tables(rows, today):
+        hi = f"{t['high']:.0f}°" if t["high"] is not None else _EM
+        lo = f"{t['low']:.0f}°" if t["low"] is not None else _EM
+        st.subheader(t["label"])
+        st.caption(f"High {hi} · Low {lo} (forecast for the hours shown)")
+        market_view._html_table(t["df"])

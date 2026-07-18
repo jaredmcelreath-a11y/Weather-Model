@@ -12,6 +12,7 @@ _HOURLY = {
     "validTimeUtc": [1784350800, 1784354400, 1784358000],
     "temperature": [84, 83, 82],
     "temperatureFeelsLike": [89, 88, 87],
+    "temperatureDewPoint": [73, 72, 71],
     "precipChance": [1, 5, 10],
     "cloudCover": [33, 32, 30],
     "relativeHumidity": [62, 65, 68],
@@ -27,6 +28,7 @@ def test_hourly_parses_parallel_arrays_into_per_hour_dicts(monkeypatch):
     first = rows[0]
     assert first["temp"] == 84
     assert first["feels"] == 89
+    assert first["dew"] == 73
     assert first["precip_pct"] == 1
     assert first["cloud_pct"] == 33
     assert first["humidity"] == 62
