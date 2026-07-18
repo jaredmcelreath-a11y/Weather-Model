@@ -321,6 +321,15 @@ def _inject_theme(name):
         ".wxfield .wxq{position:static;display:inline-flex;align-items:center;"
         "justify-content:center;}\n"
         ".wxfield .wxqt{top:1.7rem;left:0;right:auto;}\n"
+        # Desktop only (mobile keeps the base 1.55rem via being below this
+        # breakpoint): shrink the metric-card value text a touch so wider values
+        # fit their box, and shrink the long 'Updated' clock (compact=True →
+        # wxcard-v-sm) further still. The mobile @media(max-width:640px) block
+        # never sets these, so phones are untouched.
+        "@media (min-width:641px){"
+        ".wxcard-v{font-size:1.35rem;}"
+        ".wxcard-v-sm{font-size:1.02rem;}"
+        "}\n"
         "</style>",
         unsafe_allow_html=True,
     )
@@ -340,11 +349,15 @@ def _field_label(container, label, help_text):
         unsafe_allow_html=True)
 
 
-def metric_card(label, value, help_text=None):
+def metric_card(label, value, help_text=None, compact=False):
     """A metric box as custom HTML (matches the stMetric look) with an optional info
     bubble that opens on hover OR a single tap and never clips off the right edge —
     Streamlit's native `help=` tooltip can't do tap-to-open on touch. Render with
-    `col.markdown(metric_card(...), unsafe_allow_html=True)`."""
+    `col.markdown(metric_card(...), unsafe_allow_html=True)`.
+
+    `compact=True` tags the value for a smaller desktop font (the `wxcard-v-sm`
+    rule), for a card whose value is a long string (e.g. the Updated clock).
+    Mobile is unaffected — the shrink lives only in the desktop media query."""
     import html as _h
     q = ""
     if help_text:
@@ -352,9 +365,10 @@ def metric_card(label, value, help_text=None):
         # the card, letting the anchor flip per screen-position so it never clips.
         q = (f'<span class="wxq" tabindex="0" role="button" aria-label="{_h.escape(str(label))} info">?</span>'
              f'<span class="wxqt">{_h.escape(str(help_text))}</span>')
+    vcls = "wxcard-v wxcard-v-sm" if compact else "wxcard-v"
     return (f'<div class="wxcard">{q}'
             f'<div class="wxcard-l">{_h.escape(str(label))}</div>'
-            f'<div class="wxcard-v">{_h.escape(str(value))}</div></div>')
+            f'<div class="{vcls}">{_h.escape(str(value))}</div></div>')
 
 
 _PANEL = ("background:rgba(255,255,255,0.03);border-radius:6px;"
@@ -1857,7 +1871,8 @@ def render_page(snap, calib, adapter, load_accuracy, recap_loader=None,
     _mkt_help = ("Today's market-implied expected {x}, from Kalshi's live contract "
                  "ladder (shown on both pages for reference)."
                  + (f" Ladder fetched {_mkt_as_of}." if _mkt_as_of else ""))
-    top[1].markdown(metric_card("Updated", _fmt_clock(snap["updated"], with_seconds=True)),
+    top[1].markdown(metric_card("Updated", _fmt_clock(snap["updated"], with_seconds=True),
+                                compact=True),
                     unsafe_allow_html=True)
     top[2].markdown(metric_card("Kalshi High",
                     f"{ki['high']:.1f}°F" if ki.get("high") is not None else "—",
