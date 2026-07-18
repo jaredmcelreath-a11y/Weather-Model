@@ -148,7 +148,7 @@ def render():
                "you bought the favorite (entry ≥ 50¢); **against-market** means you "
                "bought the underdog. Against-market profit is edge the market didn't see.")
     import bet_view
-    import kalshi_auth
+    from sources import kalshi_auth
     try:
         bet_rows, _summ, _curve, _bal = bet_view._load_bets()
     except kalshi_auth.KalshiCredentialsError:

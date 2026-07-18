@@ -90,3 +90,15 @@ def test_edge_view_exposes_render():
     import edge_view
     assert hasattr(edge_view, "render")
     assert callable(edge_view.render)
+
+
+def test_render_imports_kalshi_auth_from_sources_package():
+    # render() can't be executed in this env (no streamlit/cryptography), so its
+    # runtime imports aren't exercised by the smoke test. kalshi_auth lives in the
+    # `sources` package — a bare `import kalshi_auth` is a ModuleNotFoundError on
+    # deploy. Guard the correct path by inspecting the source.
+    import inspect
+    import edge_view
+    src = inspect.getsource(edge_view.render)
+    assert "from sources import kalshi_auth" in src
+    assert "\n    import kalshi_auth" not in src  # never the bare top-level form
