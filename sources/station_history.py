@@ -22,7 +22,11 @@ URL = "https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py"
 DAILY_URL = "https://mesonet.agron.iastate.edu/cgi-bin/request/daily.py"
 
 
-def _fetch_series(start: date, end: date) -> tuple[list[datetime], list[float]]:
+def _fetch_series(start: date, end: date,
+                  ttl: int | None = None) -> tuple[list[datetime], list[float]]:
+    """`ttl` None keeps get_text's long archive TTL (immutable past days —
+    calibration/backtest). Live callers fetching TODAY's still-growing series
+    (the NWS-outage fallback in nws_observations) pass a short ttl."""
     params = {
         "station": "DFW", "network": "TX_ASOS", "data": "tmpf",
         "year1": start.year, "month1": start.month, "day1": start.day,
@@ -30,7 +34,7 @@ def _fetch_series(start: date, end: date) -> tuple[list[datetime], list[float]]:
         "tz": TIMEZONE, "format": "onlycomma", "latlon": "no",
         "missing": "M", "trace": "T",
     }
-    text = get_text(URL, params)
+    text = get_text(URL, params) if ttl is None else get_text(URL, params, ttl=ttl)
     times, temps = [], []
     for row in csv.DictReader(io.StringIO(text)):
         raw = row.get("tmpf", "M")

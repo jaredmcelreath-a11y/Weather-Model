@@ -15,6 +15,27 @@ from sources.common import c_to_f, get_json, parse_local_times, to_hourly
 OBS_URL = f"https://api.weather.gov/stations/{STATION_ID}/observations"
 TZ = ZoneInfo(TIMEZONE)
 
+# The NWS feed counts as down when it has served nothing this recent. Routine
+# METARs land ~hourly with ~20 min propagation lag, so 90 min means "missed at
+# least one full cycle" — a real gap, not ordinary latency.
+STALE_AFTER_S = 90 * 60
+
+
+def _iem_fallback(start: datetime, now: datetime):
+    """The same station's METARs from the IEM ASOS archive (independent
+    pipeline), for the NWS-outage path. Best-effort: any failure returns an
+    empty series and the caller keeps whatever NWS gave it."""
+    from datetime import timedelta
+    from sources import station_history
+    try:
+        # asos.py's day2 is exclusive — +1 day so today's rows are included.
+        times, temps = station_history._fetch_series(
+            start.date(), now.date() + timedelta(days=1), ttl=60)
+    except Exception:
+        return [], []
+    pairs = [(t, v) for t, v in zip(times, temps) if start <= t <= now]
+    return [t for t, _ in pairs], [v for _, v in pairs]
+
 
 def fetch(limit: int = 500, continuous: bool = False, now: datetime | None = None
           ) -> dict[str, tuple[list[datetime], list[float]]]:
@@ -50,6 +71,17 @@ def fetch(limit: int = 500, continuous: bool = False, now: datetime | None = Non
     # API returns newest-first; normalize to ascending time.
     pairs.reverse()
     raw = (parse_local_times([p[0] for p in pairs]), [p[1] for p in pairs])
+    # Outage fallback: the obs series is the nowcasting engine, so a transient
+    # NWS gap must not read as "no obs yet today" — that silently reverts the
+    # consensus to the pure forecast (live 2026-07-18 04:00: one capture
+    # snapped 2°F to 76.8 and back). When NWS has served nothing within
+    # STALE_AFTER_S, use IEM's copy of the same METARs instead; a healthy
+    # feed never consults IEM, and if IEM comes back empty the (stale) NWS
+    # readings are kept.
+    if not raw[0] or (now - raw[0][-1]).total_seconds() > STALE_AFTER_S:
+        fb = _iem_fallback(start, now)
+        if fb[0]:
+            raw = fb
     # Settle on the routine hourly readings, not 5-minute spikes.
     out = {"obs": to_hourly(*raw)}
     if continuous:
