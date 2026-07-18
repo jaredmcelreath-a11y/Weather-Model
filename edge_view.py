@@ -104,7 +104,7 @@ def render():
     st.title("Edge")
 
     # --- Part A: forecast edge vs. market (needs no credentials) ---
-    st.subheader("Forecast edge vs. market")
+    st.subheader("Forecast Edge vs. Market")
     st.caption(
         "At each betting slot the model's consensus and the live Kalshi price are "
         "logged; once the day settles we score which was closer. The rows that "
@@ -143,7 +143,7 @@ def render():
 
     # --- Part B: realized edge / P&L attribution (needs the [kalshi] secret) ---
     st.markdown("---")
-    st.subheader("My realized edge")
+    st.subheader("My Realized Edge")
     st.caption("Your settled bets split by the price you paid: **with-market** means "
                "you bought the favorite (entry ≥ 50¢); **against-market** means you "
                "bought the underdog. Against-market profit is edge the market didn't see.")
