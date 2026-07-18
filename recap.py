@@ -91,17 +91,18 @@ def yesterday_pnl(day_iso: str, bet_rows: list[dict]) -> dict | None:
             "pct": round(100.0 * net / staked, 1) if staked else None}
 
 
-def yesterday_scorecard(today: date, settled_map: dict, forecast_rows: list[dict],
-                        bet_rows: list[dict] | None = None) -> dict | None:
-    """Grade yesterday's high & low forecast against settlement. `settled_map` is
+def day_scorecard(day: date, settled_map: dict, forecast_rows: list[dict],
+                  bet_rows: list[dict] | None = None) -> dict | None:
+    """Grade `day`'s high & low forecast against settlement. `settled_map` is
     {day: (high, low)} (e.g. settlements.as_map("cli")); `forecast_rows` is the
-    forecast log; `bet_rows` (optional) attaches realized P&L. None until yesterday
-    is settled or if no forecast row exists."""
-    yday = today - timedelta(days=1)
-    hl = settled_map.get(yday)
+    forecast log; `bet_rows` (optional) attaches realized P&L. None until `day`
+    is settled or if no forecast row exists. Shared by the Morning Recap
+    (yesterday) and the Journal page (every settled day) so the two can never
+    grade a day differently."""
+    hl = settled_map.get(day)
     if not hl:
         return None
-    day_iso = yday.isoformat()
+    day_iso = day.isoformat()
     out: dict = {"date": day_iso}
     for i, var in enumerate(("high", "low")):
         row = _pick_forecast(forecast_rows, day_iso, var)
@@ -115,3 +116,10 @@ def yesterday_scorecard(today: date, settled_map: dict, forecast_rows: list[dict
     if pnl:
         out["pnl"] = pnl
     return out
+
+
+def yesterday_scorecard(today: date, settled_map: dict, forecast_rows: list[dict],
+                        bet_rows: list[dict] | None = None) -> dict | None:
+    """Grade yesterday (see day_scorecard)."""
+    return day_scorecard(today - timedelta(days=1), settled_map, forecast_rows,
+                         bet_rows)

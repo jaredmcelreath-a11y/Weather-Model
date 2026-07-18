@@ -95,3 +95,25 @@ def test_yesterday_pnl_none_when_no_settled_bets():
 def test_yesterday_scorecard_attaches_pnl():
     out = recap.yesterday_scorecard(date(2026, 7, 18), _SETTLED, _ROWS, bet_rows=_BETS)
     assert out["pnl"]["net"] == 34.0 and out["pnl"]["n"] == 3
+
+
+def test_day_scorecard_grades_arbitrary_day():
+    # Same grading as yesterday_scorecard, but for any settled day.
+    from datetime import date
+    import recap
+    day = date(2026, 7, 10)
+    settled = {day: (94.0, 77.0)}
+    rows = [{"target_date": "2026-07-10", "variable": "high", "basis": "cli",
+             "lead_bucket": 24, "consensus": 93.0},
+            {"target_date": "2026-07-10", "variable": "low", "basis": "cli",
+             "lead_bucket": 24, "consensus": 77.4}]
+    out = recap.day_scorecard(day, settled, rows)
+    assert out["date"] == "2026-07-10"
+    assert out["high"]["settled"] == 94.0 and out["high"]["exact"] is False
+    assert out["low"]["exact"] is True
+
+
+def test_day_scorecard_none_when_unsettled():
+    from datetime import date
+    import recap
+    assert recap.day_scorecard(date(2026, 7, 10), {}, []) is None
