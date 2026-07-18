@@ -1776,6 +1776,32 @@ def _render_accuracy(load_accuracy, calib=None, history_loader=None):
             pass
 
 
+def _render_shadow_comparison(snap):
+    """Small expander comparing the production consensus to the candidate
+    (shadow) model set. Renders only when the snapshot carries a candidate
+    block; never raises into the page."""
+    try:
+        import shadow
+        rows = shadow.consensus_comparison(snap)
+    except Exception:
+        rows = []
+    if not rows:
+        return
+    with st.expander("🧪 Candidate model set (shadow) — not live"):
+        st.caption("Second consensus from the expanded model set (AI + extra "
+                   "global models). Compare-only; the live numbers above are "
+                   "unchanged.")
+        lines = ["| Day | Var | Production | Candidate | Gap |",
+                 "|---|---|---|---|---|"]
+        for r in rows:
+            def _f(x):
+                return "—" if x is None else f"{x:.1f}°F"
+            gap = "—" if r["gap"] is None else f"{r['gap']:+.1f}"
+            lines.append(f"| {r['day']} | {r['variable']} | "
+                         f"{_f(r['production'])} | {_f(r['candidate'])} | {gap} |")
+        st.markdown("\n".join(lines))
+
+
 def render_page(snap, calib, adapter, load_accuracy, recap_loader=None,
                 history_loader=None, bankroll=None):
     """Draw the full dashboard body for one market. `snap`/`calib` come from the
@@ -1786,6 +1812,7 @@ def render_page(snap, calib, adapter, load_accuracy, recap_loader=None,
     _inject_theme(_seed_theme())
 
     st.title("Dallas Daily High & Low")
+    _render_shadow_comparison(snap)
 
     cur = snap.get("current")
     ki = _kalshi_implied(snap["today"]["day"])      # Kalshi market-implied hi/lo (today)
