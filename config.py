@@ -48,6 +48,12 @@ BIN_HIGH = 115  # highest explicit integer-degree bin
 # illiquid market (every bucket below the floor) is kept whole rather than emptied.
 MARKET_MIN_BUCKET_PRICE = 0.03  # 3c
 
+# ⚠-marker threshold on the Edge page: a (slot, variable) subset whose median
+# traded market volume falls below this is flagged as a thin market, so a
+# "market win/loss" that rode on almost no trading is visible. Annotation only —
+# nothing is excluded from the tally. Conservative first guess; retune with data.
+MARKET_LIQUIDITY_FLOOR = 20   # contracts
+
 
 def bin_labels() -> list[str]:
     """Ordered bin labels including the open-ended tails."""

@@ -171,3 +171,19 @@ def test_row_flags_default_false_when_absent():
                            0.91, "2026-07-13T15:00:00-05:00")
     assert rec["convective_widened"] is False
     assert rec["front_widened"] is False
+
+
+def test_row_logs_market_volume():
+    cli_var = {"consensus": 97.5, "probabilities": {"97": 0.6, "98": 0.4}}
+    market_var = {"ev": 97.2, "buckets": [[97, 98, 1.0]], "volume": 42.0}
+    rec = betting_log._row("2026-07-13", "high", "15:30", cli_var, {}, market_var,
+                           0.89, "2026-07-13T15:30:00-05:00")
+    assert rec["market_ev"] == 97.2
+    assert rec["market_volume"] == 42.0
+
+
+def test_row_without_market_has_no_volume_key():
+    cli_var = {"consensus": 97.5, "probabilities": {"97": 0.6, "98": 0.4}}
+    rec = betting_log._row("2026-07-13", "high", "15:30", cli_var, {}, None,
+                           0.89, "2026-07-13T15:30:00-05:00")
+    assert "market_volume" not in rec

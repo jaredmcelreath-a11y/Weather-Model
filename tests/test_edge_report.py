@@ -137,3 +137,54 @@ def test_metrics_values_are_rounded():
     ]
     m = edge_report.metrics(joined)[("16:30", "high", "all")]
     assert m["model_mae"] == 0.4          # not 0.39999999999999997
+
+
+def test_metrics_market_bucket_uses_ev_not_mode():
+    # Market's MODE is (95,96) (p=0.5), but its MEAN (ev 97.5) lands in (97,98),
+    # which is the settled bucket. Under the fair mean-vs-mean rule the market
+    # DISAGREES with the model (95,96) and WINS. The old mode rule would have put
+    # market_b == model_b == (95,96) and counted no disagreement at all.
+    joined = [
+        _hi("15:30", 95.5, 97.5, [[95, 96, 0.5], [97, 98, 0.3], [99, 100, 0.2]],
+            98.0, 97.0, 1.0),
+    ]
+    m = edge_report.metrics(joined)[("15:30", "high", "all")]
+    assert m["disagreements"] == 1
+    assert m["market_bin_wins"] == 1
+    assert m["model_bin_wins"] == 0
+
+
+def test_metrics_skips_row_with_no_market_ev():
+    # A row with market_buckets but market_ev None must not blow up settled_bucket;
+    # it is skipped from the disagreement tally (n still counts it).
+    row = _hi("15:30", 95.5, None, [[95, 96, 1.0]], 95.0, 94.0, 1.0)
+    m = edge_report.metrics([row])[("15:30", "high", "all")]
+    assert m["n"] == 1
+    assert m["disagreements"] == 0
+
+
+def test_metrics_market_volume_median_and_thin_flag():
+    # Two liquid-ish days: median(5, 100) = 52.5, >= floor 20 -> not thin.
+    a = _hi("15:30", 96.0, 96.0, [[95, 96, 1.0]], 96.0, 95.0, 1.0)
+    b = _hi("15:30", 96.0, 96.0, [[95, 96, 1.0]], 96.0, 95.0, 1.0)
+    a["market_volume"], b["market_volume"] = 5.0, 100.0
+    m = edge_report.metrics([a, b])[("15:30", "high", "all")]
+    assert m["market_volume"] == 52.5
+    assert m["thin"] is False
+
+
+def test_metrics_thin_when_median_below_floor():
+    a = _hi("16:00", 96.0, 96.0, [[95, 96, 1.0]], 96.0, 95.0, 1.0)
+    b = _hi("16:00", 96.0, 96.0, [[95, 96, 1.0]], 96.0, 95.0, 1.0)
+    a["market_volume"], b["market_volume"] = 5.0, 10.0   # median 7.5 < 20
+    m = edge_report.metrics([a, b])[("16:00", "high", "all")]
+    assert m["market_volume"] == 7.5
+    assert m["thin"] is True
+
+
+def test_metrics_volume_absent_is_none_not_thin():
+    # Historical rows (pre-volume) -> market_volume None, never flagged thin.
+    row = _hi("16:30", 96.0, 96.0, [[95, 96, 1.0]], 96.0, 95.0, 1.0)
+    m = edge_report.metrics([row])[("16:30", "high", "all")]
+    assert m["market_volume"] is None
+    assert m["thin"] is False

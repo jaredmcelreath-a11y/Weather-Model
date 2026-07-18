@@ -128,6 +128,7 @@ def _row(day: str, variable: str, slot: str, cli_var: dict, hourly_var: dict,
     if market_var:
         rec["market_ev"] = market_var.get("ev")
         rec["market_buckets"] = market_var.get("buckets")
+        rec["market_volume"] = market_var.get("volume")
     return rec
 
 

@@ -6,9 +6,10 @@ from __future__ import annotations
 import csv
 import math
 import os
+import statistics
 from datetime import date as _date
 
-from config import BIN_HIGH, BIN_LOW
+from config import BIN_HIGH, BIN_LOW, MARKET_LIQUIDITY_FLOOR
 
 
 def settled_bucket(temp: float, buckets: list) -> tuple | None:
@@ -57,10 +58,10 @@ def _subset_metrics(rows: list[dict], variable: str) -> dict:
 
     disagreements = model_bin_wins = market_bin_wins = 0
     for r in rows:
-        if not r.get("market_buckets"):
+        if not r.get("market_buckets") or r.get("market_ev") is None:
             continue
         model_b = settled_bucket(r["cli_consensus"], r["market_buckets"])
-        market_b = top_bucket(r["market_buckets"])
+        market_b = settled_bucket(r["market_ev"], r["market_buckets"])
         actual_b = settled_bucket(r["settled_cli"], r["market_buckets"])
         if model_b != market_b:
             disagreements += 1
@@ -79,6 +80,10 @@ def _subset_metrics(rows: list[dict], variable: str) -> dict:
         "n_boundary": sum(1 for r in rows if is_boundary(r["cli_consensus"])),
         "flat_rmse": None, "live_rmse": None, "flip_toward": None, "flip_away": None,
     }
+    vols = [r["market_volume"] for r in rows if r.get("market_volume") is not None]
+    entry["market_volume"] = round(statistics.median(vols), 1) if vols else None
+    entry["thin"] = (entry["market_volume"] is not None
+                     and entry["market_volume"] < MARKET_LIQUIDITY_FLOOR)
     if variable == "high":
         og = [r for r in rows if r.get("live_gap") is not None and r.get("actual_gap") is not None]
         entry["flat_rmse"] = _rmse([(r["flat_offset"], r["actual_gap"]) for r in og])
@@ -141,7 +146,7 @@ def join(betting_rows: list[dict], cli_map: dict, hourly_map: dict) -> list[dict
 
 _COLS = ["capture_slot", "variable", "subset", "n", "model_mae", "market_mae",
          "disagreements", "model_bin_wins", "market_bin_wins", "n_boundary",
-         "flat_rmse", "live_rmse", "flip_toward", "flip_away"]
+         "flat_rmse", "live_rmse", "flip_toward", "flip_away", "market_volume"]
 
 # subset display order within a (slot, variable), decision-relevant first
 _SUBSET_ORDER = {"boundary": 0, "all": 1, "mid_bin": 2}

@@ -65,6 +65,20 @@ def test_assemble_empty_is_zeroed():
     assert out["metrics"] == {}
 
 
+def test_assemble_surfaces_low_slot():
+    import edge_view
+    rows = [
+        {"target_date": "2026-07-02", "variable": "low", "capture_slot": "sr",
+         "cli_consensus": 76.2, "flat_offset": -0.36, "live_gap": None,
+         "market_ev": 76.0, "market_buckets": [[75, 76, 0.6], [77, 78, 0.4]]},
+    ]
+    cli_map = {date(2026, 7, 2): (95.0, 76.0)}       # (high, low); low settles 76
+    hourly_map = {date(2026, 7, 2): (94.0, 75.0)}
+    out = edge_view.assemble(rows, cli_map, hourly_map)
+    assert ("sr", "low", "all") in out["metrics"]
+    assert out["headline"]["n"] == 1
+
+
 def test_offset_verdict_high_all_subset_only():
     import edge_view
     metrics = {
@@ -90,6 +104,26 @@ def test_edge_view_exposes_render():
     import edge_view
     assert hasattr(edge_view, "render")
     assert callable(edge_view.render)
+
+
+def test_edge_rows_shows_volume_and_thin_marker():
+    import edge_view
+    metrics = {
+        ("15:30", "high", "all"): {
+            "n": 4, "model_mae": 1.0, "market_mae": 1.2, "disagreements": 2,
+            "model_bin_wins": 1, "market_bin_wins": 1,
+            "market_volume": 7.5, "thin": True},
+        ("15:30", "high", "mid_bin"): {
+            "n": 3, "model_mae": 1.0, "market_mae": 1.2, "disagreements": 1,
+            "model_bin_wins": 1, "market_bin_wins": 0,
+            "market_volume": None, "thin": False},
+    }
+    rows = edge_view._edge_rows(metrics)
+    by_type = {r["day type"]: r for r in rows}
+    assert "⚠ all" in by_type                     # thin subset flagged
+    assert by_type["⚠ all"]["volume"] == "7.5"
+    assert "mid-bin" in by_type                    # not thin, no marker
+    assert by_type["mid-bin"]["volume"] == "—"     # unknown volume
 
 
 def test_render_imports_kalshi_auth_from_sources_package():
