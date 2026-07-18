@@ -149,6 +149,7 @@ def record(snapshot: dict, path: str | None = None, basis: str = "hourly") -> No
 
     sources = snapshot.get("sources", {})
     market = snapshot.get("market", {})
+    candidate = snapshot.get("candidate", {})
     cohort = morning_cohort(now)
     new_recs = []
     for which in ("today", "tomorrow"):
@@ -184,6 +185,13 @@ def record(snapshot: dict, path: str | None = None, basis: str = "hourly") -> No
             corr = d.get("corrections")
             if corr:
                 rec["corrections"] = corr
+            # Shadow/candidate consensus for the expanded model set, logged
+            # head-to-head so day-ahead skill can be scored vs production later.
+            # Only when present — production-only rows stay byte-identical.
+            cand_pred = candidate.get(which) or {}
+            cand_c = (cand_pred.get(variable) or {}).get("consensus")
+            if cand_c is not None:
+                rec["candidate_consensus"] = cand_c
             # Per-source predicted extremes — present once the snapshot carries
             # them; lets scoring later learn ensemble/NWS bias from the live log.
             src = _source_means(sources.get(which, {}), variable)

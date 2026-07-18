@@ -34,7 +34,8 @@ def test_main_logs_when_calibration_present(monkeypatch):
     seen = []
     monkeypatch.setattr(calibration, "get", lambda refresh=True: calib)
     monkeypatch.setattr(model, "snapshot",
-                        lambda c, settle_offset=None, continuous_obs=False: snap)
+                        lambda c, settle_offset=None, continuous_obs=False,
+                        include_candidate=False: snap)
     monkeypatch.setattr(kalshi, "implied_block", lambda t, tm: {})
     monkeypatch.setattr(forecast_log, "record",
                         lambda s, path=None, basis="hourly": seen.append(("forecast", basis)))

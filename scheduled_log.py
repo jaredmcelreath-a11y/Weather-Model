@@ -37,7 +37,8 @@ def _record_settlements() -> int:
 def _log_snapshots(calib: dict, off) -> None:
     """The model-logging body of a scheduled run: CLI snapshot + market block +
     forecast/consensus logs + the slot-gated betting capture."""
-    cli_snap = model.snapshot(calib, settle_offset=off, continuous_obs=True)
+    cli_snap = model.snapshot(calib, settle_offset=off, continuous_obs=True,
+                              include_candidate=True)
     # Attach the live Kalshi market's implied forecast so the log can later
     # score market-vs-model against settlement. Best-effort: a market outage
     # just omits the block and the model logging is unaffected.
