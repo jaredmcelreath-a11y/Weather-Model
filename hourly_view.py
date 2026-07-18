@@ -141,6 +141,9 @@ _RADAR_TEMPLATE = """<!doctype html>
     padding:5px 9px;color:#e9e6df;font-size:13px;}
   .bar button{cursor:pointer;background:transparent;border:none;color:#e9e6df;
     font-size:15px;line-height:1;padding:0 2px;}
+  .bar input[type=range]{width:150px;accent-color:#f0b34a;cursor:pointer;
+    vertical-align:middle;}
+  #ts{min-width:104px;display:inline-block;}
   .fc{color:#f0b34a;font-weight:700;letter-spacing:0.03em;}
   .msg{position:absolute;top:50%;left:0;right:0;text-align:center;z-index:400;
     color:#b9b4ab;font-size:14px;display:none;}
@@ -148,7 +151,8 @@ _RADAR_TEMPLATE = """<!doctype html>
 <body>
 <div id="map"></div>
 <div class="bar"><button id="playpause" aria-label="play/pause">&#10073;&#10073;</button>
-  <span id="ts">&hellip;</span></div>
+  <input type="range" id="slider" min="0" max="0" value="0" step="1"
+    aria-label="radar time"><span id="ts">&hellip;</span></div>
 <div class="msg" id="msg">Radar unavailable right now</div>
 <script>
   var map = L.map('map', {zoomControl:true, attributionControl:true})
@@ -163,6 +167,9 @@ _RADAR_TEMPLATE = """<!doctype html>
   var COLOR=4, OPTS='1_1';
   var label=document.getElementById('ts');
   var btn=document.getElementById('playpause');
+  var slider=document.getElementById('slider');
+
+  function setPlaying(p){ playing=p; btn.innerHTML=p?'&#10073;&#10073;':'&#9654;'; }
 
   function showFrame(i){
     var f=frames[i]; if(!f) return;
@@ -172,6 +179,7 @@ _RADAR_TEMPLATE = """<!doctype html>
     }
     for(var k in layers){ layers[k].setOpacity(0); }
     layers[f.path].setOpacity(0.7);
+    slider.value=i;
     var d=new Date(f.time*1000);
     var hh=d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
     label.innerHTML=(f.forecast?'<span class="fc">FORECAST</span> ':'')+hh;
@@ -182,8 +190,11 @@ _RADAR_TEMPLATE = """<!doctype html>
     timer=setInterval(function(){ if(playing && frames.length) step(); }, 500);
     showFrame(0);
   }
-  btn.addEventListener('click', function(){
-    playing=!playing; btn.innerHTML=playing?'&#10073;&#10073;':'&#9654;';
+  btn.addEventListener('click', function(){ setPlaying(!playing); });
+  // Dragging the slider scrubs to that frame and pauses, so you can step at
+  // your own pace; hitting play resumes the loop from where you left it.
+  slider.addEventListener('input', function(){
+    setPlaying(false); idx=+this.value; showFrame(idx);
   });
 
   fetch('https://api.rainviewer.com/public/weather-maps.json')
@@ -196,6 +207,7 @@ _RADAR_TEMPLATE = """<!doctype html>
         return {time:f.time, path:f.path, forecast: now.indexOf(f)>=0};
       });
       if(!frames.length){ document.getElementById('msg').style.display='block'; return; }
+      slider.max=frames.length-1;
       animate();
     })
     .catch(function(){ document.getElementById('msg').style.display='block'; });

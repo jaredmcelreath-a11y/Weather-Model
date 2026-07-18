@@ -111,6 +111,13 @@ def test_radar_html_contains_source_map_and_controls():
     assert "32.9" in html and "-97.04" in html
 
 
+def test_radar_html_has_time_slider():
+    import hourly_view
+    html = hourly_view._radar_html()
+    assert 'type="range"' in html
+    assert 'id="slider"' in html
+
+
 def test_radar_html_honors_custom_center_and_zoom():
     import hourly_view
     html = hourly_view._radar_html(lat=40.0, lon=-105.0, zoom=9)
