@@ -161,3 +161,30 @@ def test_metrics_skips_row_with_no_market_ev():
     m = edge_report.metrics([row])[("15:30", "high", "all")]
     assert m["n"] == 1
     assert m["disagreements"] == 0
+
+
+def test_metrics_market_volume_median_and_thin_flag():
+    # Two liquid-ish days: median(5, 100) = 52.5, >= floor 20 -> not thin.
+    a = _hi("15:30", 96.0, 96.0, [[95, 96, 1.0]], 96.0, 95.0, 1.0)
+    b = _hi("15:30", 96.0, 96.0, [[95, 96, 1.0]], 96.0, 95.0, 1.0)
+    a["market_volume"], b["market_volume"] = 5.0, 100.0
+    m = edge_report.metrics([a, b])[("15:30", "high", "all")]
+    assert m["market_volume"] == 52.5
+    assert m["thin"] is False
+
+
+def test_metrics_thin_when_median_below_floor():
+    a = _hi("16:00", 96.0, 96.0, [[95, 96, 1.0]], 96.0, 95.0, 1.0)
+    b = _hi("16:00", 96.0, 96.0, [[95, 96, 1.0]], 96.0, 95.0, 1.0)
+    a["market_volume"], b["market_volume"] = 5.0, 10.0   # median 7.5 < 20
+    m = edge_report.metrics([a, b])[("16:00", "high", "all")]
+    assert m["market_volume"] == 7.5
+    assert m["thin"] is True
+
+
+def test_metrics_volume_absent_is_none_not_thin():
+    # Historical rows (pre-volume) -> market_volume None, never flagged thin.
+    row = _hi("16:30", 96.0, 96.0, [[95, 96, 1.0]], 96.0, 95.0, 1.0)
+    m = edge_report.metrics([row])[("16:30", "high", "all")]
+    assert m["market_volume"] is None
+    assert m["thin"] is False
