@@ -57,10 +57,10 @@ def _subset_metrics(rows: list[dict], variable: str) -> dict:
 
     disagreements = model_bin_wins = market_bin_wins = 0
     for r in rows:
-        if not r.get("market_buckets"):
+        if not r.get("market_buckets") or r.get("market_ev") is None:
             continue
         model_b = settled_bucket(r["cli_consensus"], r["market_buckets"])
-        market_b = top_bucket(r["market_buckets"])
+        market_b = settled_bucket(r["market_ev"], r["market_buckets"])
         actual_b = settled_bucket(r["settled_cli"], r["market_buckets"])
         if model_b != market_b:
             disagreements += 1
