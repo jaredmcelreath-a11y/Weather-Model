@@ -19,19 +19,20 @@ def _num(v) -> str:
 
 
 def headline_tiles(live: dict) -> list[dict]:
-    """Glanceable accuracy tiles from scoring.score()'s live dict: settled-day
-    count plus each variable's exact-bin %, within-±1 %, and Brier. Missing
-    variables are skipped; None metrics render as an em dash."""
-    tiles = [{"label": "Settled Days", "value": str(live.get("n_settled", 0) or 0)}]
+    """Glanceable accuracy tiles from scoring.score()'s live dict: each metric
+    paired High-then-Low (Exact-Bin, Within ±1, Brier), with the settled-day
+    count last. Missing variables are skipped; None metrics render as an em dash."""
     by_var = live.get("by_variable") or {}
-    for var in ("high", "low"):
-        m = by_var.get(var)
-        if not m:
-            continue
-        cap = var.capitalize()
-        tiles.append({"label": f"{cap} Exact-Bin", "value": _pct(m.get("exact_peak"))})
-        tiles.append({"label": f"{cap} Within ±1", "value": _pct(m.get("within1"))})
-        tiles.append({"label": f"{cap} Brier", "value": _num(m.get("brier"))})
+    tiles = []
+    for key, name, fmt in (("exact_peak", "Exact-Bin", _pct),
+                           ("within1", "Within ±1", _pct),
+                           ("brier", "Brier", _num)):
+        for var in ("high", "low"):
+            m = by_var.get(var)
+            if not m:
+                continue
+            tiles.append({"label": f"{var.capitalize()} {name}", "value": fmt(m.get(key))})
+    tiles.append({"label": "Settled Days", "value": str(live.get("n_settled", 0) or 0)})
     return tiles
 
 

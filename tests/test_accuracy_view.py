@@ -26,6 +26,17 @@ def test_headline_tiles_formats_values():
     assert by["High Brier"] == "0.12"
 
 
+def test_headline_tiles_order():
+    import accuracy_view
+    live = {"n_settled": 22, "by_variable": {
+        "high": {"n": 22, "brier": 0.12, "exact_peak": 82.0, "within1": 95.0},
+        "low": {"n": 22, "brier": 0.15, "exact_peak": 74.0, "within1": 90.0},
+    }}
+    labels = [t["label"] for t in accuracy_view.headline_tiles(live)]
+    assert labels == ["High Exact-Bin", "Low Exact-Bin", "High Within ±1",
+                      "Low Within ±1", "High Brier", "Low Brier", "Settled Days"]
+
+
 def test_headline_tiles_handles_missing_and_none():
     import accuracy_view
     # No settled data at all -> just the count tile, no crash.
