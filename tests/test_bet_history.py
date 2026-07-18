@@ -23,6 +23,10 @@ META = {
                                "strike_type": "between", "variable": "high"},
     "KXHIGHTDAL-26JUN22-B99": {"label": "99 to 100", "floor": 99, "cap": 100,
                                "strike_type": "between", "variable": "high"},
+    "KXHIGHTDAL-26JUN24-B97": {"label": "97 to 98", "floor": 97, "cap": 98,
+                               "strike_type": "between", "variable": "high"},
+    "KXHIGHTDAL-26JUN24-B99": {"label": "99 to 100", "floor": 99, "cap": 100,
+                               "strike_type": "between", "variable": "high"},
 }
 
 
@@ -165,6 +169,25 @@ def test_equity_curve_live_no_today_point_without_open_exposure():
     curve = bh.equity_curve_live(rows, date(2026, 6, 24))
     assert [c["date"] for c in curve] == [date(2026, 6, 22)]
     assert round(curve[0]["total"], 2) == 15.80
+
+
+def test_live_point_merges_with_same_day_realized_sell():
+    # Selling a contract about TODAY's weather realizes a point dated today (equity_curve
+    # buckets by weather day); a still-open contract about today then adds a live MTM point
+    # ALSO dated today. The two must collapse into ONE point (realized + open MTM), not two
+    # points at the same date (the "extra point"/day-ahead artifact).
+    fills = [
+        _fill("t1", "KXHIGHTDAL-26JUN24-B97", "yes", "buy", 10, 0.40, 24),   # sold flat
+        _fill("t2", "KXHIGHTDAL-26JUN24-B97", "yes", "sell", 10, 0.50, 24),  # -> +1.00 realized
+        _fill("t3", "KXHIGHTDAL-26JUN24-B99", "yes", "buy", 5, 0.40, 24),    # still open
+    ]
+    rows = bh.build_rows(fills, {}, META)
+    for r in rows:
+        if r["status"] == "open":
+            r["current_value"] = 0.60                 # entry 0.40, qty 5 -> +$1.00 unreal
+    curve = bh.equity_curve_live(rows, date(2026, 6, 24))
+    assert [c["date"] for c in curve] == [date(2026, 6, 24)]   # exactly one point, no dup
+    assert round(curve[-1]["total"], 2) == 12.00              # 10 + 1.00 realized + 1.00 MTM
 
 
 def test_closed_by_early_sell_is_realized_not_open():

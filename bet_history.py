@@ -216,7 +216,15 @@ def equity_curve_live(rows: list[dict], today) -> list[dict]:
     if not unreal:
         return curve
     base = curve[-1]["total"] if curve else STARTING_BANKROLL
-    return curve + [{"date": today, "total": base + unreal}]
+    live = {"date": today, "total": base + unreal}
+    # Selling a contract about today's weather creates a realized point ALSO dated today
+    # (equity_curve buckets by weather day), so the "always distinct" assumption breaks:
+    # appending would emit a second point at the same date (an extra vertical step, and the
+    # open MTM appearing to lag a day until those positions settle). Fold the open MTM into
+    # that same-day point instead of duplicating it.
+    if curve and curve[-1]["date"] == today:
+        return curve[:-1] + [live]
+    return curve + [live]
 
 
 def period_table(rows: list[dict], period: str) -> list[dict]:
