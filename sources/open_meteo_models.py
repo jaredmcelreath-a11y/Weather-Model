@@ -34,13 +34,16 @@ def _parse(data: dict) -> dict[str, tuple[list[datetime], list[float]]]:
     return out
 
 
-def fetch(forecast_days: int = 2) -> dict[str, tuple[list[datetime], list[float]]]:
-    """Live deterministic forecasts, {model_label: (times, temps_f)}."""
+def fetch(forecast_days: int = 2, models=None) -> dict[str, tuple[list[datetime], list[float]]]:
+    """Live deterministic forecasts, {model_label: (times, temps_f)}.
+
+    `models` overrides the production DETERMINISTIC_MODELS (used by the shadow
+    consensus); None keeps production behavior."""
     data = get_json(FORECAST_URL, {
         "latitude": LAT,
         "longitude": LON,
         "hourly": "temperature_2m",
-        "models": ",".join(DETERMINISTIC_MODELS),
+        "models": ",".join(models or DETERMINISTIC_MODELS),
         "temperature_unit": "fahrenheit",
         "timezone": TIMEZONE,
         "forecast_days": forecast_days,

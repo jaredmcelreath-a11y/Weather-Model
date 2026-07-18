@@ -46,13 +46,16 @@ def _warn_if_thin(parsed: dict) -> dict:
     return parsed
 
 
-def fetch(forecast_days: int = 2) -> dict[str, tuple[list[datetime], list[float]]]:
-    """Return {member_label: (times, temps_f)} across all ensemble systems."""
+def fetch(forecast_days: int = 2, models=None) -> dict[str, tuple[list[datetime], list[float]]]:
+    """Return {member_label: (times, temps_f)} across all ensemble systems.
+
+    `models` overrides the production ENSEMBLE_MODELS (shadow consensus); None
+    keeps production behavior."""
     data = get_json(URL, {
         "latitude": LAT,
         "longitude": LON,
         "hourly": "temperature_2m",
-        "models": ",".join(ENSEMBLE_MODELS),
+        "models": ",".join(models or ENSEMBLE_MODELS),
         "temperature_unit": "fahrenheit",
         "timezone": TIMEZONE,
         "forecast_days": forecast_days,

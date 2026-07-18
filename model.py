@@ -884,8 +884,11 @@ def _fetch_cli_daily(day: date) -> dict:
 
 
 def gather_series(forecast_days: int = 2, continuous_obs: bool = False,
-                  now: datetime | None = None):
+                  now: datetime | None = None, det_models=None, ens_models=None):
     """All forecast series merged into one dict, plus the obs series.
+
+    `det_models`/`ens_models` override the production Open-Meteo model lists
+    (used by the shadow/candidate consensus); None keeps production behavior.
 
     `continuous_obs` adds the sub-hourly observation feed (for the CLI basis's
     spike-aware hard bound); the default hourly obs is always present. When set,
@@ -897,8 +900,8 @@ def gather_series(forecast_days: int = 2, continuous_obs: bool = False,
     series = {}
     dropped = []
     forecast_sources = [
-        ("open-meteo ensemble", lambda: open_meteo_ensemble.fetch(forecast_days)),
-        ("open-meteo models", lambda: open_meteo_models.fetch(forecast_days)),
+        ("open-meteo ensemble", lambda: open_meteo_ensemble.fetch(forecast_days, models=ens_models)),
+        ("open-meteo models", lambda: open_meteo_models.fetch(forecast_days, models=det_models)),
         ("nws forecast", lambda: nws_forecast.fetch()),
         ("iem mos", lambda: iem_mos.fetch(forecast_days)),
     ]
