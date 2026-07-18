@@ -122,12 +122,12 @@ def _interval_contains(probs: dict, actual_label: str, level: float) -> bool:
     return lo_idx <= actual_idx <= hi_idx
 
 
-def run(days: int = 60, cli: bool = False, settle_offset=None) -> dict:
+def run(days: int = 60, cli: bool = False, settle_offset=None, det_models=None) -> dict:
     end = date.today() - timedelta(days=1)
     start = end - timedelta(days=days)
     actual = (station_history.fetch_actual_cli(start, end) if cli
               else station_history.fetch_actual(start, end))
-    series = open_meteo_models.fetch_historical(start, end)
+    series = open_meteo_models.fetch_historical(start, end, models=det_models)
     calib = calibration.get(refresh=True) or {}
     bias = calib.get("bias", {}).get("deterministic", {})
     sigma_cfg = calib.get("sigma", {})

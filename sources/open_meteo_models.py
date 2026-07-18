@@ -52,17 +52,19 @@ def fetch(forecast_days: int = 2, models=None) -> dict[str, tuple[list[datetime]
 
 
 def fetch_historical(start: date, end: date,
-                     ttl: int = 24 * 3600) -> dict[str, tuple[list[datetime], list[float]]]:
+                     ttl: int = 24 * 3600, models=None) -> dict[str, tuple[list[datetime], list[float]]]:
     """Archived past *forecasts* over [start, end] for bias calibration.
 
     The historical-forecast archive stores what each model predicted, letting us
-    measure systematic error against what KDFW actually recorded.
+    measure systematic error against what KDFW actually recorded. `models`
+    overrides DETERMINISTIC_MODELS (for the shadow backtest); None keeps
+    production behavior.
     """
     data = get_json(HISTORICAL_URL, {
         "latitude": LAT,
         "longitude": LON,
         "hourly": "temperature_2m",
-        "models": ",".join(DETERMINISTIC_MODELS),
+        "models": ",".join(models or DETERMINISTIC_MODELS),
         "temperature_unit": "fahrenheit",
         "timezone": TIMEZONE,
         "start_date": start.isoformat(),
