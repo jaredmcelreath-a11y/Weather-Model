@@ -1,19 +1,18 @@
 # Hourly Page Radar — Design
 
 **Date:** 2026-07-17
-**Status:** Shipped; radar SOURCE changed 2026-07-18 (see Addendum)
+**Status:** Shipped on RainViewer (past-only); see Addendum for the source saga
 
-## Addendum (2026-07-18): switched from RainViewer to a Windy embed
+## Addendum (2026-07-18): tried Windy + Ventusky, reverted to RainViewer
 
-RainViewer's free public `weather-maps.json` stopped serving forecast frames —
-`radar.nowcast` comes back as an empty list regardless of precipitation (verified
-across multiple times of day), so the custom Leaflet radar was effectively
-past-only. Replaced it with a **Windy radar embed** (`embed.windy.com/embed2.html`,
-`overlay=radar`), which carries its own timeline covering recent past AND the
-modeled forecast hours ahead. Trade-off accepted by the user: it's Windy's own map
-UI in an iframe, not the custom dark styling. `_radar_html`/RainViewer removed;
-`_windy_radar_url(lat, lon, zoom)` + `components.iframe` added. The rest of the
-original design below is superseded for the radar source only.
+RainViewer's free `weather-maps.json` serves an empty `radar.nowcast` at all hours
+(no future frames), so the radar is past-only. To get future movement we tried two
+iframe embeds — **Windy** (`overlay=radar`) then **Ventusky** (`l=radar`) — but the
+user reported *both* rendered as just a wind overlay, not actual precipitation, and
+neither is styleable. Zoom Earth can't be embedded (X-Frame-Options SAMEORIGIN).
+**Decision: reverted to the original RainViewer custom Leaflet radar** (real precip
+on a dark base, animated loop + play/scrub slider), accepting past-only. Do not
+re-propose Windy/Ventusky. The original design below stands as-is.
 
 ## Goal
 
