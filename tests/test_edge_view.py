@@ -63,3 +63,30 @@ def test_assemble_empty_is_zeroed():
     out = edge_view.assemble([], {}, {})
     assert out["headline"] == {"n": 0, "disagreements": 0, "model_wins": 0, "market_wins": 0}
     assert out["metrics"] == {}
+
+
+def test_offset_verdict_high_all_subset_only():
+    import edge_view
+    metrics = {
+        ("15:30", "high", "all"): {
+            "flat_rmse": 0.90, "live_rmse": 0.60, "flip_toward": 3, "flip_away": 1,
+            "n": 5, "model_mae": 1.0, "market_mae": 1.2,
+            "disagreements": 0, "model_bin_wins": 0, "market_bin_wins": 0},
+        ("15:30", "high", "boundary"): {  # ignored: not the 'all' subset
+            "flat_rmse": 0.5, "live_rmse": 0.5, "flip_toward": 0, "flip_away": 0,
+            "n": 1, "model_mae": 1.0, "market_mae": 1.2,
+            "disagreements": 0, "model_bin_wins": 0, "market_bin_wins": 0},
+        ("09:00", "low", "all"): {  # ignored: low has no offset predictor
+            "flat_rmse": None, "live_rmse": None, "flip_toward": None, "flip_away": None,
+            "n": 5, "model_mae": 1.0, "market_mae": 1.1,
+            "disagreements": 0, "model_bin_wins": 0, "market_bin_wins": 0},
+    }
+    lines = edge_view._offset_verdict(metrics)
+    assert len(lines) == 1
+    assert "15:30" in lines[0] and "live gap beats flat" in lines[0]
+
+
+def test_edge_view_exposes_render():
+    import edge_view
+    assert hasattr(edge_view, "render")
+    assert callable(edge_view.render)
