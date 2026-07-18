@@ -92,6 +92,26 @@ def test_edge_view_exposes_render():
     assert callable(edge_view.render)
 
 
+def test_edge_rows_shows_volume_and_thin_marker():
+    import edge_view
+    metrics = {
+        ("15:30", "high", "all"): {
+            "n": 4, "model_mae": 1.0, "market_mae": 1.2, "disagreements": 2,
+            "model_bin_wins": 1, "market_bin_wins": 1,
+            "market_volume": 7.5, "thin": True},
+        ("15:30", "high", "mid_bin"): {
+            "n": 3, "model_mae": 1.0, "market_mae": 1.2, "disagreements": 1,
+            "model_bin_wins": 1, "market_bin_wins": 0,
+            "market_volume": None, "thin": False},
+    }
+    rows = edge_view._edge_rows(metrics)
+    by_type = {r["day type"]: r for r in rows}
+    assert "⚠ all" in by_type                     # thin subset flagged
+    assert by_type["⚠ all"]["volume"] == "7.5"
+    assert "mid-bin" in by_type                    # not thin, no marker
+    assert by_type["mid-bin"]["volume"] == "—"     # unknown volume
+
+
 def test_render_imports_kalshi_auth_from_sources_package():
     # render() can't be executed in this env (no streamlit/cryptography), so its
     # runtime imports aren't exercised by the smoke test. kalshi_auth lives in the

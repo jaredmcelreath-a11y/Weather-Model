@@ -87,10 +87,13 @@ def _edge_rows(metrics: dict) -> list[dict]:
     rows = []
     for (slot, variable, subset), m in sorted(
             metrics.items(), key=lambda kv: (kv[0][0], kv[0][1], order.get(kv[0][2], 9))):
+        vol = m.get("market_volume")
         rows.append({
-            "slot": slot, "variable": variable, "day type": subset.replace("_", "-"),
+            "slot": slot, "variable": variable,
+            "day type": ("⚠ " if m.get("thin") else "") + subset.replace("_", "-"),
             "n": m["n"],
             "model MAE": m["model_mae"], "market MAE": m["market_mae"],
+            "volume": "—" if vol is None else f"{vol:g}",
             "disagree": m["disagreements"],
             "model won": m["model_bin_wins"], "market won": m["market_bin_wins"],
         })
@@ -137,7 +140,9 @@ def render():
         market_view._html_table(pd.DataFrame(_edge_rows(data["metrics"])))
         st.caption("Lower **MAE** (mean absolute error, °F) is the sharper forecast. "
                    "When the two disagree on the bin, **model won / market won** is who "
-                   "the settlement proved right.")
+                   "the settlement proved right. Both sides are scored by where their "
+                   "expected value lands. A ⚠ marks a thin-market subset (low traded "
+                   "volume), where the market's 'opinion' is weak.")
         for line in _offset_verdict(data["metrics"]):
             st.caption("Settlement offset — " + line)
 
