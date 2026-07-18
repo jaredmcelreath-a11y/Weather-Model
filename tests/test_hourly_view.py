@@ -99,33 +99,20 @@ def test_day_tables_highlow_none_when_all_temps_missing():
     assert t["high"] is None and t["low"] is None
 
 
-def test_radar_html_contains_source_map_and_controls():
+def test_wundermap_url_is_a_radar_map_at_kdfw():
     import hourly_view
-    html = hourly_view._radar_html()
-    # RainViewer client-side source + dark base map + Leaflet + a play/pause hook.
-    assert "api.rainviewer.com/public/weather-maps.json" in html
-    assert "leaflet" in html.lower()
-    assert "basemaps.cartocdn.com/dark" in html
-    assert "playpause" in html.lower() or "play/pause" in html.lower()
+    url = hourly_view._wundermap_url()
+    assert url.startswith("https://www.wunderground.com/wundermap?")
+    assert "radar=1" in url
     # KDFW default center.
-    assert "32.9" in html and "-97.04" in html
+    assert "lat=32.9" in url and "lon=-97.04" in url
 
 
-def test_radar_html_has_time_slider():
+def test_wundermap_url_honors_custom_center_and_zoom():
     import hourly_view
-    html = hourly_view._radar_html()
-    assert 'type="range"' in html
-    assert 'id="slider"' in html
-    # zoom control moved to top-right so it doesn't overlap the top-left slider
-    assert "zoomControl:false" in html.replace(" ", "")
-    assert "topright" in html
-
-
-def test_radar_html_honors_custom_center_and_zoom():
-    import hourly_view
-    html = hourly_view._radar_html(lat=40.0, lon=-105.0, zoom=9)
-    assert "40.0" in html and "-105.0" in html
-    assert "9" in html
+    url = hourly_view._wundermap_url(lat=40.0, lon=-105.0, zoom=9)
+    assert "lat=40.0" in url and "lon=-105.0" in url
+    assert "zoom=9" in url
 
 
 def test_render_exposed_and_callable():
