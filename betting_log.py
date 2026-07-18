@@ -125,6 +125,11 @@ def _row(day: str, variable: str, slot: str, cli_var: dict, hourly_var: dict,
     corr = cli_var.get("corrections")
     if corr:
         rec["corrections"] = corr
+    # Front-guard trigger details at betting time (only when fired) — the
+    # margin recalibration's per-slot evidence.
+    fg = cli_var.get("front_guard")
+    if fg:
+        rec["front_guard"] = fg
     if market_var:
         rec["market_ev"] = market_var.get("ev")
         rec["market_buckets"] = market_var.get("buckets")

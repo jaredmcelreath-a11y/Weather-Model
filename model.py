@@ -288,6 +288,24 @@ def _member_extreme(times, temps, day, variable, now, observed, obs_now=None,
         return min(observed if observed is not None else math.inf, fcst)
 
 
+def _raw_postnoon_min(times, temps, day, now):
+    """A member's UNANCHORED forecast minimum over the front-guard scan window
+    (post-`now`, post-noon, within `day`'s settlement window) — the same hours
+    `_member_extreme` scans, but without the obs anchoring offset. None when
+    the member has no forecast left in the scan window."""
+    start, end = local_day_bounds(day)
+    noon = start.astimezone(TZ).replace(
+        hour=FRONT_SCAN_FROM_HOUR, minute=0, second=0, microsecond=0)
+    vals = []
+    for t, v in zip(times, temps):
+        if v is None:
+            continue
+        t = t.astimezone(TZ)
+        if start <= t < end and t > now and t >= noon:
+            vals.append(v)
+    return min(vals) if vals else None
+
+
 def _sample_weights(series, weights):
     """Map each member label to its per-sample weight from system weights.
 
@@ -575,9 +593,29 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     # Front guard fired: at least one locked-low member reported an anchored
     # post-noon projection below the observed min (see _member_extreme).
     # Computed here, before the cooling/settle/bias offsets move the samples,
-    # so the comparison against `observed` is clean.
-    front_widened = (locked and variable == "low" and observed is not None
-                     and any(s < observed for s in samples))
+    # so the comparison against `observed` is clean. The flag itself (amber
+    # badge, Resolved cap, FRONT_SIGMA_MIN) additionally requires RAW
+    # corroboration: some member's unanchored forecast must undercut the min
+    # by the margin on its own. A real front shows up in the forecast fields;
+    # an undercut manufactured solely by the obs-vs-forecast anchoring offset
+    # (rain-cooled / cloudy afternoons — the 2026-07-14..18 false-alarm week)
+    # still lets the projections shape the consensus, but must not print "low
+    # at risk" on a signal no forecast contains. `front_guard` records the
+    # trigger details either way, feeding the margin recalibration.
+    front_widened = False
+    front_guard = None
+    if locked and variable == "low" and observed is not None:
+        fired = sum(1 for s in samples if s < observed)
+        if fired:
+            raw_undercut = any(
+                rm is not None and rm <= observed - FRONT_UNDERCUT_MARGIN
+                for rm in (_raw_postnoon_min(t, v, day, now)
+                           for t, v in series.values()))
+            front_widened = raw_undercut
+            front_guard = {"fired": fired, "members": len(samples),
+                           "projection": round(min(samples), 1),
+                           "undercut": round(observed - min(samples), 2),
+                           "raw_undercut": raw_undercut}
 
     # Radiational cooling: on a forecast clear+calm night the bias-corrected low
     # still runs warm, so nudge the (pure-forecast) low samples down by the
@@ -793,6 +831,7 @@ def predict_variable(series, obs_series, day, variable, now, calib,
         "cooling_applied": cooling_applied,
         "peak_locked": locked,
         "front_widened": front_widened,
+        "front_guard": front_guard,
         "convective_widened": convective_widened,
         "corrections": corrections,
     }

@@ -185,6 +185,12 @@ def record(snapshot: dict, path: str | None = None, basis: str = "hourly") -> No
             corr = d.get("corrections")
             if corr:
                 rec["corrections"] = corr
+            # Front-guard trigger details (projection / undercut size / raw
+            # corroboration) for the planned margin recalibration. Only when
+            # the guard fired at this capture.
+            fg = d.get("front_guard")
+            if fg:
+                rec["front_guard"] = fg
             # Shadow/candidate consensus for the expanded model set, logged
             # head-to-head so day-ahead skill can be scored vs production later.
             # Only when present — production-only rows stay byte-identical.
@@ -222,6 +228,14 @@ def record(snapshot: dict, path: str | None = None, basis: str = "hourly") -> No
             for flag in ("convective_widened", "front_widened"):
                 if rows[index[k]].get(flag):
                     rec[flag] = True
+            # Latch the day's STRONGEST trigger details the same way: the
+            # margin recalibration wants the day's largest projected undercut,
+            # not whatever the 11:45pm capture happened to see.
+            old_fg = rows[index[k]].get("front_guard")
+            new_fg = rec.get("front_guard")
+            if old_fg and (not new_fg or (new_fg.get("undercut") or 0)
+                           < (old_fg.get("undercut") or 0)):
+                rec["front_guard"] = old_fg
             rows[index[k]] = rec
         else:
             index[k] = len(rows)
