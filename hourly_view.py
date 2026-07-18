@@ -155,8 +155,10 @@ _RADAR_TEMPLATE = """<!doctype html>
     aria-label="radar time"><span id="ts">&hellip;</span></div>
 <div class="msg" id="msg">Radar unavailable right now</div>
 <script>
-  var map = L.map('map', {zoomControl:true, attributionControl:true})
+  // zoom control on the top-right so it doesn't sit under the top-left slider bar
+  var map = L.map('map', {zoomControl:false, attributionControl:true})
               .setView([__LAT__, __LON__], __ZOOM__);
+  L.control.zoom({position:'topright'}).addTo(map);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
     {attribution:'&copy; OpenStreetMap, &copy; CARTO', subdomains:'abcd', maxZoom:19})
     .addTo(map);

@@ -116,6 +116,9 @@ def test_radar_html_has_time_slider():
     html = hourly_view._radar_html()
     assert 'type="range"' in html
     assert 'id="slider"' in html
+    # zoom control moved to top-right so it doesn't overlap the top-left slider
+    assert "zoomControl:false" in html.replace(" ", "")
+    assert "topright" in html
 
 
 def test_radar_html_honors_custom_center_and_zoom():
