@@ -81,6 +81,23 @@ ENSEMBLE_MODELS = [
                             # control series — this id delivers the real members)
 ]
 
+# --- Candidate model sets (shadow consensus) ---
+# Superset of the production lists used ONLY by the shadow/candidate consensus
+# (see model.snapshot(include_candidate=True)). The production consensus never
+# reads these. Promotion = move a model from here into the production list above.
+# Contents fixed by the 2026-07-18 probe (docs/benchmarks/2026-07-18-model-
+# diversity/probe_results.md): GraphCast + BOM ensemble returned all-null
+# temperature at KDFW and were dropped.
+CANDIDATE_DETERMINISTIC_MODELS = DETERMINISTIC_MODELS + [
+    "ecmwf_aifs025_single",  # ECMWF AIFS (AI)
+    "ukmo_seamless",         # UK Met Office
+    "jma_seamless",          # JMA
+    "meteofrance_seamless",  # Meteo-France ARPEGE/AROME
+]
+CANDIDATE_ENSEMBLE_MODELS = ENSEMBLE_MODELS + [
+    "ukmo_global_ensemble_20km",  # UKMO EPS, ~18 members
+]
+
 # --- Lead-time buckets for bias / spread calibration ---
 # A forecast's error grows with how far ahead the valid day is. We bucket by the
 # target day's calendar offset from "now": today (the extreme is same-day, often
