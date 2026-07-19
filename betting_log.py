@@ -15,6 +15,7 @@ import os
 from datetime import datetime, timedelta
 
 from config import TIMEZONE
+from forecast_log import _load_github
 from zoneinfo import ZoneInfo
 
 import model
@@ -81,7 +82,35 @@ def _write(rows: list[dict], path: str) -> None:
             fh.write(json.dumps(rec) + "\n")
 
 
+def _github_cfg() -> dict | None:
+    """Remote-log config from env, pointing at the betting-log file.
+
+    Shares the repo/ref/token with forecast_log (set from Streamlit secrets);
+    only the file path differs. Present on the cloud deploy, absent locally and
+    in the scheduled Action — both of which work the local file directly.
+    """
+    repo = os.environ.get("FORECAST_LOG_GH_REPO")
+    if not repo:
+        return None
+    return {
+        "repo": repo,
+        "ref": os.environ.get("FORECAST_LOG_GH_REF", "data"),
+        "path": os.environ.get("FORECAST_LOG_GH_BETTING_PATH", "betting_log.jsonl"),
+        "token": os.environ.get("FORECAST_LOG_GH_TOKEN") or None,
+    }
+
+
 def load(path: str | None = None) -> list[dict]:
+    """All betting-time rows, oldest-written first.
+
+    With no explicit path, transparently reads the GitHub-hosted file when the
+    dashboard has configured one (cloud deploy); otherwise the local file. An
+    explicit path always reads locally (used by record() and the Action).
+    """
+    if path is None:
+        cfg = _github_cfg()
+        if cfg:
+            return _load_github(cfg)
     path = path or _PATH
     if not os.path.exists(path):
         return []

@@ -187,3 +187,48 @@ def test_row_without_market_has_no_volume_key():
     rec = betting_log._row("2026-07-13", "high", "15:30", cli_var, {}, None,
                            0.89, "2026-07-13T15:30:00-05:00")
     assert "market_volume" not in rec
+
+
+# ---------------------------------------------------------------------------
+# GitHub dual-read (cloud deploy): load() with no explicit path must read the
+# remote data-branch file when the dashboard has one configured, mirroring
+# settlements.load — otherwise the deployed Edge page sees zero rows forever.
+
+_REMOTE = [{"target_date": "2026-07-10", "variable": "high",
+            "capture_slot": "15:00"}]
+
+
+def test_load_reads_github_when_configured(monkeypatch):
+    monkeypatch.setenv("FORECAST_LOG_GH_REPO", "someone/weather")
+    seen = {}
+
+    def fake_load(cfg):
+        seen.update(cfg)
+        return list(_REMOTE)
+
+    monkeypatch.setattr(betting_log, "_load_github", fake_load)
+    assert betting_log.load() == _REMOTE
+    assert seen["repo"] == "someone/weather"
+    assert seen["path"] == "betting_log.jsonl"
+
+
+def test_load_explicit_path_ignores_github(tmp_path, monkeypatch):
+    # record() and the Action always pass a path — they must keep reading the
+    # local file even when the remote config is present in the environment.
+    monkeypatch.setenv("FORECAST_LOG_GH_REPO", "someone/weather")
+    monkeypatch.setattr(betting_log, "_load_github",
+                        lambda cfg: (_ for _ in ()).throw(AssertionError("remote hit")))
+    p = tmp_path / "betting_log.jsonl"
+    p.write_text('{"target_date": "2026-07-11", "variable": "low", '
+                 '"capture_slot": "sr"}\n')
+    rows = betting_log.load(str(p))
+    assert rows == [{"target_date": "2026-07-11", "variable": "low",
+                     "capture_slot": "sr"}]
+
+
+def test_load_without_config_reads_local(tmp_path, monkeypatch):
+    monkeypatch.delenv("FORECAST_LOG_GH_REPO", raising=False)
+    p = tmp_path / "betting_log.jsonl"
+    p.write_text('{"target_date": "2026-07-12", "variable": "high", '
+                 '"capture_slot": "16:00"}\n')
+    assert betting_log.load(str(p))[0]["target_date"] == "2026-07-12"
