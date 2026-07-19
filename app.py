@@ -349,10 +349,10 @@ def accuracy_page():
 st.navigation([
     st.Page(kalshi_page, title="Forecast", default=True),
     st.Page(hourly_page, title="Hourly"),
-    st.Page(accuracy_page, title="Accuracy"),
-    st.Page(edge_page, title="Edge"),
-    st.Page(bet_view.render, title="History"),
-    st.Page(lab_page, title="Lab"),
     st.Page(journal_page, title="Journal"),
+    st.Page(bet_view.render, title="History"),
+    st.Page(edge_page, title="Edge"),
+    st.Page(lab_page, title="Lab"),
+    st.Page(accuracy_page, title="Accuracy"),
     st.Page(status_page, title="Status"),
 ]).run()
