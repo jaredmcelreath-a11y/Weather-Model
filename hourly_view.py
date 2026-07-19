@@ -75,17 +75,21 @@ def _kdfw_current() -> dict | None:
     return None
 
 
-def _temp_chart(rows: list[dict]):
+def _temp_chart(rows: list[dict], series_colors=None):
+    """Temp/Feels line chart. `series_colors` recolors [Temp, Feels] for the
+    active palette (Charcoal: green + cream); None keeps Vega's defaults."""
     frame = chart_frame(rows)
     df = pd.DataFrame([{**r, "time": r["time"].replace(tzinfo=None)} for r in frame])
     temps = [r["degF"] for r in frame]
     lo, hi = min(temps) - 3, max(temps) + 3
+    scale = (alt.Scale(domain=["Temp", "Feels"], range=series_colors)
+             if series_colors else alt.Undefined)
     return (alt.Chart(df).mark_line(strokeWidth=2.5, clip=True).encode(
                 x=alt.X("time:T", title=None,
                         axis=alt.Axis(format="%-I %p", labelAngle=-40,
                                       labelOverlap=True)),
                 y=alt.Y("degF:Q", title="°F", scale=alt.Scale(domain=[lo, hi])),
-                color=alt.Color("series:N",
+                color=alt.Color("series:N", scale=scale,
                                 legend=alt.Legend(title=None, orient="top")))
             .properties(height=240, background="transparent")
             .configure_view(fill=None, strokeWidth=0))
@@ -288,7 +292,8 @@ def render(load_hourly):
 
     if not rows:
         return
-    st.altair_chart(_temp_chart(rows), use_container_width=True)
+    st.altair_chart(_temp_chart(rows, market_view._series_colors()),
+                    use_container_width=True)
     today = datetime.now(TZ).date()
     for t in _day_tables(rows, today):
         hi = f"{t['high']:.0f}°" if t["high"] is not None else _EM

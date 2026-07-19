@@ -858,7 +858,13 @@ def consensus_chart(hist, variable, day_iso=None, is_today=False, view_window=No
                         legend=alt.Legend(title=None, orient="top-left",
                                           direction="horizontal", offset=2)),
     )
-    lines = base.mark_line(strokeWidth=2.5, clip=True)
+    # The shadow line draws in its own BOTTOM layer: it tracks the production
+    # consensus closely, so in a single layer (data order = z-order) the cream
+    # shadow painted over the red/blue consensus line and both read as cream.
+    shadow_lines = (base.transform_filter(alt.datum.series == "Shadow")
+                    .mark_line(strokeWidth=2.5, clip=True))
+    lines = (base.transform_filter(alt.datum.series != "Shadow")
+             .mark_line(strokeWidth=2.5, clip=True))
 
     # Tap/click a dot to pin its readout (mobile-friendly: touch devices don't
     # fire the hover events that drive Vega tooltips, so the hover-only readout
@@ -885,7 +891,7 @@ def consensus_chart(hist, variable, day_iso=None, is_today=False, view_window=No
     # Zoom is driven by the time-window slider in the caller (which re-pins the
     # x-axis via `view_window`), not by Vega's scale-bound gestures — those are
     # too jittery on touch and fought with tap-to-pin / page scroll.
-    return ((lines + dots + pinned)
+    return ((shadow_lines + lines + dots + pinned)
             .properties(height=220, background="transparent")
             .configure_view(fill=None, strokeWidth=0))
 
