@@ -47,3 +47,16 @@ def test_hourly_chart_series_colors_apply_when_given():
                      "range": ["#A6D2BC", "#EDE6D3"]}
     plain = hourly_view._temp_chart(rows).to_dict()
     assert not plain["encoding"]["color"].get("scale")
+
+
+def test_shadow_dots_draw_beneath_other_series():
+    # The dots share one layer, and point marks draw in data order — Shadow
+    # rows must come first in the long-form dataset so at exact overlaps the
+    # production/kalshi dots paint over the shadow dot, not under it.
+    spec = market_view.consensus_chart(_hist(), "high").to_dict()
+    ds = list(spec["datasets"].values())[0]
+    series_order = [r["series"] for r in ds]
+    first_non_shadow = series_order.index(
+        next(s for s in series_order if s != "Shadow"))
+    assert "Shadow" not in series_order[first_non_shadow:]
+    assert series_order[0] == "Shadow"

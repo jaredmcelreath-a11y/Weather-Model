@@ -837,6 +837,11 @@ def consensus_chart(hist, variable, day_iso=None, is_today=False, view_window=No
     long = df.melt("time", value_vars=value_cols,
                    var_name="series", value_name="degF").dropna()
     long = long.merge(df, on="time", how="left")
+    # Point marks draw in data order, so put Shadow rows first: at exact
+    # overlaps the production/kalshi dots then paint over the shadow dot
+    # (the line z-order is handled by the split layers below).
+    long = pd.concat([long[long["series"] == "Shadow"],
+                      long[long["series"] != "Shadow"]], ignore_index=True)
 
     # Pre-rendered readout per timestamp (time + every series value), for the
     # tap-to-pin label below. Built here because Vega can't easily format a
