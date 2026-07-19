@@ -326,7 +326,13 @@ def journal_page():
 
 
 def lab_page():
-    lab_view.render(load_lab)
+    # Live snapshot is best-effort here: the scored tables must render even
+    # when the forecast pipeline is down; only the shadow expander needs it.
+    try:
+        snap, _calib = load_snapshot_kalshi()
+    except Exception:
+        snap = None
+    lab_view.render(load_lab, snap)
 
 
 def status_page():

@@ -112,3 +112,17 @@ def test_error_chart_ships_datetimes_not_bare_date_strings():
     for ds in spec["datasets"].values():
         for row in ds:
             assert "T" in str(row["date"]), row
+
+
+def test_shadow_expander_lives_in_lab_titlecased_no_emoji(monkeypatch):
+    # Moved off the Forecast page (2026-07-19): the live shadow-vs-production
+    # comparison belongs with the Lab's scored head-to-head. Title Case, no emoji.
+    import shadow
+    rows = [{"day": "2026-07-19", "variable": "high",
+             "production": 96.0, "candidate": 95.5, "gap": -0.5}]
+    monkeypatch.setattr(shadow, "consensus_comparison", lambda snap: rows)
+    fake_st = MagicMock()
+    monkeypatch.setattr(lab_view, "st", fake_st)
+    lab_view._render_shadow_comparison({"today": {}})
+    fake_st.expander.assert_called_once_with(
+        "Candidate Model Set (Shadow) — Not Live")

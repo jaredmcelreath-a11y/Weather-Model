@@ -109,6 +109,35 @@ def per_model_scores(rows: list[dict], settled: dict) -> dict:
     return out
 
 
+def _render_shadow_comparison(snap):
+    """Expander comparing today's live production consensus to the candidate
+    (shadow) model set — the unsettled companion to the scored head-to-head.
+    Renders only when the snapshot carries a candidate block; never raises
+    into the page."""
+    if not snap:
+        return
+    try:
+        import shadow
+        rows = shadow.consensus_comparison(snap)
+    except Exception:
+        rows = []
+    if not rows:
+        return
+    with st.expander("Candidate Model Set (Shadow) — Not Live"):
+        st.caption("Second consensus from the expanded model set (AI + extra "
+                   "global models). Compare-only; the live forecast is "
+                   "unchanged.")
+        lines = ["| Day | Var | Production | Candidate | Gap |",
+                 "|---|---|---|---|---|"]
+        for r in rows:
+            def _f(x):
+                return "—" if x is None else f"{x:.1f}°F"
+            gap = "—" if r["gap"] is None else f"{r['gap']:+.1f}"
+            lines.append(f"| {r['day']} | {r['variable']} | "
+                         f"{_f(r['production'])} | {_f(r['candidate'])} | {gap} |")
+        st.markdown("\n".join(lines))
+
+
 _LEAD_LABEL = {0: "Same-Day", 24: "Day-Ahead"}
 
 
@@ -162,7 +191,7 @@ def _error_chart(recs: list[dict]):
             .configure_view(fill=None, strokeWidth=0))
 
 
-def render(lab_loader) -> None:
+def render(lab_loader, snap=None) -> None:
     import pandas as pd
 
     market_view._theme_controls()
@@ -177,6 +206,7 @@ def render(lab_loader) -> None:
     st.caption("The candidate model set runs silently beside production; both "
                "are scored here once days settle. Promotion needs the "
                "candidate to win at true day-ahead lead.")
+    _render_shadow_comparison(snap)
     if not h2h:
         st.info("Accumulating — no settled shadow days yet. This fills in "
                 "daily as candidate-logged days settle.")
