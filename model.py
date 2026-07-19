@@ -23,7 +23,8 @@ from zoneinfo import ZoneInfo
 import requests
 
 from config import (BIN_HIGH, BIN_LOW, CACHE_TTL_SECONDS, CALM_WIND_MAX,
-                    CLEAR_CLOUD_MAX, FRONT_SCAN_FROM_HOUR, FRONT_SIGMA_MIN,
+                    CLEAR_CLOUD_MAX, FRONT_RAW_MIN_FRAC, FRONT_SCAN_FROM_HOUR,
+                    FRONT_SIGMA_MIN,
                     FRONT_UNDERCUT_MARGIN, HIGH_BUMPY_STD, HIGH_LOCK_DROP,
                     HIGH_LOCK_NOON_OFFSET_HOURS, HIGH_PLATEAU_MAX,
                     LEAD_SIGMA_INFLATION, LOW_LOCK_RISE, MAX_CLI_GAP,
@@ -607,14 +608,23 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     if locked and variable == "low" and observed is not None:
         fired = sum(1 for s in samples if s < observed)
         if fired:
-            raw_undercut = any(
-                rm is not None and rm <= observed - FRONT_UNDERCUT_MARGIN
-                for rm in (_raw_postnoon_min(t, v, day, now)
-                           for t, v in series.values()))
+            raw_mins = [rm for rm in (_raw_postnoon_min(t, v, day, now)
+                                      for t, v in series.values())
+                        if rm is not None]
+            raw_under = sum(1 for rm in raw_mins
+                            if rm <= observed - FRONT_UNDERCUT_MARGIN)
+            # Quorum, not any(): a real front corroborates across most members
+            # (May 5 / May 10 replays: 100%), while a lone cold ensemble
+            # perturbation (2/151 on 2026-07-19) is noise and must not print
+            # "low at risk".
+            raw_undercut = bool(raw_mins) and (
+                raw_under / len(raw_mins) >= FRONT_RAW_MIN_FRAC)
             front_widened = raw_undercut
             front_guard = {"fired": fired, "members": len(samples),
                            "projection": round(min(samples), 1),
                            "undercut": round(observed - min(samples), 2),
+                           "raw_under": raw_under,
+                           "raw_scanned": len(raw_mins),
                            "raw_undercut": raw_undercut}
 
     # Radiational cooling: on a forecast clear+calm night the bias-corrected low

@@ -81,7 +81,8 @@ def test_raw_front_flags_with_details():
     assert out["front_widened"] is True
     fg = out["front_guard"]
     assert fg == {"fired": 1, "members": 2, "projection": 74.0,
-                  "undercut": 4.0, "raw_undercut": True}
+                  "undercut": 4.0, "raw_under": 1, "raw_scanned": 2,
+                  "raw_undercut": True}
 
 
 def test_calm_locked_day_has_no_front_guard_detail():

@@ -181,6 +181,12 @@ HIGH_BUMPY_STD = 1.5
 # afternoon/evening event.
 FRONT_UNDERCUT_MARGIN = 0.5   # °F below the observed min a projection must reach
 FRONT_SCAN_FROM_HOUR = 12     # local hour the undercut scan starts
+FRONT_RAW_MIN_FRAC = 0.2      # fraction of scanned members whose RAW (unanchored)
+                              # forecast must undercut before the flag fires. Real
+                              # fronts corroborate broadly (May 5 / May 10 replays:
+                              # 100% of members); the 2026-07-19 false alarm was
+                              # 2/151 (1.3%) — lone ensemble perturbations. Tune
+                              # with the margin recalibration on front_guard rows.
 FRONT_SIGMA_MIN = 1.5   # °F; sigma floor while the front guard holds a locked
                         # low open. A projected-but-unrealized evening event
                         # deserves at least this much spread (the same idiom and

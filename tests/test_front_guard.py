@@ -195,3 +195,36 @@ def test_front_scan_still_excludes_pre_noon_dip():
     out = model.predict_variable(series, {"obs": _obs_locked_afternoon()},
                                  _DAY, "low", _at(14), None)
     assert out["front_widened"] is False
+
+
+def test_lone_outlier_member_does_not_flag():
+    # 2026-07-19 live episode: 2 of 151 members (ECMWF ensemble perturbations)
+    # raw-undercut on a calm 101°F ridge day and the any() corroboration lit the
+    # badge. A lone cold outlier in a big member set is ensemble noise, not a
+    # front — the flag needs a quorum (FRONT_RAW_MIN_FRAC of scanned members).
+    # The projections still shape the consensus; only the flag stays off.
+    warm = _curve({18: 86, 21: 83, 23: 80})
+    series = {f"ens_member{i:02d}_x": _fc(warm) for i in range(9)}
+    series["ens_member09_x"] = _fc(_curve({18: 80, 21: 76, 23: 74}))
+    out = model.predict_variable(series, {"obs": _obs_locked_afternoon()},
+                                 _DAY, "low", _at(14), None)
+    assert out["peak_locked"] is True
+    assert out["front_widened"] is False
+    assert out["front_guard"]["raw_undercut"] is False
+    assert out["front_guard"]["raw_under"] == 1      # logged for recalibration
+    assert out["front_guard"]["raw_scanned"] == 10
+
+
+def test_member_quorum_flags():
+    # Real fronts corroborate broadly (May 5 / May 10 replays: 100% of members
+    # raw-undercut). A 3-of-10 quorum clears the 20% floor and must still flag.
+    warm = _curve({18: 86, 21: 83, 23: 80})
+    cold = _curve({18: 80, 21: 76, 23: 74})
+    series = {f"ens_member{i:02d}_x": _fc(warm) for i in range(7)}
+    for i in range(7, 10):
+        series[f"ens_member{i:02d}_x"] = _fc(cold)
+    out = model.predict_variable(series, {"obs": _obs_locked_afternoon()},
+                                 _DAY, "low", _at(14), None)
+    assert out["front_widened"] is True
+    assert out["front_guard"]["raw_undercut"] is True
+    assert out["front_guard"]["raw_under"] == 3
