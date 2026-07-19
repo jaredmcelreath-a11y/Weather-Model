@@ -126,3 +126,21 @@ def test_shadow_expander_lives_in_lab_titlecased_no_emoji(monkeypatch):
     lab_view._render_shadow_comparison({"today": {}})
     fake_st.expander.assert_called_once_with(
         "Candidate Model Set (Shadow) — Not Live")
+
+
+def test_error_chart_series_colors_apply_when_given():
+    # Charcoal keeps chart lines in-palette: Production = the kalshi green,
+    # Candidate = the shadow cream (same colors those series already use on the
+    # consensus chart). No colors (Deep slate) leaves Vega's defaults.
+    recs = [{"date": "2026-07-18", "variable": "low", "lead": 0,
+             "series": s, "abs_err": 1.0} for s in ("Production", "Candidate")]
+    spec = lab_view._error_chart(recs, series_colors=["#A6D2BC", "#EDE6D3"]).to_dict()
+    scales = [layer["encoding"]["color"].get("scale")
+              for layer in spec["layer"] if "color" in layer.get("encoding", {})]
+    assert any(s and s.get("range") == ["#A6D2BC", "#EDE6D3"]
+               and s.get("domain") == ["Production", "Candidate"]
+               for s in scales)
+    plain = lab_view._error_chart(recs).to_dict()
+    assert all(not layer["encoding"]["color"].get("scale")
+               for layer in plain["layer"]
+               if "color" in layer.get("encoding", {}))

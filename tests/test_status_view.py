@@ -107,3 +107,11 @@ def test_status_cards_carry_state_not_emoji():
     # The render path passes the state name to metric_card's dot param; the
     # emoji map is gone.
     assert not hasattr(status_view, "_DOT")
+
+
+def test_series_colors_charcoal_green_cream():
+    # Chart two-series palette: Charcoal swaps Vega's default blues for the
+    # kalshi green + shadow cream; Deep slate keeps the defaults (None).
+    import market_view
+    assert market_view.series_colors("Charcoal") == ["#A6D2BC", "#EDE6D3"]
+    assert market_view.series_colors("Deep slate") is None

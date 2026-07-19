@@ -553,6 +553,20 @@ def _chart_colors():
             "temp": "#adb5bd", "shadow": "#EDE6D3"}
 
 
+def series_colors(theme):
+    """Two-series categorical chart colors for `theme`. Charcoal swaps Vega's
+    default blues for in-palette hues — the kalshi green + the shadow cream
+    (the same pair the consensus chart already uses); Deep slate returns None
+    to keep Vega's defaults."""
+    if theme == "Charcoal":
+        return [THEMES["Charcoal"]["accent_strong"], "#EDE6D3"]
+    return None
+
+
+def _series_colors():
+    return series_colors(st.session_state.get("wx_theme"))
+
+
 def _resolve_theme(session_theme, query_theme):
     """Active palette from the persistent store, then the URL, then the default —
     always a valid theme name so the UI never resolves to a blank/bogus palette."""
@@ -664,10 +678,13 @@ def _reliability_chart(rdf):
     palette (observed line vs the ideal diagonal)."""
     long = rdf.reset_index().melt("predicted", var_name="series",
                                   value_name="value")
+    colors = _series_colors()
+    scale = (alt.Scale(domain=["observed", "ideal (perfect)"], range=colors)
+             if colors else alt.Undefined)
     return (alt.Chart(long).mark_line().encode(
                 x=alt.X("predicted:Q", title=None),
                 y=alt.Y("value:Q", title=None),
-                color=alt.Color("series:N",
+                color=alt.Color("series:N", scale=scale,
                                 legend=alt.Legend(title=None, orient="top")))
             .properties(height=220, background="transparent")
             .configure_view(fill=None, strokeWidth=0))

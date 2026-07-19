@@ -155,19 +155,23 @@ def chart_frame(h2h: dict) -> list[dict]:
     return recs
 
 
-def _error_chart(recs: list[dict]):
+def _error_chart(recs: list[dict], series_colors=None):
     """Tap-to-pin absolute-error chart (same touch pattern as the History
-    page's equity curve: click/tap a point to pin its readout)."""
+    page's equity curve: click/tap a point to pin its readout).
+    `series_colors` recolors [Production, Candidate] for the active palette."""
     import altair as alt
     import pandas as pd
     df = pd.DataFrame(recs)
     # Naive datetimes parse as LOCAL midnight in the browser; bare date strings
     # parse as UTC and render a day early for US viewers.
     df["date"] = pd.to_datetime(df["date"])
+    scale = (alt.Scale(domain=["Production", "Candidate"], range=series_colors)
+             if series_colors else alt.Undefined)
     enc = alt.Chart(df).encode(
         x=alt.X("date:T", title=None),
         y=alt.Y("abs_err:Q", title="Abs Error (°F)"),
-        color=alt.Color("series:N", legend=alt.Legend(title=None, orient="top")))
+        color=alt.Color("series:N", scale=scale,
+                        legend=alt.Legend(title=None, orient="top")))
     line = enc.mark_line(strokeWidth=2)
     pick = alt.selection_point(on="click", nearest=True,
                                fields=["date", "series"], empty=False,
@@ -185,7 +189,9 @@ def _error_chart(recs: list[dict]):
     pinned = alt.Chart(labels).mark_text(
         align="left", baseline="top", x=6, y=4, fontSize=13, fontWeight="bold",
         lineBreak="\n", lineHeight=15,
-    ).encode(text="label:N", color="series:N").transform_filter(pick)
+    ).encode(text="label:N",
+             color=alt.Color("series:N", scale=scale, legend=None)
+             ).transform_filter(pick)
     return ((line + dots + pinned)
             .properties(height=240, background="transparent")
             .configure_view(fill=None, strokeWidth=0))
@@ -243,7 +249,9 @@ def render(lab_loader, snap=None) -> None:
             if sub:
                 st.caption(f"{variable.capitalize()} — Absolute Error By Day "
                            "(Tap A Point To Pin Its Readout)")
-                st.altair_chart(_error_chart(sub), use_container_width=True)
+                st.altair_chart(
+                    _error_chart(sub, market_view._series_colors()),
+                    use_container_width=True)
 
     # --- Section B: per-model scoreboard ---
     st.markdown("---")
