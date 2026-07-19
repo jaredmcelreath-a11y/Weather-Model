@@ -14,7 +14,6 @@ import streamlit as st
 import market_view
 
 GREEN, AMBER, RED, UNKNOWN = "green", "amber", "red", "unknown"
-_DOT = {GREEN: "🟢", AMBER: "🟡", RED: "🔴", UNKNOWN: "⚪"}
 
 
 def _fmt_age(age_min: float) -> str:
@@ -131,8 +130,8 @@ def render(snap: dict | None, inputs: dict, counts: dict) -> None:
         c = st.columns(3)
     for i, card in enumerate(cards):
         c[i % 3].markdown(market_view.metric_card(
-            card["label"], f'{_DOT[card["state"]]} {card["value"]}',
-            card["tip"]), unsafe_allow_html=True)
+            card["label"], card["value"], card["tip"], dot=card["state"]),
+            unsafe_allow_html=True)
     if counts:
         st.subheader("Log Sizes")
         market_view._html_table(pd.DataFrame(

@@ -1,6 +1,6 @@
 """Screenshot a page via Chrome DevTools Protocol, waiting for real render.
 
-Usage: python3 cdp_shot.py <url> <out.png> [wait_text] [extra_wait_s]
+Usage: python3 cdp_shot.py <url> <out.png> [wait_text] [extra_wait_s] [WxH]
 Launches its own headless Chrome on a debug port, polls the DOM until
 wait_text appears (or 45s), waits extra_wait_s more for charts, screenshots
 the full page, and exits.
@@ -20,12 +20,13 @@ PORT = 9333
 url, out = sys.argv[1], sys.argv[2]
 wait_text = sys.argv[3] if len(sys.argv) > 3 else None
 extra = float(sys.argv[4]) if len(sys.argv) > 4 else 3.0
+W, H = (int(x) for x in (sys.argv[5] if len(sys.argv) > 5 else "1400x2600").split("x"))
 
 proc = subprocess.Popen(
     [CHROME, "--headless", "--disable-gpu", f"--remote-debugging-port={PORT}",
      "--remote-allow-origins=*",
      "--no-first-run", "--user-data-dir=/tmp/cdp-profile-501",
-     "--window-size=1400,2600", "about:blank"],
+     f"--window-size={W},{H}", "about:blank"],
     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 try:
     ws_url = None
@@ -56,8 +57,8 @@ try:
 
     send("Page.enable")
     send("Emulation.setDeviceMetricsOverride",
-         {"width": 1400, "height": 2600, "deviceScaleFactor": 1,
-          "mobile": False})
+         {"width": W, "height": H, "deviceScaleFactor": 1,
+          "mobile": W <= 640})
     send("Page.navigate", {"url": url})
 
     deadline = time.time() + 45

@@ -79,3 +79,31 @@ def test_snapshot_inputs_extraction():
     assert inputs["dropped_sources"] == ["gem"]
     assert inputs["obs_time"].tzinfo is not None
     assert status_view.snapshot_inputs(None) == {}
+
+
+def test_metric_card_dot_renders_theme_circle():
+    # Status cards use a CSS circle that follows the active palette (Deep slate:
+    # traffic-light red/yellow/green; Charcoal: terracotta/light green/pastel
+    # yellow) instead of hardcoded emoji, which ignore the theme.
+    import market_view
+    html = market_view.metric_card("Action Heartbeat", "10 Min Ago", "tip",
+                                   dot="green")
+    assert '<span class="wxdot wxdot-green"></span>' in html
+    assert "🟢" not in html
+    # without a dot the card is unchanged
+    assert "wxdot" not in market_view.metric_card("Consensus", "96.0°F")
+
+
+def test_themes_define_status_dot_colors():
+    import market_view
+    for t in market_view.THEMES.values():
+        for k in ("dot_good", "dot_warn", "dot_bad"):
+            assert k in t
+    # Charcoal's bad-dot is the chart terracotta, not a loud red
+    assert market_view.THEMES["Charcoal"]["dot_bad"] == "#C97B5E"
+
+
+def test_status_cards_carry_state_not_emoji():
+    # The render path passes the state name to metric_card's dot param; the
+    # emoji map is gone.
+    assert not hasattr(status_view, "_DOT")

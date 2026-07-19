@@ -42,12 +42,17 @@ THEMES = {
         "ink": "#E8ECEF", "muted": "#9BA7B0", "accent": "#6FBF9A",
         "accent_strong": "#97D6B8", "border": "rgba(232,236,239,0.12)",
         "good": "#7FD3A2", "warn": "#E4C878", "bad": "#E59A8E",
+        # Status-page health dots: plain traffic-light hues on this palette.
+        "dot_good": "#43A047", "dot_warn": "#FDD835", "dot_bad": "#E53935",
     },
     "Charcoal": {
         "bg": "#201B18", "surface": "#2B2420", "surface2": "#37302A",
         "ink": "#F7F1E6", "muted": "#B7A99A", "accent": "#7FB79A",
         "accent_strong": "#A6D2BC", "border": "rgba(231,219,201,0.16)",
         "good": "#8FD3A6", "warn": "#E7C67A", "bad": "#E7A99B",
+        # Status-page health dots stay in-palette: the chart terracotta for
+        # bad, the palette's light green, and a pastel light yellow.
+        "dot_good": "#8FD3A6", "dot_warn": "#F2E3A8", "dot_bad": "#C97B5E",
     },
 }
 DEFAULT_THEME = "Charcoal"
@@ -64,7 +69,9 @@ def _inject_theme(name):
         f"--bg:{t['bg']};--surface:{t['surface']};--surface2:{t['surface2']};"
         f"--ink:{t['ink']};--muted:{t['muted']};--accent:{t['accent']};"
         f"--accent-strong:{t['accent_strong']};--border:{t['border']};"
-        f"--good:{t['good']};--warn:{t['warn']};--bad:{t['bad']};}}\n"
+        f"--good:{t['good']};--warn:{t['warn']};--bad:{t['bad']};"
+        f"--dot-good:{t['dot_good']};--dot-warn:{t['dot_warn']};"
+        f"--dot-bad:{t['dot_bad']};}}\n"
         ".stApp{background-color:var(--bg)!important;}\n"
         ".stApp,.stApp p,.stApp li,.stApp label,[data-testid=\"stMarkdownContainer\"]"
         "{color:var(--ink);font-family:'Bitter',Georgia,serif;}\n"
@@ -111,6 +118,10 @@ def _inject_theme(name):
         "{flex:1 1 100%!important;min-width:100%!important;width:100%!important;}"
         "[class*=\"st-key-period_metrics_\"] [data-testid=\"stColumn\"]:last-child .wxcard-v"
         "{font-size:2.1rem!important;}"
+        # Status-page cards: shrink the value text on phones so the longer
+        # readings ('Through Jul 18', '5 Rows Today') fit their 47%-wide box.
+        ".st-key-metrics2_status .wxcard-v{font-size:1.02rem!important;}"
+        ".st-key-metrics2_status .wxcard-l{font-size:0.68rem!important;}"
         # keep the High/Low Consensus/Spread/Resolved trio on one row on phones
         "[class*=\"st-key-mini_\"] [data-testid=\"stHorizontalBlock\"]"
         "{flex-wrap:nowrap!important;gap:0.35rem!important;}"
@@ -286,6 +297,14 @@ def _inject_theme(name):
         ".wxcard-l{font-weight:700;color:var(--muted);font-size:0.76rem;margin-bottom:0.1rem;}\n"
         ".wxcard-v{font-size:1.55rem;color:var(--ink);white-space:nowrap;"
         "font-variant-numeric:tabular-nums;}\n"
+        # Status-page health dot: a palette-following circle before the value
+        # (replaces the theme-blind 🟢🟡🔴 emoji).
+        ".wxdot{display:inline-block;width:0.62em;height:0.62em;border-radius:50%;"
+        "margin-right:0.38em;vertical-align:8%;}\n"
+        ".wxdot-green{background:var(--dot-good);}\n"
+        ".wxdot-amber{background:var(--dot-warn);}\n"
+        ".wxdot-red{background:var(--dot-bad);}\n"
+        ".wxdot-unknown{background:var(--muted);}\n"
         ".wxq{position:absolute;top:5px;right:7px;width:16px;height:16px;line-height:15px;"
         "border-radius:50%;background:var(--surface2);border:1px solid var(--border);"
         "color:var(--muted);font-size:11px;font-weight:700;text-align:center;cursor:pointer;"
@@ -347,10 +366,12 @@ def _field_label(container, label, help_text):
         unsafe_allow_html=True)
 
 
-def metric_card(label, value, help_text=None):
+def metric_card(label, value, help_text=None, dot=None):
     """A metric box as custom HTML (matches the stMetric look) with an optional info
     bubble that opens on hover OR a single tap and never clips off the right edge —
-    Streamlit's native `help=` tooltip can't do tap-to-open on touch. Render with
+    Streamlit's native `help=` tooltip can't do tap-to-open on touch. `dot` prefixes
+    the value with a palette-colored status circle (a wxdot-* state name, e.g.
+    "green"/"amber"/"red"/"unknown"). Render with
     `col.markdown(metric_card(...), unsafe_allow_html=True)`."""
     import html as _h
     q = ""
@@ -359,9 +380,10 @@ def metric_card(label, value, help_text=None):
         # the card, letting the anchor flip per screen-position so it never clips.
         q = (f'<span class="wxq" tabindex="0" role="button" aria-label="{_h.escape(str(label))} info">?</span>'
              f'<span class="wxqt">{_h.escape(str(help_text))}</span>')
+    d = f'<span class="wxdot wxdot-{_h.escape(str(dot))}"></span>' if dot else ""
     return (f'<div class="wxcard">{q}'
             f'<div class="wxcard-l">{_h.escape(str(label))}</div>'
-            f'<div class="wxcard-v">{_h.escape(str(value))}</div></div>')
+            f'<div class="wxcard-v">{d}{_h.escape(str(value))}</div></div>')
 
 
 _PANEL = ("background:rgba(255,255,255,0.03);border-radius:6px;"
