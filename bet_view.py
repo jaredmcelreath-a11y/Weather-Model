@@ -53,6 +53,9 @@ def equity_chart(curve, color):
     mobile-friendly, since touch devices don't fire the hover events Vega tooltips need
     (same tap-to-pin pattern as the consensus chart)."""
     df = pd.DataFrame(curve)
+    # Naive datetimes parse as LOCAL midnight in the browser; bare date strings
+    # parse as UTC and render a day early for US viewers.
+    df["date"] = pd.to_datetime(df["date"])
     labels = df.assign(label=df.apply(
         lambda r: f"{pd.to_datetime(r['date']).strftime('%b %-d')}\n${r['total']:.2f}",
         axis=1))

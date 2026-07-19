@@ -132,6 +132,9 @@ def _error_chart(recs: list[dict]):
     import altair as alt
     import pandas as pd
     df = pd.DataFrame(recs)
+    # Naive datetimes parse as LOCAL midnight in the browser; bare date strings
+    # parse as UTC and render a day early for US viewers.
+    df["date"] = pd.to_datetime(df["date"])
     enc = alt.Chart(df).encode(
         x=alt.X("date:T", title=None),
         y=alt.Y("abs_err:Q", title="Abs Error (°F)"),

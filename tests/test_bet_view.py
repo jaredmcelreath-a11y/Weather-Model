@@ -1,7 +1,23 @@
 """Import smoke for the My Bets page + a pure check on the equity chart helper
 (the Streamlit render itself needs live credentials, so it's verified manually)."""
 
+import sys
 from datetime import date
+from unittest.mock import MagicMock
+
+try:
+    import streamlit  # noqa: F401
+except ImportError:
+    for _m in ("streamlit", "streamlit.components", "streamlit.components.v1",
+               "streamlit_autorefresh"):
+        sys.modules.setdefault(_m, MagicMock())
+
+try:
+    import cryptography  # noqa: F401
+except ImportError:
+    for _m in ("cryptography", "cryptography.hazmat", "cryptography.hazmat.primitives",
+               "cryptography.hazmat.primitives.asymmetric"):
+        sys.modules.setdefault(_m, MagicMock())
 
 
 def test_bet_view_imports():
@@ -55,3 +71,20 @@ def test_equity_chart_encodes_date_and_total():
     # a click selection drives the tap-to-pin readout (mobile: no hover needed)
     assert any(isinstance(p.get("select"), dict) and p["select"].get("on") == "click"
                for p in spec.get("params", []))
+
+
+def test_equity_chart_ships_datetimes_not_bare_date_strings():
+    # Bare "2026-07-18" strings in a temporal encoding parse as UTC midnight in
+    # the browser and render a day early for US viewers; naive datetimes
+    # ("...T00:00:00") parse as local midnight and stay on the right day.
+    import bet_view
+    curve = [{"date": "2026-07-17", "total": 100.0},
+             {"date": "2026-07-18", "total": 104.5}]
+    spec = bet_view.equity_chart(curve, "#8bc34a").to_dict()
+    checked = 0
+    for ds in spec["datasets"].values():
+        for row in ds:
+            if "date" in row:
+                assert "T" in str(row["date"]), row
+                checked += 1
+    assert checked, "expected at least one dated row in the shipped datasets"

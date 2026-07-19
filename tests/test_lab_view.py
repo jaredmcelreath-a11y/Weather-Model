@@ -99,3 +99,16 @@ def test_render_smoke_empty_and_full():
     models = {("nws", "high", 24): {"n": 2, "mae": 1.0, "bias": 0.0},
               ("mos_nbs", "low", 0): {"n": 3, "mae": 0.4, "bias": -0.1}}
     lab_view.render(lambda: (h2h, models))
+
+
+def test_error_chart_ships_datetimes_not_bare_date_strings():
+    # A bare "2026-07-18" in a temporal encoding is parsed as UTC midnight by
+    # the browser and rendered in local time — the point lands on July 17 for
+    # US viewers. The chart must ship naive datetimes ("...T00:00:00"), which
+    # parse as LOCAL midnight and stay on the right day.
+    recs = [{"date": "2026-07-18", "variable": "low", "lead": 0,
+             "series": s, "abs_err": 1.0} for s in ("Production", "Candidate")]
+    spec = lab_view._error_chart(recs).to_dict()
+    for ds in spec["datasets"].values():
+        for row in ds:
+            assert "T" in str(row["date"]), row
