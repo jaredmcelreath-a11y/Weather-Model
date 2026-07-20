@@ -29,9 +29,9 @@ from config import (BIN_HIGH, BIN_LOW, CACHE_TTL_SECONDS, CALM_WIND_MAX,
                     HIGH_LOCK_NOON_OFFSET_HOURS, HIGH_PLATEAU_MAX,
                     LEAD_SIGMA_INFLATION, LOW_LOCK_RISE, MAX_CLI_GAP,
                     PEAK_LOCK_DROP, TIMEZONE, bin_labels, lead_bucket)
-from settlement import (covers_extreme, local_day_bounds, observed_so_far,
-                        observed_so_far_robust, round_half_up,
-                        _HIGH_WINDOW, _LOW_WINDOW)
+from settlement import (climate_day_of, covers_extreme, local_day_bounds,
+                        observed_so_far, observed_so_far_robust, open_prior_day,
+                        round_half_up, _HIGH_WINDOW, _LOW_WINDOW)
 import convective
 from convective import convective_sigma
 import solar
@@ -937,13 +937,14 @@ def prob_for_strike(probs: dict, strike_type: str, floor, cap) -> float | None:
     return hi - lo
 
 
-def _fetch_cli_daily(day: date) -> dict:
-    """{date: (max_f, min_f)} from the IEM daily summary for `day`, or {} on any
-    failure. Best-effort: the CLI daily min is a live *anchor* for the Kalshi low
-    (see predict_variable), never a settlement floor — a miss just falls back to
-    the hourly/average-offset path."""
+def _fetch_cli_daily(day: date, through: date | None = None) -> dict:
+    """{date: (max_f, min_f)} from the IEM daily summary over [day, through], or
+    {} on any failure. Best-effort: the CLI daily min is a live *anchor* for the
+    Kalshi low (see predict_variable), never a settlement floor — a miss just
+    falls back to the hourly/average-offset path. The range form covers the final
+    climate hour, when the still-open prior day needs its own summary too."""
     try:
-        return fetch_actual_cli(day, day, ttl=CACHE_TTL_SECONDS)
+        return fetch_actual_cli(day, through or day, ttl=CACHE_TTL_SECONDS)
     except Exception:
         return {}
 
@@ -986,13 +987,19 @@ def gather_series(forecast_days: int = 2, continuous_obs: bool = False,
     # when the caller opted into the CLI basis. The display-only copy lives under a
     # separate key and never feeds predict_variable — keeping the hourly-basis pages
     # unchanged while still showing the live 5-min reading.
-    obs = nws_observations.fetch(continuous=True, now=now)
+    now_local = now or datetime.now(TZ)
+    # In the final climate hour the still-open prior day needs its OWN ~25h of
+    # observations; the default clock-midnight window would show under an hour.
+    prior = open_prior_day(now_local)
+    obs_start = local_day_bounds(prior)[0] if prior else None
+    obs = nws_observations.fetch(limit=900 if prior else 500, continuous=True,
+                                 now=now, start=obs_start)
     obs["obs_continuous_display"] = obs.pop("obs_continuous", (None, None))
     if continuous_obs:
         obs["obs_continuous"] = obs["obs_continuous_display"]
-        # CLI basis only (Kalshi): the whole-°F daily-summary min anchors today's low
+        # CLI basis only (Kalshi): the whole-°F daily-summary min anchors the low
         # (predict_variable). Best-effort — a miss falls back to the hourly path.
-        obs["cli_daily"] = _fetch_cli_daily((now or datetime.now(TZ)).date())
+        obs["cli_daily"] = _fetch_cli_daily(prior or now_local.date(), now_local.date())
     return series, obs, dropped
 
 

@@ -43,7 +43,8 @@ def test_gather_series_routes_overrides(monkeypatch):
     monkeypatch.setattr(model.nws_forecast, "fetch", lambda: {})
     monkeypatch.setattr(model.iem_mos, "fetch", lambda forecast_days=2: {})
     monkeypatch.setattr(model.nws_observations, "fetch",
-                        lambda continuous=True, now=None: {"obs": ([], [])})
+                        lambda continuous=True, now=None, limit=500, start=None:
+                            {"obs": ([], [])})
 
     model.gather_series(det_models=config.CANDIDATE_DETERMINISTIC_MODELS,
                         ens_models=config.CANDIDATE_ENSEMBLE_MODELS)

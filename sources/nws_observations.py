@@ -37,7 +37,8 @@ def _iem_fallback(start: datetime, now: datetime):
     return [t for t, _ in pairs], [v for _, v in pairs]
 
 
-def fetch(limit: int = 500, continuous: bool = False, now: datetime | None = None
+def fetch(limit: int = 500, continuous: bool = False, now: datetime | None = None,
+          start: datetime | None = None
           ) -> dict[str, tuple[list[datetime], list[float]]]:
     """Return {'obs': (times, temps_f)} sorted ascending in time.
 
@@ -49,13 +50,17 @@ def fetch(limit: int = 500, continuous: bool = False, now: datetime | None = Non
     settlement day — including the morning minimum — is always in view regardless
     of capture time. `limit` is just a generous ceiling on a single day's readings.
 
+    `start` overrides that default. The last-hour capture needs the whole PRIOR
+    climate day in view (~25h back), which clock midnight excludes; callers pass
+    that day's LST start instead.
+
     With `continuous=True`, also return `'obs_continuous'`: the full sub-hourly
     feed (5-minute readings, not just the routine :53 METAR) before the hourly
     reduction. The CLI/Kalshi basis uses it to catch a brief spike between routine
     reports; the default hourly basis (Robinhood) ignores it.
     """
     now = now or datetime.now(TZ)
-    start = datetime(now.year, now.month, now.day, tzinfo=TZ)  # local midnight
+    start = start or datetime(now.year, now.month, now.day, tzinfo=TZ)  # local midnight
     # Short cache so a newly-published reading surfaces within one page refresh.
     # The dashboard re-blends every ~60s and NWS publishes a new 5-min reading only
     # every 5 min, so 60s adds at most ~1 min of staleness on top of the feed's own
