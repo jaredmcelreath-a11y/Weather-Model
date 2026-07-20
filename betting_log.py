@@ -12,13 +12,14 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from config import TIMEZONE
 from forecast_log import _load_github
 from zoneinfo import ZoneInfo
 
 import model
+import settlement
 import solar
 
 TZ = ZoneInfo(TIMEZONE)
@@ -42,9 +43,24 @@ _PATH = os.path.join(os.path.dirname(__file__), "betting_log.jsonl")
 LOW_SLOT_OFFSETS = [("sr-90", -90), ("sr-60", -60), ("sr-30", -30),
                     ("sr", 0), ("sr+30", 30)]
 HIGH_SLOTS = ["15:00", "15:30", "16:00", "16:30", "17:00"]
-SLOTS = [lbl for lbl, _off in LOW_SLOT_OFFSETS] + HIGH_SLOTS
+# Day-ahead probes. Day D's market opens 14:00Z on D−1, so tomorrow trades all
+# evening; these ask whether a day-ahead entry carries more edge than the
+# same-day slots. Fixed clock times — nothing solar about them.
+EVENING_SLOTS = ["eve-21:00", "eve-22:00", "eve-23:00"]
+# The last hour of a settlement day, anchored to the climate-day END (which is
+# also the exact Kalshi close). In summer these land AFTER clock midnight
+# (00:15/00:45 CDT) and target clock-yesterday; in winter they land before it
+# (23:15/23:45 CST) and target clock-today. Anchoring to the boundary makes that
+# seasonal shift automatic, the same trick the sunrise-anchored low slots use.
+CLOSE_SLOT_OFFSETS = [("close-45", -45), ("close-15", -15)]
+CLOSE_SLOTS = [lbl for lbl, _off in CLOSE_SLOT_OFFSETS]
+SLOTS = ([lbl for lbl, _off in LOW_SLOT_OFFSETS] + HIGH_SLOTS
+         + EVENING_SLOTS + CLOSE_SLOTS)
 SLOT_VARS = {**{lbl: ("low",) for lbl, _off in LOW_SLOT_OFFSETS},
-             **{s: ("high",) for s in HIGH_SLOTS}}
+             **{s: ("high",) for s in HIGH_SLOTS},
+             # Both variables: an evening capture is day-ahead for both, and at
+             # the close both of the ending day's markets are still open.
+             **{s: ("high", "low") for s in EVENING_SLOTS + CLOSE_SLOTS}}
 # The scheduler fires on a ~10-min cadence (GitHub cron at :03/:13/../:53 + the
 # external 10-min trigger). A 10-min cadence puts a run within 5 min of ANY
 # clock minute, so a ±8-min window catches every slot regardless of the cron's
@@ -69,7 +85,32 @@ def current_slot(now: datetime, tol_min=SLOT_TOLERANCE_MIN) -> str | None:
         slot_dt = local.replace(hour=hh, minute=mm, second=0, microsecond=0)
         if abs((local - slot_dt).total_seconds()) <= tol_min * 60:
             return s
+    for label in EVENING_SLOTS:
+        hh, mm = (int(x) for x in label.split("-", 1)[1].split(":"))
+        slot_dt = local.replace(hour=hh, minute=mm, second=0, microsecond=0)
+        if abs((local - slot_dt).total_seconds()) <= tol_min * 60:
+            return label
+    close_end = settlement.local_day_bounds(settlement.climate_day_of(local))[1]
+    for label, off in CLOSE_SLOT_OFFSETS:
+        slot_dt = close_end + timedelta(minutes=off)
+        if abs((local - slot_dt).total_seconds()) <= tol_min * 60:
+            return label
     return None
+
+
+def slot_target_day(slot: str, now: datetime) -> date:
+    """The date whose market `slot` captures.
+
+    Existing same-day slots target the clock day (unchanged). Evening slots
+    target tomorrow; close slots target the climate day that is ending — which
+    is clock-yesterday in summer and clock-today in winter.
+    """
+    local = now.astimezone(TZ)
+    if slot in EVENING_SLOTS:
+        return local.date() + timedelta(days=1)
+    if slot in CLOSE_SLOTS:
+        return settlement.climate_day_of(local)
+    return local.date()
 
 
 def _parse(text: str) -> list[dict]:
@@ -174,8 +215,7 @@ def record(cli_snapshot: dict, hourly_snapshot: dict, slot: str, calib: dict,
     if not today:
         return
     day = today["day"]
-    from datetime import date as _date
-    day_d = _date.fromisoformat(day)
+    day_d = date.fromisoformat(day)
     captured = cli_snapshot.get("updated") or datetime.now(TZ).isoformat(timespec="seconds")
     market_today = (cli_snapshot.get("market") or {}).get("today", {})
     hourly_today = (hourly_snapshot or {}).get("today", {})

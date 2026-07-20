@@ -39,9 +39,11 @@ def test_current_slot_slot_sets_defined():
     assert [lbl for lbl, _off in betting_log.LOW_SLOT_OFFSETS] == \
         ["sr-90", "sr-60", "sr-30", "sr", "sr+30"]
     assert betting_log.HIGH_SLOTS == ["15:00", "15:30", "16:00", "16:30", "17:00"]
-    assert betting_log.SLOTS == \
+    assert betting_log.SLOTS[:10] == \
         ["sr-90", "sr-60", "sr-30", "sr", "sr+30",
          "15:00", "15:30", "16:00", "16:30", "17:00"]
+    assert betting_log.SLOTS[10:] == \
+        ["eve-21:00", "eve-22:00", "eve-23:00", "close-45", "close-15"]
     assert betting_log.SLOT_TOLERANCE_MIN == 8
 
 
