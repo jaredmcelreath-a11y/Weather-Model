@@ -50,6 +50,20 @@ def _mae(errs):
     return round(sum(abs(e) for e in errs) / len(errs), 4) if errs else None
 
 
+def _settled_ask(row: dict) -> float | None:
+    """What the eventually-settled bracket's YES side was asking at capture.
+
+    The direct cents-on-the-table read for the close slots: if the day is over
+    and the market still asks well under a dollar for the bracket that wins,
+    the last-hour trade is real. None when the row carries no ask ladder.
+    """
+    for lo, hi, _bid, ask in row.get("market_asks") or []:
+        temp = row["settled_cli"]
+        if (lo is None or temp >= lo) and (hi is None or temp <= hi):
+            return ask
+    return None
+
+
 def _subset_metrics(rows: list[dict], variable: str) -> dict:
     """Q1 (model-vs-market) + Q2 (flat-vs-live offset, high only) stats over one
     list of rows. Q2 fields stay None for the low variable."""
@@ -84,6 +98,10 @@ def _subset_metrics(rows: list[dict], variable: str) -> dict:
     entry["market_volume"] = round(statistics.median(vols), 1) if vols else None
     entry["thin"] = (entry["market_volume"] is not None
                      and entry["market_volume"] < MARKET_LIQUIDITY_FLOOR)
+    asks = [a for a in (_settled_ask(r) for r in rows) if a is not None]
+    entry["settled_bucket_ask"] = round(statistics.mean(asks), 4) if asks else None
+    entry["settled_bucket_ask_min"] = round(min(asks), 4) if asks else None
+    entry["n_settled_ask"] = len(asks)
     if variable == "high":
         og = [r for r in rows if r.get("live_gap") is not None and r.get("actual_gap") is not None]
         entry["flat_rmse"] = _rmse([(r["flat_offset"], r["actual_gap"]) for r in og])
@@ -146,10 +164,21 @@ def join(betting_rows: list[dict], cli_map: dict, hourly_map: dict) -> list[dict
 
 _COLS = ["capture_slot", "variable", "subset", "n", "model_mae", "market_mae",
          "disagreements", "model_bin_wins", "market_bin_wins", "n_boundary",
-         "flat_rmse", "live_rmse", "flip_toward", "flip_away", "market_volume"]
+         "flat_rmse", "live_rmse", "flip_toward", "flip_away", "market_volume",
+         "settled_bucket_ask", "settled_bucket_ask_min", "n_settled_ask"]
 
 # subset display order within a (slot, variable), decision-relevant first
 _SUBSET_ORDER = {"boundary": 0, "all": 1, "mid_bin": 2}
+
+
+def _family(slot: str) -> int:
+    """Sort rank of a slot's family: day-ahead, then same-day, then close — the
+    order the evening-vs-same-day comparison reads in."""
+    if slot.startswith("eve-"):
+        return 0
+    if slot.startswith("close-"):
+        return 2
+    return 1
 
 
 def _subset_line(subset: str, m: dict) -> str:
@@ -163,6 +192,9 @@ def _subset_line(subset: str, m: dict) -> str:
                    else "no clear offset edge")
         parts.append(f"; offset flat RMSE {m['flat_rmse']} vs live RMSE {m['live_rmse']} "
                      f"({verdict}), flips toward {m['flip_toward']} / away {m['flip_away']}")
+    if m.get("settled_bucket_ask") is not None:
+        parts.append(f"; settled bracket ask mean {m['settled_bucket_ask']} "
+                     f"/ min {m['settled_bucket_ask_min']} (n={m['n_settled_ask']})")
     return "".join(parts)
 
 
@@ -187,7 +219,7 @@ def write_report(metrics_by_key: dict, out_dir: str) -> list[str]:
              "Model-vs-market (Q1) and flat-vs-live settlement-offset (Q2, high only), "
              "sliced by day type. **BOUNDARY** = consensus near a Kalshi bin edge — the "
              "days the decision gate turns on; mid-bin days rarely move a bin.", ""]
-    for (slot, variable) in sorted(blocks):
+    for (slot, variable) in sorted(blocks, key=lambda k: (_family(k[0]), k[0], k[1])):
         subsets = blocks[(slot, variable)]
         lines.append(f"## {slot} — {variable}")
         for subset in sorted(subsets, key=lambda s: _SUBSET_ORDER.get(s, 9)):
