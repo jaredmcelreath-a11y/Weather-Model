@@ -1085,6 +1085,14 @@ def snapshot(calib: dict | None = None, settle_offset=None,
         "storm": _storm_status(today, now),
         "dropped_sources": dropped,
     }
+    # The prior climate day while it is still open (00:00–00:59 CDT in summer):
+    # its Kalshi market trades until 01:00 CDT but clock-based "today" no longer
+    # serves it. Same live CLI machinery — by now the day is ~23/24 observed.
+    prior = open_prior_day(now)
+    if prior:
+        snap["yesterday"] = _predict_from(series, obs, prior, now, calib,
+                                          settle_offset, live=True)
+        snap["sources"]["yesterday"] = per_source_extremes(series, prior)
     if include_candidate:
         # Fully isolated second fetch with the candidate model set. Best-effort:
         # the shadow must never break the production snapshot.
