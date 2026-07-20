@@ -169,7 +169,8 @@ def _top_bins(probabilities: dict, n: int = 5) -> list:
 
 
 def _row(day: str, variable: str, slot: str, cli_var: dict, hourly_var: dict,
-         market_var: dict | None, flat_offset: float, captured: str) -> dict:
+         market_var: dict | None, flat_offset: float, captured: str,
+         market_asks: list | None = None) -> dict:
     obs = cli_var.get("observed_so_far")
     cont = cli_var.get("observed_continuous")
     live_gap = (cont - obs) if (obs is not None and cont is not None) else None
@@ -200,6 +201,12 @@ def _row(day: str, variable: str, slot: str, cli_var: dict, hourly_var: dict,
     fg = cli_var.get("front_guard")
     if fg:
         rec["front_guard"] = fg
+    # Raw per-contract quotes [floor, cap, yes_bid, yes_ask], close slots only.
+    # The normalized `market_buckets` PMF has the overround removed and so cannot
+    # answer "what would the settled bracket have COST" — the whole question the
+    # last-hour trade turns on.
+    if market_asks:
+        rec["market_asks"] = market_asks
     if market_var:
         rec["market_ev"] = market_var.get("ev")
         rec["market_buckets"] = market_var.get("buckets")
@@ -207,29 +214,63 @@ def _row(day: str, variable: str, slot: str, cli_var: dict, hourly_var: dict,
     return rec
 
 
+def _snapshot_now(cli_snapshot: dict) -> datetime:
+    """The snapshot's own capture instant, falling back to the wall clock."""
+    stamp = cli_snapshot.get("updated")
+    if stamp:
+        try:
+            return datetime.fromisoformat(stamp).astimezone(TZ)
+        except ValueError:
+            pass
+    return datetime.now(TZ)
+
+
+def _target_block(cli_snapshot: dict, slot: str, now: datetime):
+    """(prediction block, block name) this slot captures, or (None, None).
+
+    The block name doubles as the key into the market and hourly snapshots, which
+    use the same today/tomorrow/yesterday naming. Same-day slots keep reading
+    `today` unconditionally — byte-identical to the pre-slot-families behavior.
+    """
+    if slot in EVENING_SLOTS:
+        return cli_snapshot.get("tomorrow"), "tomorrow"
+    if slot in CLOSE_SLOTS:
+        # Match by DAY rather than by name: the ending climate day lives in the
+        # `yesterday` block in summer and the `today` block in winter.
+        target = slot_target_day(slot, now).isoformat()
+        for name in ("yesterday", "today"):
+            block = cli_snapshot.get(name)
+            if block and block.get("day") == target:
+                return block, name
+        return None, None
+    return cli_snapshot.get("today"), "today"
+
+
 def record(cli_snapshot: dict, hourly_snapshot: dict, slot: str, calib: dict,
-           path: str | None = None) -> None:
-    """Upsert today's betting-time row(s) for `slot` — only the variable(s) that
-    slot captures (see SLOT_VARS: afternoon = high, morning = low)."""
-    today = cli_snapshot.get("today")
-    if not today:
+           path: str | None = None, now: datetime | None = None) -> None:
+    """Upsert the betting-time row(s) for `slot` — only the variable(s) that slot
+    captures (see SLOT_VARS) on the day that slot targets (see slot_target_day)."""
+    now = now or _snapshot_now(cli_snapshot)
+    block, block_name = _target_block(cli_snapshot, slot, now)
+    if not block or not block.get("day"):
         return
-    day = today["day"]
+    day = block["day"]
     day_d = date.fromisoformat(day)
     captured = cli_snapshot.get("updated") or datetime.now(TZ).isoformat(timespec="seconds")
-    market_today = (cli_snapshot.get("market") or {}).get("today", {})
-    hourly_today = (hourly_snapshot or {}).get("today", {})
+    market_block = (cli_snapshot.get("market") or {}).get(block_name, {})
+    hourly_block = (hourly_snapshot or {}).get(block_name, {})
+    asks = (cli_snapshot.get("market_asks") or {}) if slot in CLOSE_SLOTS else {}
 
     new_recs = []
     for variable in SLOT_VARS.get(slot, ("high", "low")):
-        cli_var = today.get(variable)
+        cli_var = block.get(variable)
         if not cli_var or not cli_var.get("probabilities"):
             continue
         flat_offset, _std = model._offset_bucket(
             calib.get("settlement_offset"), variable, day_d, calib)
         new_recs.append(_row(day, variable, slot, cli_var,
-                             hourly_today.get(variable), market_today.get(variable),
-                             flat_offset, captured))
+                             hourly_block.get(variable), market_block.get(variable),
+                             flat_offset, captured, market_asks=asks.get(variable)))
 
     target = path or _PATH
     rows = load(target)
@@ -251,7 +292,7 @@ def capture_if_slot(cli_snapshot: dict, hourly_snapshot: dict, calib: dict,
     slot = current_slot(now)
     if slot is None:
         return None
-    record(cli_snapshot, hourly_snapshot, slot, calib)
+    record(cli_snapshot, hourly_snapshot, slot, calib, now=now)
     return slot
 
 
