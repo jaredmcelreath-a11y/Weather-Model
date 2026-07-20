@@ -992,8 +992,10 @@ def gather_series(forecast_days: int = 2, continuous_obs: bool = False,
     # observations; the default clock-midnight window would show under an hour.
     prior = open_prior_day(now_local)
     obs_start = local_day_bounds(prior)[0] if prior else None
-    obs = nws_observations.fetch(limit=900 if prior else 500, continuous=True,
-                                 now=now, start=obs_start)
+    # The default 500 cap is also the API's MAXIMUM (limit=501 is a 400), and it
+    # comfortably covers the extended ~25h window: the feed runs ~13 readings/hour,
+    # so a full climate day plus the final hour is ~330 readings.
+    obs = nws_observations.fetch(continuous=True, now=now, start=obs_start)
     obs["obs_continuous_display"] = obs.pop("obs_continuous", (None, None))
     if continuous_obs:
         obs["obs_continuous"] = obs["obs_continuous_display"]

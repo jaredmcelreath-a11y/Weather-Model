@@ -82,7 +82,9 @@ def test_gather_series_extends_the_window_in_the_final_hour(monkeypatch):
     model.gather_series(now=now, continuous_obs=True)
     # Window starts at the PRIOR climate day's start (01:00 CDT July 19).
     assert seen["start"] == settlement.local_day_bounds(date(2026, 7, 19))[0]
-    assert seen["limit"] > 500
+    # 500 is the API's hard maximum (limit=501 returns 400), and it covers the
+    # extended ~25h window with room to spare — never raise it to compensate.
+    assert seen["limit"] == 500
 
 
 def test_gather_series_normal_window_unchanged(monkeypatch):
