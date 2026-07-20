@@ -88,6 +88,14 @@ def test_chart_frame_long_form():
     assert recs[0]["date"] == "2026-07-16"
 
 
+def _one_day_recs(date="2026-07-18", variable="low", lead=0, prod=1.0, cand=1.0):
+    """Chart records built the way production builds them, so these fixtures
+    cannot drift from chart_frame's record contract."""
+    return lab_view.chart_frame(
+        {(variable, lead): {"days": [{"date": date, "prod_err": prod,
+                                      "cand_err": cand}]}})
+
+
 def _two_lead_h2h():
     """A day scored at BOTH leads — the 2026-07-19 shape that double-plotted."""
     return {
@@ -119,6 +127,36 @@ def test_chart_panels_never_double_plot_a_day():
         assert len({r["lead"] for r in rows}) == 1   # one lead per panel
 
 
+def test_chart_frame_carries_both_errors_on_every_record():
+    # The readout shows Production AND Candidate together, so every record
+    # needs both values regardless of which series it draws.
+    recs = lab_view.chart_frame(_two_lead_h2h())
+    assert all("prod_err" in r and "cand_err" in r for r in recs)
+    day_ahead = [r for r in recs if r["lead"] == 24]
+    assert {(r["prod_err"], r["cand_err"]) for r in day_ahead} == {(1.3, 0.8)}
+    # abs_err still drives each point's own y position.
+    assert {(r["series"], r["abs_err"]) for r in day_ahead} == \
+        {("Production", 1.3), ("Candidate", 0.8)}
+
+
+def test_error_chart_tooltip_shows_both_series():
+    spec = lab_view._error_chart(lab_view.chart_frame(_two_lead_h2h())).to_dict()
+    tips = [t["field"] for layer in spec["layer"]
+            for t in layer.get("encoding", {}).get("tooltip", [])]
+    assert "prod_err" in tips and "cand_err" in tips
+    assert "abs_err" not in tips      # replaced by the paired readout
+
+
+def test_pinned_readout_also_shows_both_series():
+    # Touch devices never fire hover, so the tap-to-pin label is the tooltip's
+    # stand-in and must carry the same both-sides comparison.
+    spec = lab_view._error_chart(
+        _one_day_recs(prod=1.3, cand=0.8)).to_dict()
+    labels = {row["label"] for ds in spec["datasets"].values() for row in ds
+              if "label" in row}
+    assert labels == {"Jul 18\nProduction 1.3°F · Candidate 0.8°F"}
+
+
 def test_chart_panels_keeps_every_point():
     recs = lab_view.chart_frame(_two_lead_h2h())
     assert sum(len(rows) for _v, _ld, rows in lab_view.chart_panels(recs)) \
@@ -143,9 +181,7 @@ def test_error_chart_ships_datetimes_not_bare_date_strings():
     # the browser and rendered in local time — the point lands on July 17 for
     # US viewers. The chart must ship naive datetimes ("...T00:00:00"), which
     # parse as LOCAL midnight and stay on the right day.
-    recs = [{"date": "2026-07-18", "variable": "low", "lead": 0,
-             "series": s, "abs_err": 1.0} for s in ("Production", "Candidate")]
-    spec = lab_view._error_chart(recs).to_dict()
+    spec = lab_view._error_chart(_one_day_recs()).to_dict()
     for ds in spec["datasets"].values():
         for row in ds:
             assert "T" in str(row["date"]), row
@@ -169,8 +205,7 @@ def test_error_chart_series_colors_apply_when_given():
     # Charcoal keeps chart lines in-palette: Production = the kalshi green,
     # Candidate = the shadow cream (same colors those series already use on the
     # consensus chart). No colors (Deep slate) leaves Vega's defaults.
-    recs = [{"date": "2026-07-18", "variable": "low", "lead": 0,
-             "series": s, "abs_err": 1.0} for s in ("Production", "Candidate")]
+    recs = _one_day_recs()
     spec = lab_view._error_chart(recs, series_colors=["#A6D2BC", "#EDE6D3"]).to_dict()
     scales = [layer["encoding"]["color"].get("scale")
               for layer in spec["layer"] if "color" in layer.get("encoding", {})]

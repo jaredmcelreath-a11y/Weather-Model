@@ -143,7 +143,13 @@ _LEAD_LABEL = {0: "Same-Day", 24: "Day-Ahead"}
 
 def chart_frame(h2h: dict) -> list[dict]:
     """Long-form records for the per-day error chart: one Production and one
-    Candidate point per scored (day, variable, lead)."""
+    Candidate point per scored (day, variable, lead).
+
+    `abs_err` is the record's own series value (its y position); `prod_err` and
+    `cand_err` are carried on EVERY record so the readout can show both sides at
+    once — comparing the two is the whole point of the chart, and reading one
+    number at a time makes you hover twice.
+    """
     recs = []
     for (variable, lead), g in sorted(h2h.items()):
         for d in g["days"]:
@@ -151,7 +157,9 @@ def chart_frame(h2h: dict) -> list[dict]:
                                 ("Candidate", "cand_err")):
                 recs.append({"date": d["date"], "variable": variable,
                              "lead": lead, "series": series,
-                             "abs_err": d[key]})
+                             "abs_err": d[key],
+                             "prod_err": d["prod_err"],
+                             "cand_err": d["cand_err"]})
     return recs
 
 
@@ -195,13 +203,16 @@ def _error_chart(recs: list[dict], series_colors=None):
     dots = enc.mark_point(filled=True, opacity=1).encode(
         size=alt.condition(pick, alt.value(150), alt.value(60)),
         tooltip=[alt.Tooltip("date:T", title="date"),
-                 alt.Tooltip("series:N", title="series"),
-                 alt.Tooltip("abs_err:Q", title="abs error", format=".1f")],
+                 alt.Tooltip("prod_err:Q", title="production", format=".1f"),
+                 alt.Tooltip("cand_err:Q", title="candidate", format=".1f")],
     ).add_params(pick)
+    # Touch devices have no hover, so this pinned readout is the tooltip's
+    # stand-in — it shows the same both-sides comparison. Still tinted by the
+    # tapped series so you can tell which dot you hit.
     labels = df.assign(label=df.apply(
-        lambda r: (f"{r['series']} · "
-                   f"{pd.to_datetime(r['date']).strftime('%b %-d')}\n"
-                   f"{r['abs_err']:.1f}°F Off"), axis=1))
+        lambda r: (f"{pd.to_datetime(r['date']).strftime('%b %-d')}\n"
+                   f"Production {r['prod_err']:.1f}°F · "
+                   f"Candidate {r['cand_err']:.1f}°F"), axis=1))
     pinned = alt.Chart(labels).mark_text(
         align="left", baseline="top", x=6, y=4, fontSize=13, fontWeight="bold",
         lineBreak="\n", lineHeight=15,
