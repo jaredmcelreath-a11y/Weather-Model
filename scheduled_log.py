@@ -19,6 +19,7 @@ import calibration
 import consensus_log
 import forecast_log
 import model
+import settlement
 import settlements
 from sources import kalshi
 
@@ -34,29 +35,64 @@ def _record_settlements() -> int:
     return len(settlements.load(settlements._PATH))
 
 
-def _log_snapshots(calib: dict, off) -> None:
-    """The model-logging body of a scheduled run: CLI snapshot + market block +
-    forecast/consensus logs + the slot-gated betting capture."""
-    cli_snap = model.snapshot(calib, settle_offset=off, continuous_obs=True,
-                              include_candidate=True)
-    # Attach the live Kalshi market's implied forecast so the log can later
-    # score market-vs-model against settlement. Best-effort: a market outage
-    # just omits the block and the model logging is unaffected.
+def _attach_market(cli_snap: dict, now: datetime) -> None:
+    """Attach the live Kalshi market to `cli_snap`, in place.
+
+    Always the today/tomorrow block. During the final climate hour also the
+    still-open prior day, and on a close slot the raw ask ladder for the day that
+    is closing. Every branch is best-effort — a market outage must never block
+    the model logging around it.
+    """
     try:
         today = date.fromisoformat(cli_snap["today"]["day"])
         tomorrow = date.fromisoformat(cli_snap["tomorrow"]["day"])
         cli_snap["market"] = kalshi.implied_block(today, tomorrow)
     except Exception as e:
         print(f"market block skipped: {e}")
+        cli_snap["market"] = cli_snap.get("market") or {}
+
+    prior = settlement.open_prior_day(now)
+    if prior:
+        block = {}
+        for var in ("high", "low"):
+            try:
+                implied = kalshi.implied_forecast(var, prior)
+            except Exception:
+                implied = None
+            if implied:
+                block[var] = implied
+        if block:
+            cli_snap["market"]["yesterday"] = block
+
+    if betting_log.current_slot(now) in betting_log.CLOSE_SLOTS:
+        closing = settlement.climate_day_of(now)
+        asks = {}
+        for var in ("high", "low"):
+            try:
+                rows = kalshi.ask_rows(var, closing)
+            except Exception:
+                rows = None
+            if rows:
+                asks[var] = rows
+        if asks:
+            cli_snap["market_asks"] = asks
+
+
+def _log_snapshots(calib: dict, off) -> None:
+    """The model-logging body of a scheduled run: CLI snapshot + market block +
+    forecast/consensus logs + the slot-gated betting capture."""
+    now = datetime.now(model.TZ)
+    cli_snap = model.snapshot(calib, settle_offset=off, continuous_obs=True,
+                              include_candidate=True)
+    _attach_market(cli_snap, now)
     forecast_log.record(cli_snap, basis="cli")
     consensus_log.record(cli_snap, basis="cli")
-    # Betting-time capture: only when `now` falls in a betting slot (5x/day).
+    # Betting-time capture: only when `now` falls in a betting slot.
     # Best-effort: an error here doesn't block the logging above.
     try:
-        from betting_log import TZ as _BTZ
-        if betting_log.current_slot(datetime.now(_BTZ)) is not None:
+        if betting_log.current_slot(now) is not None:
             hourly_snap = model.snapshot(calib)
-            slot = betting_log.capture_if_slot(cli_snap, hourly_snap, calib)
+            slot = betting_log.capture_if_slot(cli_snap, hourly_snap, calib, now=now)
             print(f"betting-time capture at slot {slot}")
     except Exception as e:
         print(f"betting capture skipped: {e}")

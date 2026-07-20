@@ -174,3 +174,15 @@ def implied_block(today: date, tomorrow: date) -> dict:
         if day_block:
             out[which] = day_block
     return out
+
+
+def ask_rows(variable: str, day: date) -> list:
+    """[[floor, cap, yes_bid, yes_ask], ...] — the untouched contract ladder.
+
+    `implied_forecast`'s PMF is normalized (the bid/ask overround removed), so it
+    cannot say what a bracket would actually have COST. The close-slot capture
+    logs these raw quotes so the last-hour question — was the already-settled
+    bracket still buyable under a dollar? — is answerable after the fact.
+    """
+    return [[c.get("floor"), c.get("cap"), c.get("yes_bid"), c.get("yes_ask")]
+            for c in fetch_contracts(variable, day)]
