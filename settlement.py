@@ -46,6 +46,29 @@ def local_day_bounds(day: date) -> tuple[datetime, datetime]:
     return start, end
 
 
+def climate_day_of(moment: datetime) -> date:
+    """The settlement (climate) day `moment` falls in.
+
+    Equals the clock date except in the summer 00:00–00:59 CDT hour, when the
+    previous climate day is still running (it ends 01:00 CDT). Converting into
+    fixed LST does the whole job: the LST calendar date IS the climate day.
+    """
+    return moment.astimezone(_CLIMATE_TZ).date()
+
+
+def open_prior_day(moment: datetime) -> date | None:
+    """Clock-yesterday's date while its settlement day is still open, else None.
+
+    Non-None only during the final climate hour (00:00–00:59 CDT in summer) —
+    the window where yesterday's Kalshi market is still trading but the model's
+    clock-based "today" no longer serves it. In winter the climate day ends at
+    clock midnight, so this is always None.
+    """
+    prior = moment.astimezone(TZ).date() - timedelta(days=1)
+    _start, end = local_day_bounds(prior)
+    return prior if moment < end else None
+
+
 def _within_day(times: list[datetime], temps: list[float], day: date,
                 upto: datetime | None = None) -> list[float]:
     """Temps whose timestamp falls in [day_start, day_end) (and <= upto)."""
