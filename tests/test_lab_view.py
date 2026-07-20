@@ -88,6 +88,43 @@ def test_chart_frame_long_form():
     assert recs[0]["date"] == "2026-07-16"
 
 
+def _two_lead_h2h():
+    """A day scored at BOTH leads — the 2026-07-19 shape that double-plotted."""
+    return {
+        ("low", 0): {"n": 2, "prod_mae": 0.0, "cand_mae": 0.0,
+                     "prod_wins": 0, "cand_wins": 0, "ties": 2,
+                     "days": [{"date": "2026-07-18", "prod_err": 0.0,
+                               "cand_err": 0.0},
+                              {"date": "2026-07-19", "prod_err": 0.0,
+                               "cand_err": 0.0}]},
+        ("low", 24): {"n": 1, "prod_mae": 1.3, "cand_mae": 0.8,
+                      "prod_wins": 0, "cand_wins": 1, "ties": 0,
+                      "days": [{"date": "2026-07-19", "prod_err": 1.3,
+                                "cand_err": 0.8}]},
+    }
+
+
+def test_chart_panels_split_by_lead():
+    panels = lab_view.chart_panels(lab_view.chart_frame(_two_lead_h2h()))
+    # Day-ahead first, mirroring the per-model scoreboard's (24, 0) order.
+    assert [(v, ld) for v, ld, _ in panels] == [("low", 24), ("low", 0)]
+
+
+def test_chart_panels_never_double_plot_a_day():
+    # The bug: a day scored at two leads drew two Candidate dots in one chart.
+    for _v, _ld, rows in lab_view.chart_panels(
+            lab_view.chart_frame(_two_lead_h2h())):
+        points = [(r["date"], r["series"]) for r in rows]
+        assert len(points) == len(set(points)), points
+        assert len({r["lead"] for r in rows}) == 1   # one lead per panel
+
+
+def test_chart_panels_keeps_every_point():
+    recs = lab_view.chart_frame(_two_lead_h2h())
+    assert sum(len(rows) for _v, _ld, rows in lab_view.chart_panels(recs)) \
+        == len(recs)
+
+
 def test_render_smoke_empty_and_full():
     lab_view.render(lambda: ({}, {}))
     h2h = {("high", 24): {"n": 2, "prod_mae": 0.5, "cand_mae": 1.25,

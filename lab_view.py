@@ -155,6 +155,22 @@ def chart_frame(h2h: dict) -> list[dict]:
     return recs
 
 
+def chart_panels(recs: list[dict]) -> list[tuple]:
+    """(variable, lead, rows) per chart panel — one lead bucket each.
+
+    A day scored at both leads carries a record per lead, so pooling them into
+    one chart draws that day twice per series (first seen 2026-07-19, the first
+    settled day with both a same-day and a day-ahead candidate row). Splitting
+    by lead also keeps the connecting line meaning "error across days at a fixed
+    lead" instead of zigzagging between leads on one date.
+    """
+    keys = sorted({(r["variable"], r["lead"]) for r in recs},
+                  key=lambda k: (k[0], -k[1]))   # day-ahead before same-day
+    return [(v, ld, [r for r in recs
+                     if r["variable"] == v and r["lead"] == ld])
+            for v, ld in keys]
+
+
 def _error_chart(recs: list[dict], series_colors=None):
     """Tap-to-pin absolute-error chart (same touch pattern as the History
     page's equity curve: click/tap a point to pin its readout).
@@ -243,15 +259,13 @@ def render(lab_loader, snap=None) -> None:
                             else "Candidate")}
                  for (v, lead), g in sorted(h2h.items())]
         market_view._html_table(pd.DataFrame(table))
-        recs = chart_frame(h2h)
-        for variable in ("high", "low"):
-            sub = [r for r in recs if r["variable"] == variable]
-            if sub:
-                st.caption(f"{variable.capitalize()} — Absolute Error By Day "
-                           "(Tap A Point To Pin Its Readout)")
-                st.altair_chart(
-                    _error_chart(sub, market_view._series_colors()),
-                    use_container_width=True)
+        for variable, lead, sub in chart_panels(chart_frame(h2h)):
+            st.caption(f"{variable.capitalize()} "
+                       f"({_LEAD_LABEL.get(lead, f'{lead}h')}) — Absolute Error "
+                       "By Day (Tap A Point To Pin Its Readout)")
+            st.altair_chart(
+                _error_chart(sub, market_view._series_colors()),
+                use_container_width=True)
 
     # --- Section B: per-model scoreboard ---
     st.markdown("---")
