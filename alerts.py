@@ -83,10 +83,10 @@ def recap_body(setup: dict | None, yesterday: dict | None) -> str:
     if lo_v is None:
         lo_v = lo.get("consensus")
     status = "Locked" if lo.get("locked") else "Developing"
-    today = f"Today: Low ~{lo_v:g} ({status})" if lo_v is not None else "Today:"
+    today = f"Today: Low ~{lo_v:.0f} ({status})" if lo_v is not None else "Today:"
     hi_v = hi.get("consensus")
     if hi_v is not None:
-        today += f", High ~{hi_v:g}"
+        today += f", High ~{hi_v:.0f}"
     lines.append(today)
     return "\n".join(lines)
 
