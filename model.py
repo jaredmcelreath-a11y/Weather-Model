@@ -506,6 +506,26 @@ def _trusted_high_max(c_raw, c_robust, fullday, shift):
     return c_raw if support >= SPIKE_FORECAST_MIN else c_robust
 
 
+def _trusted_low_min(c_raw, c_robust, fullday, shift):
+    """Which continuous LOW extreme to trust — the mirror of `_trusted_high_max`.
+
+    A lone dip (`c_raw`, below the corroborated `c_robust`) is accepted only when the
+    forecast (`fullday`, shifted by `shift` to the settlement basis) gave the dip's
+    settled bin at least SPIKE_FORECAST_MIN probability — so a real brief dawn trough
+    counts, but a sensor glitch far below the forecast doesn't. Kalshi settles the low
+    on the raw daily minimum, so a plausible lone 5-min dip settles the market exactly
+    as a lone spike settles the high. No lone dip (c_raw >= c_robust) → c_raw."""
+    if c_raw is None:
+        return c_robust
+    if c_robust is None or c_raw >= c_robust:
+        return c_raw                       # no lone dip below the corroborated trough
+    if not fullday:
+        return c_robust
+    dip_bin = round_half_up(c_raw)
+    support = sum(1 for s in fullday if round_half_up(s + shift) <= dip_bin) / len(fullday)
+    return c_raw if support >= SPIKE_FORECAST_MIN else c_robust
+
+
 def predict_variable(series, obs_series, day, variable, now, calib,
                      settle_offset=None, live=False):
     """Return a dict describing the predicted distribution for one variable.
@@ -559,11 +579,20 @@ def predict_variable(series, obs_series, day, variable, now, calib,
                 observed_cont_display = c_max  # high already shows its trusted spike
                 cand = c_max - 0.9
                 observed_bound = cand if observed is None else max(observed, cand)
-        elif variable == "low" and c_min is not None:
-            observed_cont = c_min           # behavior: guarded (≥2-corroborated) min
-            observed_cont_display = c_min_raw if c_min_raw is not None else c_min  # show the raw dip
-            cand = c_min + 0.9
-            observed_bound = cand if observed is None else min(observed, cand)
+        elif variable == "low":
+            # Kalshi settles on the raw CLI daily min, so a lone sub-hourly dip is
+            # trusted (min_support=1) — but only when the forecast gave its settled bin
+            # non-trivial probability (a plausible dawn trough, not a sensor glitch);
+            # else fall back to the ≥2-corroborated trough, so a lone cold blip on a
+            # convective afternoon still can't wrongly lock it.
+            shift = (settle_offset or {}).get("low", 0.0)
+            shift = shift if isinstance(shift, (int, float)) else 0.0
+            c_min_t = _trusted_low_min(c_min_raw, c_min, fullday, shift)
+            if c_min_t is not None:
+                observed_cont = c_min_t
+                observed_cont_display = c_min_raw if c_min_raw is not None else c_min_t  # show the raw dip
+                cand = c_min_t + 0.9
+                observed_bound = cand if observed is None else min(observed, cand)
         # Anchor the nowcast to the live sub-hourly reading (a ~20-min trailing mean,
         # see _anchor_obs_now) so the forecast offset tracks the real temperature
         # continuously without swinging on whole-°C feed jitter. The hourly :53-stepped

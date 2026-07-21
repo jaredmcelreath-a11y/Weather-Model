@@ -563,9 +563,14 @@ def _obs_lone_low_dip(day):
 
 
 def test_low_display_shows_lone_dip_while_behavior_uses_guarded_min():
+    # A lone dip the forecast did NOT contemplate (warm members, lows ~84+) is a
+    # sensor-glitch candidate: _trusted_low_min rejects it, so behavior stays on the
+    # ≥2-corroborated min while the display still shows the raw dip. (A lone dip the
+    # forecast DOES support is trusted instead — see tests/test_low_dip_trust.py.)
     day = date(2030, 7, 1)
     now = datetime(day.year, day.month, day.day, 8, tzinfo=_TZ)
-    r = model.predict_variable(_series(day), _obs_lone_low_dip(day), day, "low", now, None)
+    warm = {"det_a": _member(day, 98.0), "det_b": _member(day, 100.0)}  # lows ~84/86
+    r = model.predict_variable(warm, _obs_lone_low_dip(day), day, "low", now, None)
     # Behavior anchors on the corroborated (guarded) min — the lone 80 is rejected.
     assert r["observed_continuous"] == 82.0
     # Display shows the sub-hourly dip the feed actually touched.
