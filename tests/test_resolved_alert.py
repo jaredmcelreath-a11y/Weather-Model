@@ -33,7 +33,7 @@ def test_fires_at_70_not_69(monkeypatch, tmp_path):
     assert sends == []
     scheduled_log._maybe_alert_resolved(_snap(0.70, 0.60), _NOW)   # 70% / 60%
     assert len(sends) == 1
-    assert sends[0][0] == "Dallas High locking in"
+    assert sends[0][0] == "Dallas High Locked In"
     assert "70% resolved" in sends[0][1] and "97" in sends[0][1]
 
 
@@ -41,9 +41,9 @@ def test_high_and_low_independent(monkeypatch, tmp_path):
     sends = []
     _patch(monkeypatch, tmp_path, sends)
     scheduled_log._maybe_alert_resolved(_snap(0.85, 0.50), _NOW)  # only high ≥70
-    assert [t for t, _ in sends] == ["Dallas High locking in"]
+    assert [t for t, _ in sends] == ["Dallas High Locked In"]
     scheduled_log._maybe_alert_resolved(_snap(0.90, 0.75), _NOW)  # low now ≥70
-    assert [t for t, _ in sends] == ["Dallas High locking in", "Dallas Low locking in"]
+    assert [t for t, _ in sends] == ["Dallas High Locked In", "Dallas Low Locked In"]
 
 
 def test_once_per_day_then_rearms(monkeypatch, tmp_path):

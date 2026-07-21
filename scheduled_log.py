@@ -170,7 +170,7 @@ def _maybe_alert_resolved(snap: dict, now: datetime) -> None:
             pct = model.displayed_resolved(d)
             if pct < RESOLVED_ALERT_PCT or state.get(var) == today:
                 continue
-            title = f"Dallas {var.capitalize()} locking in"
+            title = f"Dallas {var.capitalize()} Locked In"
             body = f"{pct}% resolved · ≈{d['consensus']:g}°F"
             if notify.send_ntfy(title, body):
                 state[var] = today
