@@ -16,6 +16,7 @@ import json
 import os
 from datetime import date, datetime
 
+import alerts
 import betting_log
 import calibration
 import consensus_log
@@ -28,22 +29,6 @@ from sources import kalshi
 STATE_PATH = os.path.join(os.path.dirname(__file__), "cli_alert_state.json")
 RESOLVED_STATE_PATH = os.path.join(os.path.dirname(__file__), "resolved_alert_state.json")
 RESOLVED_ALERT_PCT = 70
-
-
-def _load_alert_state(path: str) -> dict:
-    """Load a JSON alert-state dict, tolerating a missing/empty/corrupt file.
-
-    The workflow's `git show … > file || true` restore leaves a 0-byte file when
-    the state doesn't yet exist on the data branch; treat any parse failure as
-    empty so it never blocks an alert."""
-    if not os.path.exists(path):
-        return {}
-    try:
-        with open(path) as fh:
-            state = json.load(fh)
-    except (OSError, ValueError):
-        return {}
-    return state if isinstance(state, dict) else {}
 
 
 def _record_settlements() -> int:
@@ -108,6 +93,7 @@ def _log_snapshots(calib: dict, off) -> None:
                               include_candidate=True)
     _attach_market(cli_snap, now)
     _maybe_alert_resolved(cli_snap, now)
+    alerts.maybe_fire_events(cli_snap, now)
     forecast_log.record(cli_snap, basis="cli")
     consensus_log.record(cli_snap, basis="cli")
     # Betting-time capture: only when `now` falls in a betting slot.
@@ -137,7 +123,7 @@ def _maybe_alert_cli(now: datetime) -> None:
             got = cli["report_date"].isoformat() if cli else None
             print(f"CLI alert: no report for today ({today}) yet — latest is {got}")
             return
-        state = _load_alert_state(STATE_PATH)
+        state = alerts.load_state(STATE_PATH)
         if state.get("last_alerted_day") == today.isoformat():
             print(f"CLI alert: already sent for {today}")
             return
@@ -161,7 +147,7 @@ def _maybe_alert_resolved(snap: dict, now: datetime) -> None:
     try:
         import notify
         today = settlement.climate_day_of(now).isoformat()
-        state = _load_alert_state(RESOLVED_STATE_PATH)
+        state = alerts.load_state(RESOLVED_STATE_PATH)
         dirty = False
         for var in ("high", "low"):
             d = (snap.get("today") or {}).get(var)

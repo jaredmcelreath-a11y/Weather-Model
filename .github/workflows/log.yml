@@ -62,6 +62,7 @@ jobs:
             git show origin/data:calibration_history.jsonl > calibration_history.jsonl 2>/dev/null || true
             git show origin/data:cli_alert_state.json > cli_alert_state.json 2>/dev/null || true
             git show origin/data:resolved_alert_state.json > resolved_alert_state.json 2>/dev/null || true
+            git show origin/data:event_alert_state.json > event_alert_state.json 2>/dev/null || true
           fi
 
       - name: Append this snapshot
@@ -81,6 +82,7 @@ jobs:
           [ -f calibration_history.jsonl ] && cp calibration_history.jsonl "$tmp/calibration_history.jsonl"
           [ -f cli_alert_state.json ] && cp cli_alert_state.json "$tmp/cli_alert_state.json"
           [ -f resolved_alert_state.json ] && cp resolved_alert_state.json "$tmp/resolved_alert_state.json"
+          [ -f event_alert_state.json ] && cp event_alert_state.json "$tmp/event_alert_state.json"
           cd "$tmp"
           git init -q
           git config user.name "weather-log-bot"
@@ -94,6 +96,7 @@ jobs:
           [ -f calibration_history.jsonl ] && git add -f calibration_history.jsonl
           [ -f cli_alert_state.json ] && git add -f cli_alert_state.json
           [ -f resolved_alert_state.json ] && git add -f resolved_alert_state.json
+          [ -f event_alert_state.json ] && git add -f event_alert_state.json
           git commit -q -m "log: snapshot $(date -u +%FT%TZ)"
           git push -fq \
             "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" \
