@@ -26,6 +26,24 @@ import settlements
 from sources import kalshi
 
 STATE_PATH = os.path.join(os.path.dirname(__file__), "cli_alert_state.json")
+RESOLVED_STATE_PATH = os.path.join(os.path.dirname(__file__), "resolved_alert_state.json")
+RESOLVED_ALERT_PCT = 70
+
+
+def _load_alert_state(path: str) -> dict:
+    """Load a JSON alert-state dict, tolerating a missing/empty/corrupt file.
+
+    The workflow's `git show … > file || true` restore leaves a 0-byte file when
+    the state doesn't yet exist on the data branch; treat any parse failure as
+    empty so it never blocks an alert."""
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path) as fh:
+            state = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    return state if isinstance(state, dict) else {}
 
 
 def _record_settlements() -> int:
@@ -89,6 +107,7 @@ def _log_snapshots(calib: dict, off) -> None:
     cli_snap = model.snapshot(calib, settle_offset=off, continuous_obs=True,
                               include_candidate=True)
     _attach_market(cli_snap, now)
+    _maybe_alert_resolved(cli_snap, now)
     forecast_log.record(cli_snap, basis="cli")
     consensus_log.record(cli_snap, basis="cli")
     # Betting-time capture: only when `now` falls in a betting slot.
@@ -118,18 +137,7 @@ def _maybe_alert_cli(now: datetime) -> None:
             got = cli["report_date"].isoformat() if cli else None
             print(f"CLI alert: no report for today ({today}) yet — latest is {got}")
             return
-        # An empty/corrupt state file must not block the alert. The workflow's
-        # `git show … > state.json || true` restore leaves a 0-byte file when the
-        # state doesn't exist on the data branch yet, so tolerate a parse failure.
-        state = {}
-        if os.path.exists(STATE_PATH):
-            try:
-                with open(STATE_PATH) as fh:
-                    state = json.load(fh)
-            except (OSError, ValueError):
-                state = {}
-        if not isinstance(state, dict):
-            state = {}
+        state = _load_alert_state(STATE_PATH)
         if state.get("last_alerted_day") == today.isoformat():
             print(f"CLI alert: already sent for {today}")
             return
@@ -144,6 +152,37 @@ def _maybe_alert_cli(now: datetime) -> None:
                   "ntfy POST failed)")
     except Exception as e:
         print(f"CLI alert skipped: {e}")
+
+
+def _maybe_alert_resolved(snap: dict, now: datetime) -> None:
+    """Ping once per variable per day the first time its displayed Resolved %
+    reaches RESOLVED_ALERT_PCT. High and low fire independently. Best-effort —
+    a failure logs and never blocks the surrounding logging."""
+    try:
+        import notify
+        today = settlement.climate_day_of(now).isoformat()
+        state = _load_alert_state(RESOLVED_STATE_PATH)
+        dirty = False
+        for var in ("high", "low"):
+            d = (snap.get("today") or {}).get(var)
+            if not d:
+                continue
+            pct = model.displayed_resolved(d)
+            if pct < RESOLVED_ALERT_PCT or state.get(var) == today:
+                continue
+            title = f"Dallas {var.capitalize()} locking in"
+            body = f"{pct}% resolved · ≈{d['consensus']:g}°F"
+            if notify.send_ntfy(title, body):
+                state[var] = today
+                dirty = True
+                print(f"Resolved alert sent: {var} {pct}%")
+            else:
+                print(f"Resolved alert: send_ntfy False for {var} ({pct}%)")
+        if dirty:
+            with open(RESOLVED_STATE_PATH, "w") as fh:
+                json.dump(state, fh)
+    except Exception as e:
+        print(f"Resolved alert skipped: {e}")
 
 
 def main() -> None:
