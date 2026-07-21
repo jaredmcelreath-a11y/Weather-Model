@@ -12,6 +12,8 @@ the local file directly here (the dashboard, not this script, reads from GitHub)
 
 from __future__ import annotations
 
+import json
+import os
 from datetime import date, datetime
 
 import betting_log
@@ -22,6 +24,8 @@ import model
 import settlement
 import settlements
 from sources import kalshi
+
+STATE_PATH = os.path.join(os.path.dirname(__file__), "cli_alert_state.json")
 
 
 def _record_settlements() -> int:
@@ -98,7 +102,39 @@ def _log_snapshots(calib: dict, off) -> None:
         print(f"betting capture skipped: {e}")
 
 
+def _maybe_alert_cli(now: datetime) -> None:
+    """Send one ntfy push the first time today's CLIDFW report is seen.
+
+    Fires from the 10-min Action so it works even when no one has the dashboard
+    open. `STATE_PATH` (persisted on the data branch) records the last-alerted
+    day so later runs stay quiet. Best-effort: any failure is logged and skipped.
+    """
+    try:
+        import notify
+        from sources import nws_cli
+        cli = nws_cli.fetch_latest_cli(ttl=0)  # always fresh in the cron
+        today = settlement.climate_day_of(now)
+        if not cli or cli["report_date"] != today:
+            return
+        state = {}
+        if os.path.exists(STATE_PATH):
+            with open(STATE_PATH) as fh:
+                state = json.load(fh)
+        if state.get("last_alerted_day") == today.isoformat():
+            return
+        msg = (f'High {cli["high_f"]:g}°F · Low {cli["low_f"]:g}°F'
+               f' · issued {cli["issued"].strftime("%-I:%M %p")}')
+        if notify.send_ntfy("Dallas Climate Report", msg):
+            with open(STATE_PATH, "w") as fh:
+                json.dump({"last_alerted_day": today.isoformat()}, fh)
+            print(f"CLI alert sent for {today}")
+    except Exception as e:
+        print(f"CLI alert skipped: {e}")
+
+
 def main() -> None:
+    from sources.common import TZ
+    _maybe_alert_cli(datetime.now(TZ))
     calib = calibration.get(refresh=True)
     off = (calib or {}).get("settlement_offset")
     if off is None:
