@@ -60,9 +60,12 @@ jobs:
             git show origin/data:betting_log.jsonl > betting_log.jsonl 2>/dev/null || true
             git show origin/data:calibration.json > calibration.json 2>/dev/null || true
             git show origin/data:calibration_history.jsonl > calibration_history.jsonl 2>/dev/null || true
+            git show origin/data:cli_alert_state.json > cli_alert_state.json 2>/dev/null || true
           fi
 
       - name: Append this snapshot
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: python scheduled_log.py
 
       - name: Publish the logs to the data branch
@@ -75,6 +78,7 @@ jobs:
           [ -f betting_log.jsonl ] && cp betting_log.jsonl "$tmp/betting_log.jsonl"
           [ -f calibration.json ] && [ -s calibration.json ] && cp calibration.json "$tmp/calibration.json"
           [ -f calibration_history.jsonl ] && cp calibration_history.jsonl "$tmp/calibration_history.jsonl"
+          [ -f cli_alert_state.json ] && cp cli_alert_state.json "$tmp/cli_alert_state.json"
           cd "$tmp"
           git init -q
           git config user.name "weather-log-bot"
@@ -86,6 +90,7 @@ jobs:
           [ -f betting_log.jsonl ] && git add -f betting_log.jsonl
           [ -f calibration.json ] && git add -f calibration.json
           [ -f calibration_history.jsonl ] && git add -f calibration_history.jsonl
+          [ -f cli_alert_state.json ] && git add -f cli_alert_state.json
           git commit -q -m "log: snapshot $(date -u +%FT%TZ)"
           git push -fq \
             "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" \
