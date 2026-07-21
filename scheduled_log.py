@@ -115,6 +115,8 @@ def _maybe_alert_cli(now: datetime) -> None:
         cli = nws_cli.fetch_latest_cli(ttl=0)  # always fresh in the cron
         today = settlement.climate_day_of(now)
         if not cli or cli["report_date"] != today:
+            got = cli["report_date"].isoformat() if cli else None
+            print(f"CLI alert: no report for today ({today}) yet — latest is {got}")
             return
         # An empty/corrupt state file must not block the alert. The workflow's
         # `git show … > state.json || true` restore leaves a 0-byte file when the
@@ -129,6 +131,7 @@ def _maybe_alert_cli(now: datetime) -> None:
         if not isinstance(state, dict):
             state = {}
         if state.get("last_alerted_day") == today.isoformat():
+            print(f"CLI alert: already sent for {today}")
             return
         msg = (f'High {cli["high_f"]:g}°F · Low {cli["low_f"]:g}°F'
                f' · issued {cli["issued"].strftime("%-I:%M %p")}')
@@ -136,6 +139,9 @@ def _maybe_alert_cli(now: datetime) -> None:
             with open(STATE_PATH, "w") as fh:
                 json.dump({"last_alerted_day": today.isoformat()}, fh)
             print(f"CLI alert sent for {today}")
+        else:
+            print("CLI alert: send_ntfy returned False (NTFY_TOPIC unset or "
+                  "ntfy POST failed)")
     except Exception as e:
         print(f"CLI alert skipped: {e}")
 
