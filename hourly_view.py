@@ -250,9 +250,21 @@ def _radar_html(lat: float = KDFW_LAT, lon: float = KDFW_LON, zoom: int = 7,
             .replace("__ACCENT__", p["accent"]))
 
 
-def render(load_hourly):
+def cli_report_box(cli):
+    """(value, issued_caption) for the NWS climate-report box, or None.
+
+    `cli` is today's parsed CLIDFW report (nws_cli.fetch_latest_cli) or None."""
+    if not cli:
+        return None
+    value = f'{cli["high_f"]:g}° / {cli["low_f"]:g}°'
+    issued = cli["issued"].strftime("%-I:%M %p")
+    return value, issued
+
+
+def render(load_hourly, cli_report=None):
     """Draw the Hourly page. `load_hourly` is the cached () -> (rows, pws) callable
-    where `rows` is wunderground.hourly() and `pws` is wunderground.pws_current()."""
+    where `rows` is wunderground.hourly() and `pws` is wunderground.pws_current().
+    `cli_report` is today's parsed CLIDFW report (or None) for the climate box."""
     market_view._theme_controls()  # sidebar Settings (theme picker) + injects theme
     theme = market_view._seed_theme()
     st_autorefresh(interval=60_000, key="refresh_hourly")
@@ -289,6 +301,20 @@ def render(load_hourly):
         unsafe_allow_html=True)
     if kdfw_cap or pws_cap:
         st.caption(f"KDFW as of {kdfw_cap or _EM} · PWS as of {pws_cap or _EM}")
+
+    # Official NWS climate report box, under the two live-reading boxes. Only
+    # appears once today's afternoon CLIDFW is issued (~4:41 PM) — it reports the
+    # day's now-settled high/low, the basis Kalshi resolves on.
+    cli_box = cli_report_box(cli_report)
+    if cli_box:
+        value, issued = cli_box
+        st.markdown(
+            market_view.metric_card("NWS Climate Report", value,
+                                     help_text="Official NWS CLIDFW daily climate "
+                                     "report — today's settled high / low, the basis "
+                                     "Kalshi resolves on. Issued mid-afternoon."),
+            unsafe_allow_html=True)
+        st.caption(f"Climate report as of {issued}")
 
     if not rows:
         return

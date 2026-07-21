@@ -488,18 +488,6 @@ def morning_recap_html(today, yesterday):
     return "".join(parts)
 
 
-def cli_report_html(cli: dict) -> str:
-    """The official-CLI confirmation box: today's locked high/low + issue time.
-    Caller guarantees `cli` is today's report (report_date == climate day)."""
-    issued = cli["issued"].strftime("%-I:%M %p")
-    return (
-        f'<div style="{_PANEL}border-left:4px solid #2f9e44;">'
-        f'<div style="font-weight:600">✓ OFFICIAL NWS CLIMATE REPORT</div>'
-        f'<div style="opacity:0.9">High {cli["high_f"]:g}°F · '
-        f'Low {cli["low_f"]:g}°F</div>'
-        f'<div style="opacity:0.7">Issued {issued}</div></div>')
-
-
 def briefing_overlay_html(cards_html):
     """The floating ▲ button + dimmed modal panel holding the briefing `cards_html`.
     Hidden until <body> gets the wx-briefing-open class (toggled by the JS bridge);
@@ -1862,7 +1850,7 @@ def _render_accuracy(load_accuracy, calib=None, history_loader=None):
 
 
 def render_page(snap, calib, adapter, load_accuracy, recap_loader=None,
-                history_loader=None, bankroll=None, cli_report=None):
+                history_loader=None, bankroll=None):
     """Draw the full dashboard body for one market. `snap`/`calib` come from the
     cached snapshot loader; `adapter` selects the exchange; `load_accuracy` is the
     cached () -> (bt, live) callable for the accuracy expander; `recap_loader` is
@@ -1871,9 +1859,6 @@ def render_page(snap, calib, adapter, load_accuracy, recap_loader=None,
     _inject_theme(_seed_theme())
 
     st.title("Dallas Daily High & Low")
-
-    if cli_report:
-        st.markdown(cli_report_html(cli_report), unsafe_allow_html=True)
 
     cur = snap.get("current")
     ki = _kalshi_implied(snap["today"]["day"])      # Kalshi market-implied hi/lo (today)

@@ -1,9 +1,19 @@
-"""The on-page CLIDFW confirmation box."""
+"""The on-page CLIDFW confirmation box (Hourly page)."""
+import sys
 from datetime import datetime
+from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
 from config import TIMEZONE
-import market_view
+
+try:
+    import streamlit  # noqa: F401
+except ImportError:
+    for _m in ("streamlit", "streamlit.components", "streamlit.components.v1",
+               "streamlit_autorefresh"):
+        sys.modules.setdefault(_m, MagicMock())
+
+import hourly_view
 
 _TZ = ZoneInfo(TIMEZONE)
 
@@ -17,9 +27,11 @@ def _cli():
     }
 
 
-def test_cli_box_shows_high_low_and_issued():
-    html = market_view.cli_report_html(_cli())
-    assert "100" in html
-    assert "80" in html
-    assert "4:41" in html  # localized issuance time
-    assert "CLIMATE REPORT" in html.upper()
+def test_cli_box_value_shows_high_low_and_issued():
+    value, issued = hourly_view.cli_report_box(_cli())
+    assert value == "100° / 80°"
+    assert issued == "4:41 PM"
+
+
+def test_cli_box_none_when_no_report():
+    assert hourly_view.cli_report_box(None) is None

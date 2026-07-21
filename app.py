@@ -311,8 +311,7 @@ def _page(adapter, snapshot_loader, accuracy_loader, record_basis):
     market_view.render_page(snap, calib, adapter, accuracy_loader,
                              recap_loader=load_recap,
                              history_loader=load_calibration_history,
-                             bankroll=bankroll,
-                             cli_report=load_cli_report() if record_basis == "cli" else None)
+                             bankroll=bankroll)
 
 
 def robinhood_page():
@@ -333,7 +332,7 @@ def load_hourly():
 
 
 def hourly_page():
-    hourly_view.render(load_hourly)
+    hourly_view.render(load_hourly, cli_report=load_cli_report())
 
 
 def edge_page():
