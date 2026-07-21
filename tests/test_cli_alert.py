@@ -42,6 +42,19 @@ def test_alerts_once_per_day(monkeypatch, tmp_path):
     assert "100" in sends[0][1] and "80" in sends[0][1]
 
 
+def test_alerts_when_state_file_is_empty(monkeypatch, tmp_path):
+    # The workflow's `git show ... > state.json || true` restore creates a 0-byte
+    # file when the state doesn't exist on the data branch yet. That empty (or
+    # otherwise corrupt) file must not block the alert.
+    day = date(2026, 7, 20)
+    now = datetime(2026, 7, 20, 16, 45, tzinfo=_TZ)
+    sends = []
+    _patch(monkeypatch, tmp_path, _cli(day), sends)
+    (tmp_path / "state.json").write_text("")  # empty file, invalid JSON
+    scheduled_log._maybe_alert_cli(now)
+    assert len(sends) == 1
+
+
 def test_no_alert_when_report_is_not_today(monkeypatch, tmp_path):
     now = datetime(2026, 7, 20, 6, 50, tzinfo=_TZ)
     sends = []

@@ -116,10 +116,18 @@ def _maybe_alert_cli(now: datetime) -> None:
         today = settlement.climate_day_of(now)
         if not cli or cli["report_date"] != today:
             return
+        # An empty/corrupt state file must not block the alert. The workflow's
+        # `git show … > state.json || true` restore leaves a 0-byte file when the
+        # state doesn't exist on the data branch yet, so tolerate a parse failure.
         state = {}
         if os.path.exists(STATE_PATH):
-            with open(STATE_PATH) as fh:
-                state = json.load(fh)
+            try:
+                with open(STATE_PATH) as fh:
+                    state = json.load(fh)
+            except (OSError, ValueError):
+                state = {}
+        if not isinstance(state, dict):
+            state = {}
         if state.get("last_alerted_day") == today.isoformat():
             return
         msg = (f'High {cli["high_f"]:g}°F · Low {cli["low_f"]:g}°F'
