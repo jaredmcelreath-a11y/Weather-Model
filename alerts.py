@@ -89,3 +89,75 @@ def recap_body(setup: dict | None, yesterday: dict | None) -> str:
         today += f", High ~{hi_v:g}"
     lines.append(today)
     return "\n".join(lines)
+
+
+def _build_recap_body(snap: dict) -> str:
+    """Assemble the Morning Recap body from yesterday's scorecard + today's setup,
+    mirroring app.load_recap. Best-effort — returns "" on any failure."""
+    try:
+        from datetime import date
+        import forecast_log
+        import recap
+        import settlements
+        bet_rows = None
+        try:
+            import bet_history
+            bet_rows = bet_history.fetch_rows(bet_history.BETS_START)
+        except Exception:
+            bet_rows = None
+        yesterday = recap.yesterday_scorecard(
+            date.today(), settlements.as_map("cli"),
+            forecast_log.load(), bet_rows=bet_rows)
+        return recap_body(recap.today_setup(snap), yesterday)
+    except Exception:
+        return ""
+
+
+def maybe_fire_events(snap: dict, now: datetime) -> None:
+    """Fire the storm/front/recap alerts, each once per day. Best-effort per
+    alert (one failing never blocks another) and overall."""
+    state = load_state(EVENT_STATE_PATH)
+    dirty = False
+    try:
+        cday = settlement.climate_day_of(now).isoformat()
+    except Exception:
+        cday = None
+
+    def _send(key, day, title, body):
+        nonlocal dirty
+        if not day or not body or state.get(key) == day:
+            return
+        if notify.send_ntfy(title, body):
+            state[key] = day
+            dirty = True
+            print(f"Event alert sent: {key}")
+        else:
+            print(f"Event alert: send_ntfy False for {key}")
+
+    try:
+        storm = snap.get("storm") or {}
+        if storm.get("level") == "active":
+            _send("storm", cday, "Storm Watch Active", storm_body(storm))
+    except Exception as e:
+        print(f"Event alert skipped (storm): {e}")
+
+    try:
+        low = (snap.get("today") or {}).get("low") or {}
+        if low.get("front_widened"):
+            _send("front", cday, "Front Risk", front_body(low))
+    except Exception as e:
+        print(f"Event alert skipped (front): {e}")
+
+    try:
+        local = now.astimezone(_TZ)
+        if (local.hour, local.minute) >= (RECAP_HOUR, RECAP_MINUTE):
+            _send("recap", local.date().isoformat(), "Morning Recap",
+                  _build_recap_body(snap))
+    except Exception as e:
+        print(f"Event alert skipped (recap): {e}")
+
+    if dirty:
+        try:
+            save_state(EVENT_STATE_PATH, state)
+        except Exception as e:
+            print(f"Event alert state save failed: {e}")
