@@ -261,6 +261,24 @@ def load_portfolio_value():
         return None
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def load_cli_report():
+    """Today's official CLIDFW report (high/low) if NWS has issued it, else None.
+    Gated to the climate day so yesterday's overnight product never shows."""
+    try:
+        from datetime import datetime
+        import settlement
+        from sources import nws_cli
+        from sources.common import TZ
+        now = datetime.now(TZ)
+        cli = nws_cli.fetch_latest_cli(ttl=300)
+        if cli and cli["report_date"] == settlement.climate_day_of(now):
+            return cli
+    except Exception:
+        return None
+    return None
+
+
 def _page(adapter, snapshot_loader, accuracy_loader, record_basis):
     snap, calib = snapshot_loader()
     dropped = snap.get("dropped_sources") or []
@@ -293,7 +311,8 @@ def _page(adapter, snapshot_loader, accuracy_loader, record_basis):
     market_view.render_page(snap, calib, adapter, accuracy_loader,
                              recap_loader=load_recap,
                              history_loader=load_calibration_history,
-                             bankroll=bankroll)
+                             bankroll=bankroll,
+                             cli_report=load_cli_report() if record_basis == "cli" else None)
 
 
 def robinhood_page():
