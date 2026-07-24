@@ -11,7 +11,7 @@ def test_fetch_defaults_to_production_models(monkeypatch):
         seen["models"] = params["models"]
         return {"hourly": {"time": ["2026-07-18T00:00"],
                            "temperature_2m_gfs_seamless": [70.0]}}
-    monkeypatch.setattr(open_meteo_models, "get_json", fake_get_json)
+    monkeypatch.setattr(open_meteo_models, "get_open_meteo", fake_get_json)
     open_meteo_models.fetch()
     assert seen["models"] == ",".join(config.DETERMINISTIC_MODELS)
 
@@ -23,7 +23,7 @@ def test_fetch_uses_override_models(monkeypatch):
         seen["models"] = params["models"]
         return {"hourly": {"time": ["2026-07-18T00:00"],
                            "temperature_2m_ukmo_seamless": [71.0]}}
-    monkeypatch.setattr(open_meteo_models, "get_json", fake_get_json)
+    monkeypatch.setattr(open_meteo_models, "get_open_meteo", fake_get_json)
     open_meteo_models.fetch(models=config.CANDIDATE_DETERMINISTIC_MODELS)
     assert seen["models"] == ",".join(config.CANDIDATE_DETERMINISTIC_MODELS)
 

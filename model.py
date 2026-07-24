@@ -1004,6 +1004,15 @@ def _fetch_cli_daily(day: date, through: date | None = None) -> dict:
         return {}
 
 
+def _drop_reason(label: str, exc: Exception) -> str:
+    """One-line explanation for a dropped forecast source: the HTTP status when
+    the server answered with an error (e.g. 429 = this IP is rate-limited), else
+    the exception type (e.g. ConnectTimeout = the host never answered)."""
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    detail = f"HTTP {status}" if status else type(exc).__name__
+    return f"dropped {label}: {detail} — {exc}"
+
+
 def gather_series(forecast_days: int = 2, continuous_obs: bool = False,
                   now: datetime | None = None, det_models=None, ens_models=None):
     """All forecast series merged into one dict, plus the obs series.
@@ -1029,9 +1038,13 @@ def gather_series(forecast_days: int = 2, continuous_obs: bool = False,
     for label, fetch in forecast_sources:
         try:
             series.update(fetch())
-        except requests.exceptions.RequestException:
+        except requests.exceptions.RequestException as e:
             # A slow/dead upstream is dropped so the consensus runs on the
-            # remaining models instead of taking the whole page down.
+            # remaining models instead of taking the whole page down. Log WHY
+            # (status/exception type) so a persistent drop is diagnosable from
+            # the deploy logs rather than a silent black box — e.g. a 429 means
+            # the host is rate-limiting this environment's IP, not an outage.
+            print(f"[gather_series] {_drop_reason(label, e)}")
             dropped.append(label)
     # Observations are the settlement anchor — not degradable; let it raise.
     # Always pull the sub-hourly (~5-min) feed: it's the SAME HTTP response as the

@@ -76,6 +76,33 @@ def get_json(url: str, params: dict | None = None,
     return data
 
 
+# Open-Meteo's free tier is rate-limited PER IP. On shared hosting (Streamlit
+# Cloud, etc.) thousands of apps share one egress IP, so the busy api.open-meteo.com
+# host gets throttled (HTTP 429) and the deterministic models feed drops out. An
+# API key routes the call through the keyed `customer-` endpoint, which has a
+# dedicated quota not tied to the shared IP. Absent the key, behavior is unchanged.
+_OPEN_METEO_CUSTOMER = {
+    "api.open-meteo.com": "customer-api.open-meteo.com",
+    "ensemble-api.open-meteo.com": "customer-ensemble-api.open-meteo.com",
+    "historical-forecast-api.open-meteo.com": "customer-historical-forecast-api.open-meteo.com",
+    "archive-api.open-meteo.com": "customer-archive-api.open-meteo.com",
+}
+
+
+def get_open_meteo(url: str, params: dict | None = None, **kw) -> dict:
+    """get_json for Open-Meteo, routed through the keyed customer endpoint when
+    OPEN_METEO_API_KEY is set (a dedicated quota that dodges the shared-IP free
+    tier rate limit). No key → the free host, unchanged."""
+    key = os.environ.get("OPEN_METEO_API_KEY", "").strip()
+    params = dict(params or {})
+    if key:
+        parts = urlparse(url)
+        host = _OPEN_METEO_CUSTOMER.get(parts.netloc, parts.netloc)
+        url = parts._replace(netloc=host).geturl()
+        params["apikey"] = key
+    return get_json(url, params, **kw)
+
+
 def get_text(url: str, params: dict | None = None,
              ttl: int = 7 * 24 * 3600, timeout: int = 90) -> str:
     """GET text with a long-lived on-disk cache (for immutable archive data)."""

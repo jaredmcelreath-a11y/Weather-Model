@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from config import ENSEMBLE_MODELS, LAT, LON, TIMEZONE
-from sources.common import get_json, parse_local_times
+from sources.common import get_open_meteo, parse_local_times
 
 URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
 
@@ -51,7 +51,7 @@ def fetch(forecast_days: int = 2, models=None) -> dict[str, tuple[list[datetime]
 
     `models` overrides the production ENSEMBLE_MODELS (shadow consensus); None
     keeps production behavior."""
-    data = get_json(URL, {
+    data = get_open_meteo(URL, {
         "latitude": LAT,
         "longitude": LON,
         "hourly": "temperature_2m",
@@ -66,7 +66,7 @@ def fetch(forecast_days: int = 2, models=None) -> dict[str, tuple[list[datetime]
 def fetch_historical(start: date, end: date,
                      ttl: int = 24 * 3600) -> dict[str, tuple[list[datetime], list[float]]]:
     """Archived ensemble members over [start, end] for skill weighting."""
-    data = get_json(URL, {
+    data = get_open_meteo(URL, {
         "latitude": LAT,
         "longitude": LON,
         "hourly": "temperature_2m",

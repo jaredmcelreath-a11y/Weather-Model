@@ -12,7 +12,7 @@ from datetime import date, datetime
 from config import (DETERMINISTIC_MODELS, LAT, LON, NIGHT_WINDOW_HOURS,
                     TIMEZONE)
 from settlement import local_day_bounds
-from sources.common import get_json, parse_local_times
+from sources.common import get_open_meteo, parse_local_times
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 HISTORICAL_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
@@ -39,7 +39,7 @@ def fetch(forecast_days: int = 2, models=None) -> dict[str, tuple[list[datetime]
 
     `models` overrides the production DETERMINISTIC_MODELS (used by the shadow
     consensus); None keeps production behavior."""
-    data = get_json(FORECAST_URL, {
+    data = get_open_meteo(FORECAST_URL, {
         "latitude": LAT,
         "longitude": LON,
         "hourly": "temperature_2m",
@@ -60,7 +60,7 @@ def fetch_historical(start: date, end: date,
     overrides DETERMINISTIC_MODELS (for the shadow backtest); None keeps
     production behavior.
     """
-    data = get_json(HISTORICAL_URL, {
+    data = get_open_meteo(HISTORICAL_URL, {
         "latitude": LAT,
         "longitude": LON,
         "hourly": "temperature_2m",
@@ -101,7 +101,7 @@ def _overnight_mean(times, cloud, wind, day: date):
 
 def night_conditions(day: date, forecast_days: int = 2):
     """Forecast (mean_cloud_pct, mean_wind_kmh) for `day`'s overnight window."""
-    data = get_json(FORECAST_URL, {
+    data = get_open_meteo(FORECAST_URL, {
         "latitude": LAT,
         "longitude": LON,
         "hourly": CONDITION_VARS,
@@ -114,7 +114,7 @@ def night_conditions(day: date, forecast_days: int = 2):
 def historical_night_conditions(start: date, end: date,
                                 ttl: int = 24 * 3600) -> dict[date, tuple]:
     """{day: (mean_cloud_pct, mean_wind_kmh)} over [start, end] for calibration."""
-    data = get_json(HISTORICAL_URL, {
+    data = get_open_meteo(HISTORICAL_URL, {
         "latitude": LAT,
         "longitude": LON,
         "hourly": CONDITION_VARS,
@@ -159,7 +159,7 @@ def _window_max(times, pop, cape, day: date, now: datetime):
 def convective_window(day: date, now: datetime, forecast_days: int = 2):
     """Forecast (max_pop_pct, max_cape) over [now, settlement-day end) for
     `day` at KDFW."""
-    data = get_json(FORECAST_URL, {
+    data = get_open_meteo(FORECAST_URL, {
         "latitude": LAT,
         "longitude": LON,
         "hourly": CONVECTIVE_VARS,

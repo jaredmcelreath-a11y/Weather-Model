@@ -51,6 +51,19 @@ if _kal:
     os.environ.setdefault("KALSHI_ACCESS_KEY_ID", _kal.get("access_key_id", ""))
     os.environ.setdefault("KALSHI_PRIVATE_KEY", _kal.get("private_key", ""))
 
+# Open-Meteo API key — routes forecast/ensemble calls through the keyed customer
+# endpoint (dedicated quota) so the deployed app's shared egress IP stops getting
+# rate-limited (429) on api.open-meteo.com, which was dropping the deterministic
+# models from the live consensus. Absent, the free host is used unchanged.
+try:
+    _om = st.secrets.get("open_meteo") if hasattr(st.secrets, "get") else None
+except Exception:
+    _om = None
+if _om:
+    key = _om.get("api_key", "") if hasattr(_om, "get") else str(_om)
+    if key:
+        os.environ.setdefault("OPEN_METEO_API_KEY", key)
+
 # Autonomous-trader state store — the Trader control page writes params to a
 # dedicated GitHub branch [trade] that the trade cron reads. Absent locally/on
 # Cloud without the secret, where the Trader page shows an unavailable note.
