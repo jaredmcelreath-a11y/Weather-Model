@@ -16,6 +16,8 @@ from sources.common import get_json
 
 TZ = ZoneInfo(TIMEZONE)
 
+import config
+
 # The WU web app's shared TWC key. Unofficial; replace if it ever stops working.
 WEB_API_KEY = "e1f10a1e78da46f5b10a1e78da96f525"
 
@@ -26,15 +28,20 @@ _HOURLY_URL = "https://api.weather.com/v3/wx/forecast/hourly/2day"
 _PWS_URL = "https://api.weather.com/v2/pws/observations/current"
 
 
-def hourly() -> list[dict]:
-    """The next ~48h of TWC hourly forecast for KDFW as per-hour dicts.
+def _geocode(station: str = config.DEFAULT_STATION) -> str:
+    s = config.station(station)
+    return f"{s.lat},{s.lon}"
+
+
+def hourly(station: str = config.DEFAULT_STATION) -> list[dict]:
+    """The next ~48h of TWC hourly forecast for the station as per-hour dicts.
 
     TWC returns parallel arrays (one entry per hour); zip them into rows with the
     six fields the Hourly page shows plus a tz-aware local `time`. Empty feed ->
     empty list. Short cache so it tracks WU without hammering the endpoint.
     """
     data = get_json(_HOURLY_URL, {
-        "geocode": KDFW_GEOCODE, "format": "json", "units": "e",
+        "geocode": _geocode(station), "format": "json", "units": "e",
         "language": "en-US", "apiKey": WEB_API_KEY,
     }, ttl=300)
     epochs = data.get("validTimeUtc") or []
@@ -54,9 +61,15 @@ def hourly() -> list[dict]:
     return rows
 
 
-def pws_current() -> dict | None:
-    """Latest reading from the Euless PWS: {'temp', 'obs_time'} or None if the
-    feed has no observation. Very short cache — this is the live number."""
+def pws_current(station: str = config.DEFAULT_STATION) -> dict | None:
+    """Latest reading from the station's nearby PWS: {'temp', 'obs_time'} or None
+    if the feed has no observation. Very short cache — this is the live number.
+
+    Only KDFW has a configured PWS (Euless) today; other stations return None
+    until their own PWS is wired (the Hourly page's Austin display is a later
+    plan)."""
+    if station != config.DEFAULT_STATION:
+        return None
     data = get_json(_PWS_URL, {
         "stationId": PWS_STATION_ID, "format": "json", "units": "e",
         "apiKey": WEB_API_KEY,

@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from config import ENSEMBLE_MODELS, LAT, LON, TIMEZONE
+import config
+from config import ENSEMBLE_MODELS, TIMEZONE
 from sources.common import get_open_meteo, parse_local_times
 
 URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
@@ -46,14 +47,15 @@ def _warn_if_thin(parsed: dict) -> dict:
     return parsed
 
 
-def fetch(forecast_days: int = 2, models=None) -> dict[str, tuple[list[datetime], list[float]]]:
+def fetch(forecast_days: int = 2, models=None,
+          station: str = config.DEFAULT_STATION) -> dict[str, tuple[list[datetime], list[float]]]:
     """Return {member_label: (times, temps_f)} across all ensemble systems.
 
     `models` overrides the production ENSEMBLE_MODELS (shadow consensus); None
     keeps production behavior."""
     data = get_open_meteo(URL, {
-        "latitude": LAT,
-        "longitude": LON,
+        "latitude": config.station(station).lat,
+        "longitude": config.station(station).lon,
         "hourly": "temperature_2m",
         "models": ",".join(models or ENSEMBLE_MODELS),
         "temperature_unit": "fahrenheit",
@@ -63,12 +65,12 @@ def fetch(forecast_days: int = 2, models=None) -> dict[str, tuple[list[datetime]
     return _warn_if_thin(_parse(data))
 
 
-def fetch_historical(start: date, end: date,
-                     ttl: int = 24 * 3600) -> dict[str, tuple[list[datetime], list[float]]]:
+def fetch_historical(start: date, end: date, ttl: int = 24 * 3600,
+                     station: str = config.DEFAULT_STATION) -> dict[str, tuple[list[datetime], list[float]]]:
     """Archived ensemble members over [start, end] for skill weighting."""
     data = get_open_meteo(URL, {
-        "latitude": LAT,
-        "longitude": LON,
+        "latitude": config.station(station).lat,
+        "longitude": config.station(station).lon,
         "hourly": "temperature_2m",
         "models": ",".join(ENSEMBLE_MODELS),
         "temperature_unit": "fahrenheit",
