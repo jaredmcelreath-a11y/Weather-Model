@@ -162,7 +162,7 @@ def render():
     c[1].markdown(_mc("Total % Gain", f"{summ['pct_gain']:+.0f}%",
                       f"Total profit — realized plus open positions marked to market "
                       f"(their live gain/loss) — as a percent of your starting bankroll "
-                      f"(${bet_history.STARTING_BANKROLL:,.0f}). Moves with the market."),
+                      f"(${bet_history.STARTING_BANKROLL:,.2f}). Moves with the market."),
                   unsafe_allow_html=True)
     c[2].markdown(_mc("Record (W–L)", f"{summ['wins']}–{summ['losses']}"),
                   unsafe_allow_html=True)
@@ -183,7 +183,7 @@ def render():
     if curve:
         st.altair_chart(equity_chart(curve, market_view._chart_colors()["kalshi"]),
                         use_container_width=True)
-        st.caption(f"Trading performance: your ${bet_history.STARTING_BANKROLL:,.0f} "
+        st.caption(f"Trading performance: your ${bet_history.STARTING_BANKROLL:,.2f} "
                    "starting bankroll plus realized P&L on settled bets, and a final "
                    "**live** point that adds open positions' current unrealized P&L — so "
                    "the last point moves with the market. Not your account value (it "
@@ -292,7 +292,7 @@ def render():
     st.caption(f"Each period's **% Gain** is that period's profit ÷ what you staked in it; "
                f"**Portfolio %** is that same profit ÷ your whole account balance entering "
                f"the period (a return on the full portfolio, not just the trade). The "
-               f"running **Total** is your ${bet_history.STARTING_BANKROLL:,.0f} bankroll "
+               f"running **Total** is your ${bet_history.STARTING_BANKROLL:,.2f} bankroll "
                f"plus cumulative gain. Includes open positions marked to market (so today's "
                f"still-open trades show as the current period, live) — excludes deposits, "
                f"withdrawals, and fees.")

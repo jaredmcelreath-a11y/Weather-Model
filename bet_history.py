@@ -11,11 +11,14 @@ import math
 from datetime import date, datetime, timedelta
 from statistics import median
 
-BETS_START = date(2026, 6, 22)
+# Fresh-start reset (2026-07-23): the trading history was rebased to a clean slate on
+# this date with a new bankroll. Fills/settlements before it are no longer fetched or
+# shown; the prior 2026-06-22 → 2026-07-22 run ($10.00 start) is archived in memory.
+BETS_START = date(2026, 7, 23)
 # Starting bankroll ($): the equity curve's baseline and the "Total % Gain"
 # denominator (net realized profit as a percent of this). Change this one value if
 # the real starting figure differs.
-STARTING_BANKROLL = 10.0
+STARTING_BANKROLL = 11.99
 
 
 def _split_episodes(group: list[dict]) -> list[list[dict]]:

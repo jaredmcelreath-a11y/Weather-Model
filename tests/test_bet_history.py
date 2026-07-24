@@ -3,7 +3,17 @@ are the already-normalized fills/settlements/meta dicts (no Kalshi, no network).
 
 from datetime import date, datetime, timezone
 
+import pytest
+
 import bet_history as bh
+
+
+@pytest.fixture(autouse=True)
+def _pin_bankroll(monkeypatch):
+    """These tests assert round-number totals against a $10.00 baseline. Pin
+    STARTING_BANKROLL here so the production value can be rebased (e.g. the
+    2026-07-23 fresh-start reset to $11.99) without rewriting every expectation."""
+    monkeypatch.setattr(bh, "STARTING_BANKROLL", 10.0)
 
 
 def _fill(tid, ticker, side, action, count, price, day, hour=19):
