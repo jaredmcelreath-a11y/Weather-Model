@@ -51,6 +51,18 @@ if _kal:
     os.environ.setdefault("KALSHI_ACCESS_KEY_ID", _kal.get("access_key_id", ""))
     os.environ.setdefault("KALSHI_PRIVATE_KEY", _kal.get("private_key", ""))
 
+# Autonomous-trader state store — the Trader control page writes params to a
+# dedicated GitHub branch [trade] that the trade cron reads. Absent locally/on
+# Cloud without the secret, where the Trader page shows an unavailable note.
+try:
+    _trade = dict(st.secrets["trade"]) if "trade" in st.secrets else None
+except Exception:
+    _trade = None
+if _trade:
+    os.environ.setdefault("TRADE_GH_REPO", _trade.get("repo", ""))
+    os.environ.setdefault("TRADE_GH_BRANCH", _trade.get("branch", "trade-data"))
+    os.environ.setdefault("TRADE_GH_TOKEN", _trade.get("token", ""))
+
 # TTL matches the page's 60s autorefresh and the Kalshi market cache (30s) so the
 # model snapshot and the market-implied EV are recomputed on the same cycle — a
 # 120s model cache next to a 30s market cache let the model lag up to ~2 min behind
@@ -367,6 +379,11 @@ def accuracy_page():
     accuracy_view.render(load_accuracy_kalshi, load_calibration_history)
 
 
+def trader_page():
+    import trade_view
+    trade_view.render()
+
+
 # Robinhood (hourly-basis) page retired from the live site — the model is now
 # Kalshi/CLI-only. robinhood_page() and its hourly loaders are kept below,
 # unreferenced, so re-listing it here is a one-line revert if ever needed.
@@ -375,6 +392,7 @@ st.navigation([
     st.Page(hourly_page, title="Hourly"),
     st.Page(journal_page, title="Journal"),
     st.Page(bet_view.render, title="History"),
+    st.Page(trader_page, title="Trader"),
     st.Page(edge_page, title="Edge"),
     st.Page(lab_page, title="Lab"),
     st.Page(accuracy_page, title="Accuracy"),
