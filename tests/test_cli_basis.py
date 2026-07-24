@@ -271,12 +271,16 @@ def test_locked_low_anchors_on_continuous_and_skips_widening():
 
 def test_unlocked_low_still_widens_with_continuous():
     # Before the low locks, the gap is still unknown -> widening must still apply.
+    # Use a large gap-std so the widening is observable ABOVE the dawn-forming
+    # sigma floor (LOW_FORMING_SIGMA_MIN), which otherwise dominates both sides at
+    # 04:00 (low not in yet). Both mechanisms widen pre-lock; this checks that the
+    # settle-gap widening still stacks on top.
     day = date(2030, 7, 1)
     series = _series(day)
     now = datetime(day.year, day.month, day.day, 4, tzinfo=_TZ)
     temps = [84, 83, 82, 81, 80]   # still descending at 04:00 -> not locked
     wide = model.predict_variable(series, _obs(day, temps, True), day, "low",
-                                  now, None, _LOW_OFF)
+                                  now, None, {**_LOW_OFF, "low_std": 2.0})
     narrow = model.predict_variable(series, _obs(day, temps, True), day, "low",
                                     now, None, {**_LOW_OFF, "low_std": 0.0})
     assert not wide["peak_locked"]

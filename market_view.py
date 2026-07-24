@@ -1069,6 +1069,16 @@ def lock_status(d, variable):
                 f"Coldest so far is {obs:.1f}°F but the model sees ~{consensus:.0f}°F "
                 "later (possible evening front before midnight). The morning low is "
                 "NOT safe to treat as settled — wait or size down.")
+    if d.get("low_forming"):
+        # The dawn trough is NOT physically in yet (peak_locked False): past
+        # midnight the `resolved` clock term can already read ~90%, but the summer
+        # min lands at/after sunrise and often keeps dipping to 7-7:30. Refuse the
+        # green "prime buy window" this used to flash 40 min early — wait for the
+        # trough to lock (temp risen back off the low), then the σ collapses for real.
+        return ("info", "Dawn Low Still Forming — Not In Yet",
+                f"Coldest so far is {obs:.1f}°F, but the trough hasn't locked — the "
+                "min typically lands at/after sunrise and can dip further to 7-7:30. "
+                "Wait for temps to climb back off the low before treating it as settled.")
     if resolved >= 85:
         return ("success", "Locked — Dawn Trough Is In",
                 f"Low is in at {obs:.1f}°F with no colder reading expected; σ "
