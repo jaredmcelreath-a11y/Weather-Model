@@ -480,12 +480,12 @@ def test_robinhood_low_ignores_daily_summary():
 def test_fetch_cli_daily_returns_summary(monkeypatch):
     day = date(2026, 7, 3)
     monkeypatch.setattr(model, "fetch_actual_cli",
-                        lambda s, e, ttl=None: {day: (83.0, 78.0)})
+                        lambda s, e, ttl=None, station=None: {day: (83.0, 78.0)})
     assert model._fetch_cli_daily(day) == {day: (83.0, 78.0)}
 
 
 def test_fetch_cli_daily_swallows_errors(monkeypatch):
-    def boom(s, e, ttl=None):
+    def boom(s, e, ttl=None, station=None):
         raise RuntimeError("network down")
     monkeypatch.setattr(model, "fetch_actual_cli", boom)
     assert model._fetch_cli_daily(date(2026, 7, 3)) == {}
@@ -498,7 +498,7 @@ def test_fetch_cli_daily_uses_live_ttl(monkeypatch):
     day = date(2026, 7, 3)
     captured = {}
 
-    def fake(s, e, ttl=None):
+    def fake(s, e, ttl=None, station=None):
         captured["ttl"] = ttl
         return {day: (83.0, 78.0)}
 

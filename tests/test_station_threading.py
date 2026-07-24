@@ -24,6 +24,20 @@ def test_nws_forecast_points_url_by_station():
     assert nws_forecast.points_url("KAUS") == "https://api.weather.gov/points/30.1975,-97.6664"
 
 
+def test_snapshot_tags_station(monkeypatch):
+    import model
+    seen = {}
+
+    def fake_gather(*a, **k):
+        seen["station"] = k.get("station")
+        return {}, {"obs": ([], []), "obs_continuous_display": (None, None)}, []
+
+    monkeypatch.setattr(model, "gather_series", fake_gather)
+    snap = model.snapshot(station="KAUS")
+    assert snap["station"] == "KAUS"
+    assert seen["station"] == "KAUS"
+
+
 def test_open_meteo_params_use_station_latlon(monkeypatch):
     captured = {}
 

@@ -31,19 +31,19 @@ def test_fetch_uses_override_models(monkeypatch):
 def test_gather_series_routes_overrides(monkeypatch):
     calls = {}
 
-    def fake_det(forecast_days=2, models=None):
+    def fake_det(forecast_days=2, models=None, station=None):
         calls["det"] = models
         return {}
 
-    def fake_ens(forecast_days=2, models=None):
+    def fake_ens(forecast_days=2, models=None, station=None):
         calls["ens"] = models
         return {}
     monkeypatch.setattr(model.open_meteo_models, "fetch", fake_det)
     monkeypatch.setattr(model.open_meteo_ensemble, "fetch", fake_ens)
-    monkeypatch.setattr(model.nws_forecast, "fetch", lambda: {})
-    monkeypatch.setattr(model.iem_mos, "fetch", lambda forecast_days=2: {})
+    monkeypatch.setattr(model.nws_forecast, "fetch", lambda station=None: {})
+    monkeypatch.setattr(model.iem_mos, "fetch", lambda forecast_days=2, station=None: {})
     monkeypatch.setattr(model.nws_observations, "fetch",
-                        lambda continuous=True, now=None, limit=500, start=None:
+                        lambda continuous=True, now=None, limit=500, start=None, station=None:
                             {"obs": ([], [])})
 
     model.gather_series(det_models=config.CANDIDATE_DETERMINISTIC_MODELS,

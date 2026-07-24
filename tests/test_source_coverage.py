@@ -97,7 +97,7 @@ def test_snapshot_requests_enough_forecast_days_for_settlement_tail(monkeypatch)
     members aren't blind to that final settlement hour."""
     captured = {}
 
-    def _fake_gather_series(forecast_days=2, continuous_obs=False, now=None):
+    def _fake_gather_series(forecast_days=2, continuous_obs=False, now=None, station=None):
         captured["forecast_days"] = forecast_days
         times, temps = _series(DAY, range(24))
         series = {"nws_ndfd": (times, temps)}

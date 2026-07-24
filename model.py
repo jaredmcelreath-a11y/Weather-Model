@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 
+import config
 from config import (BIN_HIGH, BIN_LOW, CACHE_TTL_SECONDS, CALM_WIND_MAX,
                     CLEAR_CLOUD_MAX, FRONT_RAW_MIN_FRAC, FRONT_SCAN_FROM_HOUR,
                     FRONT_SIGMA_MIN,
@@ -464,7 +465,8 @@ def _day_ahead_sigma(fullday_samples, calib_sigma):
     return max(_DEFAULT_INFLATION * raw, _MIN_SIGMA) if raw else _DEFAULT_SIGMA
 
 
-def _offset_bucket(settle_offset, variable, day, calib):
+def _offset_bucket(settle_offset, variable, day, calib,
+                   station: str = config.DEFAULT_STATION):
     """(shift, gap_std) for `variable` from a settlement-offset spec.
 
     Accepts the flat shape ({var: float, var_std: float}) and the bucketed shape
@@ -480,7 +482,7 @@ def _offset_bucket(settle_offset, variable, day, calib):
         wt = cool.get("wind_thresh", CALM_WIND_MAX)
         bucket = "other"
         try:
-            cloud, wind = open_meteo_models.night_conditions(day)
+            cloud, wind = open_meteo_models.night_conditions(day, station=station)
             if cloud is not None and cloud < ct and wind < wt:
                 bucket = "clear_calm"
         except Exception:
@@ -528,7 +530,8 @@ def _trusted_low_min(c_raw, c_robust, fullday, shift):
 
 
 def predict_variable(series, obs_series, day, variable, now, calib,
-                     settle_offset=None, live=False):
+                     settle_offset=None, live=False,
+                     station: str = config.DEFAULT_STATION):
     """Return a dict describing the predicted distribution for one variable.
 
     Spread logic: start from the calibrated day-ahead consensus error, then
@@ -667,7 +670,7 @@ def predict_variable(series, obs_series, day, variable, now, calib,
         off = cool.get("low_offset", 0.0)
         if off:
             try:
-                cloud, wind = open_meteo_models.night_conditions(day)
+                cloud, wind = open_meteo_models.night_conditions(day, station=station)
             except Exception:
                 cloud = wind = None
             if (cloud is not None and cloud < cool["cloud_thresh"]
@@ -686,7 +689,7 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     # NOT the hard observed bound (the offset is an average gap, not a floor) —
     # so consensus/bins move but still-possible bins are not zeroed. A constant
     # shift leaves sigma and locked_ratio unchanged. None => Robinhood, no shift.
-    settle_shift, settle_gap_std = _offset_bucket(settle_offset, variable, day, calib)
+    settle_shift, settle_gap_std = _offset_bucket(settle_offset, variable, day, calib, station)
     # Locked + continuous extreme observed: the CLI settlement value is directly
     # measured. observed_cont already includes any real sub-hourly spike the
     # average offset is meant to approximate, so anchor on the OBSERVED gap
@@ -850,7 +853,7 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     convective_widened = False
     if live and variable == "low" and now is not None and lead_bucket(now, day) == 0:
         try:
-            conv_sigma = convective_sigma(day, now)
+            conv_sigma = convective_sigma(day, now, station)
             if conv_sigma > 0:
                 sigma = max(sigma, conv_sigma)
                 convective_widened = True
@@ -992,14 +995,15 @@ def prob_for_strike(probs: dict, strike_type: str, floor, cap) -> float | None:
     return hi - lo
 
 
-def _fetch_cli_daily(day: date, through: date | None = None) -> dict:
+def _fetch_cli_daily(day: date, through: date | None = None,
+                     station: str = config.DEFAULT_STATION) -> dict:
     """{date: (max_f, min_f)} from the IEM daily summary over [day, through], or
     {} on any failure. Best-effort: the CLI daily min is a live *anchor* for the
     Kalshi low (see predict_variable), never a settlement floor — a miss just
     falls back to the hourly/average-offset path. The range form covers the final
     climate hour, when the still-open prior day needs its own summary too."""
     try:
-        return fetch_actual_cli(day, through or day, ttl=CACHE_TTL_SECONDS)
+        return fetch_actual_cli(day, through or day, ttl=CACHE_TTL_SECONDS, station=station)
     except Exception:
         return {}
 
@@ -1014,7 +1018,8 @@ def _drop_reason(label: str, exc: Exception) -> str:
 
 
 def gather_series(forecast_days: int = 2, continuous_obs: bool = False,
-                  now: datetime | None = None, det_models=None, ens_models=None):
+                  now: datetime | None = None, det_models=None, ens_models=None,
+                  station: str = config.DEFAULT_STATION):
     """All forecast series merged into one dict, plus the obs series.
 
     `det_models`/`ens_models` override the production Open-Meteo model lists
@@ -1030,10 +1035,10 @@ def gather_series(forecast_days: int = 2, continuous_obs: bool = False,
     series = {}
     dropped = []
     forecast_sources = [
-        ("open-meteo ensemble", lambda: open_meteo_ensemble.fetch(forecast_days, models=ens_models)),
-        ("open-meteo models", lambda: open_meteo_models.fetch(forecast_days, models=det_models)),
-        ("nws forecast", lambda: nws_forecast.fetch()),
-        ("iem mos", lambda: iem_mos.fetch(forecast_days)),
+        ("open-meteo ensemble", lambda: open_meteo_ensemble.fetch(forecast_days, models=ens_models, station=station)),
+        ("open-meteo models", lambda: open_meteo_models.fetch(forecast_days, models=det_models, station=station)),
+        ("nws forecast", lambda: nws_forecast.fetch(station=station)),
+        ("iem mos", lambda: iem_mos.fetch(forecast_days, station=station)),
     ]
     for label, fetch in forecast_sources:
         try:
@@ -1063,31 +1068,33 @@ def gather_series(forecast_days: int = 2, continuous_obs: bool = False,
     # The default 500 cap is also the API's MAXIMUM (limit=501 is a 400), and it
     # comfortably covers the extended ~25h window: the feed runs ~13 readings/hour,
     # so a full climate day plus the final hour is ~330 readings.
-    obs = nws_observations.fetch(continuous=True, now=now, start=obs_start)
+    obs = nws_observations.fetch(continuous=True, now=now, start=obs_start, station=station)
     obs["obs_continuous_display"] = obs.pop("obs_continuous", (None, None))
     if continuous_obs:
         obs["obs_continuous"] = obs["obs_continuous_display"]
         # CLI basis only (Kalshi): the whole-°F daily-summary min anchors the low
         # (predict_variable). Best-effort — a miss falls back to the hourly path.
-        obs["cli_daily"] = _fetch_cli_daily(prior or now_local.date(), now_local.date())
+        obs["cli_daily"] = _fetch_cli_daily(prior or now_local.date(), now_local.date(), station)
     return series, obs, dropped
 
 
 def predict(day: date, now: datetime | None = None, calib: dict | None = None,
-            forecast_days: int = 2, settle_offset=None) -> dict:
+            forecast_days: int = 2, settle_offset=None,
+            station: str = config.DEFAULT_STATION) -> dict:
     """Full prediction (high + low) for `day`. `now` enables the nowcast blend
     when `day` is today; pass None to force a pure forecast."""
     if now is None:
         now = datetime.now(TZ)
-    series, obs, _dropped = gather_series(forecast_days)
-    return _predict_from(series, obs, day, now, calib, settle_offset, live=True)
+    series, obs, _dropped = gather_series(forecast_days, station=station)
+    return _predict_from(series, obs, day, now, calib, settle_offset, live=True, station=station)
 
 
-def _predict_from(series, obs, day, now, calib, settle_offset=None, live=False):
+def _predict_from(series, obs, day, now, calib, settle_offset=None, live=False,
+                  station: str = config.DEFAULT_STATION):
     return {
         "day": day.isoformat(),
-        "high": predict_variable(series, obs, day, "high", now, calib, settle_offset, live=live),
-        "low": predict_variable(series, obs, day, "low", now, calib, settle_offset, live=live),
+        "high": predict_variable(series, obs, day, "high", now, calib, settle_offset, live=live, station=station),
+        "low": predict_variable(series, obs, day, "low", now, calib, settle_offset, live=live, station=station),
     }
 
 
@@ -1110,7 +1117,8 @@ def per_source_extremes(series, day):
 
 
 def snapshot(calib: dict | None = None, settle_offset=None,
-             continuous_obs: bool = False, include_candidate: bool = False) -> dict:
+             continuous_obs: bool = False, include_candidate: bool = False,
+             station: str = config.DEFAULT_STATION) -> dict:
     """Fetch all sources once and return everything the dashboard needs:
     today + tomorrow predictions, the current observation, and per-source
     extremes for both days. `continuous_obs` enables the CLI basis's sub-hourly
@@ -1122,7 +1130,7 @@ def snapshot(calib: dict | None = None, settle_offset=None,
     # through 01:00 CDT the day after tomorrow, past Open-Meteo's clock-day
     # hourly cutoff at 2 days — a 3rd forecast day keeps that final hour in view.
     series, obs, dropped = gather_series(
-        forecast_days=3, continuous_obs=continuous_obs, now=now)
+        forecast_days=3, continuous_obs=continuous_obs, now=now, station=station)
 
     obs_times, obs_temps = obs.get("obs", ([], []))
     # Latest routine hourly (:53 METAR) reading, kept alongside the live value so
@@ -1146,13 +1154,14 @@ def snapshot(calib: dict | None = None, settle_offset=None,
 
     snap = {
         "updated": now.isoformat(timespec="seconds"),
-        "today": _predict_from(series, obs, today, now, calib, settle_offset, live=True),
-        "tomorrow": _predict_from(series, obs, tomorrow, now, calib, settle_offset, live=True),
+        "station": station,
+        "today": _predict_from(series, obs, today, now, calib, settle_offset, live=True, station=station),
+        "tomorrow": _predict_from(series, obs, tomorrow, now, calib, settle_offset, live=True, station=station),
         "current": current,
         "current_hourly": current_hourly,
         "sources": {"today": per_source_extremes(series, today),
                     "tomorrow": per_source_extremes(series, tomorrow)},
-        "storm": _storm_status(today, now),
+        "storm": _storm_status(today, now, station),
         "dropped_sources": dropped,
     }
     # The prior climate day while it is still open (00:00–00:59 CDT in summer):
@@ -1161,7 +1170,7 @@ def snapshot(calib: dict | None = None, settle_offset=None,
     prior = open_prior_day(now)
     if prior:
         snap["yesterday"] = _predict_from(series, obs, prior, now, calib,
-                                          settle_offset, live=True)
+                                          settle_offset, live=True, station=station)
         snap["sources"]["yesterday"] = per_source_extremes(series, prior)
     if include_candidate:
         # Fully isolated second fetch with the candidate model set. Best-effort:
@@ -1172,21 +1181,21 @@ def snapshot(calib: dict | None = None, settle_offset=None,
             c_series, c_obs, _c_dropped = gather_series(
                 forecast_days=3, continuous_obs=continuous_obs, now=now,
                 det_models=CANDIDATE_DETERMINISTIC_MODELS,
-                ens_models=CANDIDATE_ENSEMBLE_MODELS)
+                ens_models=CANDIDATE_ENSEMBLE_MODELS, station=station)
             snap["candidate"] = {
-                "today": _predict_from(c_series, c_obs, today, now, calib, settle_offset, live=True),
-                "tomorrow": _predict_from(c_series, c_obs, tomorrow, now, calib, settle_offset, live=True),
+                "today": _predict_from(c_series, c_obs, today, now, calib, settle_offset, live=True, station=station),
+                "tomorrow": _predict_from(c_series, c_obs, tomorrow, now, calib, settle_offset, live=True, station=station),
             }
         except Exception:
             pass
     return snap
 
 
-def _storm_status(today, now):
+def _storm_status(today, now, station: str = config.DEFAULT_STATION):
     """Today's storm-watch summary for the dashboard panel. Best-effort: a data
     or network hiccup yields None so the snapshot never breaks on it."""
     try:
-        return convective.storm_status(today, now)
+        return convective.storm_status(today, now, station)
     except Exception:
         return None
 

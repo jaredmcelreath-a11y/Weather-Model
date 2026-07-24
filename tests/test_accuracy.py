@@ -355,10 +355,10 @@ def test_cooling_offset_applied_on_clear_calm(monkeypatch):
     calib = {"cooling": {"low_offset": 3.0, "cloud_thresh": 30, "wind_thresh": 10}}
 
     monkeypatch.setattr(open_meteo_models, "night_conditions",
-                        lambda day, forecast_days=2: (10.0, 5.0))  # clear, calm
+                        lambda day, forecast_days=2, station=None: (10.0, 5.0))  # clear, calm
     cool = model.predict_variable(s, obs, tom, "low", now, calib)
     monkeypatch.setattr(open_meteo_models, "night_conditions",
-                        lambda day, forecast_days=2: (80.0, 20.0))  # cloudy, windy
+                        lambda day, forecast_days=2, station=None: (80.0, 20.0))  # cloudy, windy
     warm = model.predict_variable(s, obs, tom, "low", now, calib)
 
     assert cool["cooling_applied"] and not warm["cooling_applied"]

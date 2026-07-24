@@ -141,7 +141,7 @@ _BUCKETED = {"high": {"clear_calm": 0.0, "other": 0.0,
 def test_model_picks_clear_calm_bucket(monkeypatch):
     day = date(2030, 1, 1)
     monkeypatch.setattr(model.open_meteo_models, "night_conditions",
-                        lambda d: (10.0, 5.0))           # clear + calm
+                        lambda d, station=None: (10.0, 5.0))           # clear + calm
     out = model.predict_variable(_series(day), {"obs": ([], [])}, day, "low",
                                  None, {}, _BUCKETED)
     # unshifted low consensus is peak-15 -> mean(75,77)=76; clear/calm shift -0.8
@@ -151,7 +151,7 @@ def test_model_picks_clear_calm_bucket(monkeypatch):
 def test_model_picks_other_bucket(monkeypatch):
     day = date(2030, 1, 1)
     monkeypatch.setattr(model.open_meteo_models, "night_conditions",
-                        lambda d: (90.0, 25.0))          # cloudy + windy
+                        lambda d, station=None: (90.0, 25.0))          # cloudy + windy
     out = model.predict_variable(_series(day), {"obs": ([], [])}, day, "low",
                                  None, {}, _BUCKETED)
     assert out["consensus"] == 75.8                       # 76 - 0.2
@@ -159,7 +159,7 @@ def test_model_picks_other_bucket(monkeypatch):
 
 def test_model_other_bucket_when_conditions_unavailable(monkeypatch):
     day = date(2030, 1, 1)
-    def boom(d):
+    def boom(d, station=None):
         raise RuntimeError("no network")
     monkeypatch.setattr(model.open_meteo_models, "night_conditions", boom)
     out = model.predict_variable(_series(day), {"obs": ([], [])}, day, "low",

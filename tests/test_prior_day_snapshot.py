@@ -22,7 +22,7 @@ def _stub_snapshot_deps(monkeypatch, now):
                                                           "high": {"consensus": 99.0},
                                                           "low": {"consensus": 79.0}})
     monkeypatch.setattr(model, "per_source_extremes", lambda series, day: {})
-    monkeypatch.setattr(model, "_storm_status", lambda t, n: None)
+    monkeypatch.setattr(model, "_storm_status", lambda t, n, station=None: None)
 
 
 def test_yesterday_block_present_in_the_final_hour(monkeypatch):
