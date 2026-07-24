@@ -74,3 +74,66 @@ def select_bracket(contracts: list[dict], agreed_temp: float, variable: str,
     # Ambiguous straddle: direction tie-break.
     cands.sort(key=lambda c: c["floor"])
     return cands[-1] if variable == "high" else cands[0]
+
+
+def stop_loss_hit(entry_ask: float, current_ask: float, stop_loss: float) -> bool:
+    """Ask-referenced stop: exit when the current ask has fallen `stop_loss`
+    below the entry ask. Never trips on the bid/spread at fill time. The 1e-9
+    epsilon absorbs float subtraction noise (e.g. 0.60-0.20 == 0.3999…)."""
+    return current_ask <= entry_ask - stop_loss + 1e-9
+
+
+def should_exit(position: dict, current_ask, target_ticker, gates_ok: bool,
+                params: dict) -> tuple[bool, str]:
+    """Exit a held position on stop-loss OR signal reversal (a gate fired, or the
+    target bracket is no longer this one). No take-profit — winners hold."""
+    if not gates_ok:
+        return True, "reversal: safety gate fired"
+    if target_ticker is not None and target_ticker != position["ticker"]:
+        return True, f"reversal: target moved to {target_ticker}"
+    if current_ask is not None and stop_loss_hit(position["entry_ask"], current_ask,
+                                                 params["stop_loss"]):
+        return True, (f"stop-loss: ask {current_ask:.2f} <= entry "
+                      f"{position['entry_ask']:.2f} - {params['stop_loss']:.2f}")
+    return False, ""
+
+
+def reentry_allowed(stopped_ticker: str | None, target_ticker: str) -> bool:
+    """After a stop-loss, only re-enter when the signal has genuinely flipped to a
+    DIFFERENT bracket (prevents churning back into the just-stopped one)."""
+    return stopped_ticker != target_ticker
+
+
+def size_bracket(contract: dict, var_snap: dict, orderbook: dict, bankroll: float,
+                 params: dict) -> dict:
+    """Fractional-Kelly size for `contract`, clamped by per_market_cap and the
+    price bounds. Returns {"side","contracts","avg_price","stake","note"}."""
+    probs = var_snap.get("probabilities") or {}
+    p = model.prob_for_strike(probs, contract["strike_type"],
+                              contract.get("floor"), contract.get("cap"))
+    if p is None:
+        return {"side": "", "contracts": 0, "avg_price": None, "stake": 0.0,
+                "note": "model abstains (open tail)"}
+    pick = kelly.best_side(p, contract.get("yes_ask"), contract.get("no_ask"))
+    if pick is None:
+        return {"side": "", "contracts": 0, "avg_price": None, "stake": 0.0,
+                "note": "no edge on either side"}
+    side, win, ask = pick
+    if ask >= params["max_price"] or ask < params["min_price"]:
+        return {"side": side, "contracts": 0, "avg_price": None, "stake": 0.0,
+                "note": (f"price {ask:.2f} outside "
+                         f"[{params['min_price']},{params['max_price']})")}
+    from sources import kalshi as _k
+    ladder = _k.ask_ladder(orderbook, side)   # `orderbook` is the normalized book
+    sizing = kelly.optimal_size(ladder, win, bankroll, params["kelly_fraction"],
+                                side=side)
+    n = sizing.contracts
+    # Clamp to the per-market dollar cap.
+    while n > 0 and (kelly.cost_to_buy(ladder, n) or 1e9) > params["per_market_cap"]:
+        n -= 1
+    if n <= 0:
+        return {"side": side, "contracts": 0, "avg_price": None, "stake": 0.0,
+                "note": "cap or book leaves 0 contracts"}
+    stake = kelly.cost_to_buy(ladder, n)
+    return {"side": side, "contracts": n, "avg_price": stake / n, "stake": stake,
+            "note": sizing.note}
