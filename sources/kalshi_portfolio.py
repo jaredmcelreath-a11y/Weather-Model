@@ -178,3 +178,43 @@ def balance(fetch=None):
         return None
     cents = b.get("balance")
     return (cents / 100.0) if cents is not None else None
+
+
+def positions(fetch=None) -> list[dict]:
+    """Open positions for the Dallas temp series, normalized to
+    {ticker, side, count, variable}. Read-only GET /portfolio/positions."""
+    fetch = fetch or kalshi_auth.signed_get
+    try:
+        data = fetch("/portfolio/positions", None) or {}
+    except Exception:
+        return []
+    out = []
+    for mp in data.get("market_positions") or []:
+        ticker = mp.get("ticker", "")
+        var = variable_of(ticker)
+        if var is None:
+            continue
+        count = mp.get("position") or 0
+        if not count:
+            continue
+        out.append({"ticker": ticker, "side": "yes" if count > 0 else "no",
+                    "count": abs(int(count)), "variable": var})
+    return out
+
+
+def resting_orders(fetch=None) -> list[dict]:
+    """Open (resting) orders for the Dallas temp series, normalized to
+    {ticker, order_id, side, action, count}. Read-only GET /portfolio/orders."""
+    fetch = fetch or kalshi_auth.signed_get
+    try:
+        data = fetch("/portfolio/orders", {"status": "resting"}) or {}
+    except Exception:
+        return []
+    out = []
+    for o in data.get("orders") or []:
+        if variable_of(o.get("ticker", "")) is None:
+            continue
+        out.append({"ticker": o.get("ticker"), "order_id": o.get("order_id"),
+                    "side": o.get("side"), "action": o.get("action"),
+                    "count": o.get("remaining_count") or o.get("count")})
+    return out

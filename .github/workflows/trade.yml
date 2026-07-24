@@ -1,0 +1,49 @@
+name: Autonomous trade loop
+
+# Runs the trader on a tight cadence during KDFW market hours ONLY. Ships SAFE:
+# trader.py no-ops unless kill_switch is off AND mode is live (both set from the
+# Streamlit control page, stored on the trade-data branch). Separate from log.yml
+# so trading never affects logging, and on its own branch so nothing force-pushes
+# over the other's state.
+#
+# ONE-TIME SETUP (do before first live use):
+#   1. Create the trade-data branch:
+#        git switch --orphan trade-data && git commit --allow-empty -m init \
+#          && git push origin trade-data && git switch -
+#      (the contents API needs the branch to exist before the first write).
+#   2. Secrets: TRADE_GH_TOKEN (repo-scoped PAT with contents:write), and a Kalshi
+#      API key that has TRADING permission (the read key is not enough to place orders).
+#   3. Confirm the cron window still matches local time if DST shifts (CDT vs CST).
+on:
+  schedule:
+    - cron: "*/2 11-23 * * *"    # every 2 min, ~06:00-18:00 CDT (11:00-23:00 UTC)
+  workflow_dispatch: {}
+  repository_dispatch:
+    types: [trade-tick]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trade-loop
+  cancel-in-progress: true       # collapse overlaps; run is idempotent per bucket
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run one trade pass
+        env:
+          KALSHI_ACCESS_KEY_ID: ${{ secrets.KALSHI_ACCESS_KEY_ID }}
+          KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
+          TRADE_GH_REPO: ${{ github.repository }}
+          TRADE_GH_BRANCH: trade-data
+          TRADE_GH_TOKEN: ${{ secrets.TRADE_GH_TOKEN }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python trader.py
