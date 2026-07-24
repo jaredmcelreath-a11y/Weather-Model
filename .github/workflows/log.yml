@@ -63,6 +63,7 @@ jobs:
             git show origin/data:cli_alert_state.json > cli_alert_state.json 2>/dev/null || true
             git show origin/data:resolved_alert_state.json > resolved_alert_state.json 2>/dev/null || true
             git show origin/data:event_alert_state.json > event_alert_state.json 2>/dev/null || true
+            git show origin/data:det_models.json > det_models.json 2>/dev/null || true
           fi
 
       - name: Append this snapshot
@@ -83,6 +84,7 @@ jobs:
           [ -f cli_alert_state.json ] && cp cli_alert_state.json "$tmp/cli_alert_state.json"
           [ -f resolved_alert_state.json ] && cp resolved_alert_state.json "$tmp/resolved_alert_state.json"
           [ -f event_alert_state.json ] && cp event_alert_state.json "$tmp/event_alert_state.json"
+          [ -f det_models.json ] && cp det_models.json "$tmp/det_models.json"
           cd "$tmp"
           git init -q
           git config user.name "weather-log-bot"
@@ -97,6 +99,7 @@ jobs:
           [ -f cli_alert_state.json ] && git add -f cli_alert_state.json
           [ -f resolved_alert_state.json ] && git add -f resolved_alert_state.json
           [ -f event_alert_state.json ] && git add -f event_alert_state.json
+          [ -f det_models.json ] && git add -f det_models.json
           git commit -q -m "log: snapshot $(date -u +%FT%TZ)"
           git push -fq \
             "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" \

@@ -171,6 +171,20 @@ def _maybe_alert_resolved(snap: dict, now: datetime) -> None:
         print(f"Resolved alert skipped: {e}")
 
 
+def _publish_det_models() -> None:
+    """Publish the deterministic-models forecast to the data branch from this
+    un-throttled Action IP, so the live app can read it when api.open-meteo.com
+    rate-limits its shared Streamlit Cloud IP. Best-effort — a miss just leaves
+    the previous copy in place."""
+    try:
+        from sources import open_meteo_models
+        path = os.path.join(os.path.dirname(__file__), open_meteo_models.PUBLISHED_FILE)
+        open_meteo_models.write_published(path)
+        print(f"published {open_meteo_models.PUBLISHED_FILE}")
+    except Exception as e:
+        print(f"det_models publish skipped: {e}")
+
+
 def main() -> None:
     from sources.common import TZ
     _maybe_alert_cli(datetime.now(TZ))
@@ -186,6 +200,7 @@ def main() -> None:
         print(f"settlements log holds {s} records")
         return
     print(f"calibration: using copy computed {calib.get('computed', 'unknown')}")
+    _publish_det_models()
     _log_snapshots(calib, off)
     s = _record_settlements()
     n = len(forecast_log.load(forecast_log._PATH))
