@@ -1,0 +1,72 @@
+{
+  "computed": "2026-07-24T13:00:51",
+  "window_days": 45,
+  "n_days": 46,
+  "bias": {
+    "deterministic": {
+      "high": -0.8,
+      "low": -0.48
+    },
+    "ensemble": {
+      "high": -0.8,
+      "low": -0.48
+    },
+    "nws": {
+      "high": 0.0,
+      "low": 0.0
+    }
+  },
+  "sigma": {
+    "high": 1.0,
+    "low": 1.0,
+    "by_lead": {
+      "0": {
+        "high": 0.53,
+        "low": 1.16
+      },
+      "24": {
+        "high": 2.3,
+        "low": 1.53
+      }
+    }
+  },
+  "weights": {
+    "high": {
+      "det_ecmwf_ifs025": 0.14247562923728427,
+      "det_gem_seamless": 0.14956034379294003,
+      "det_gfs_hrrr": 0.18767122209232978,
+      "det_gfs_seamless": 0.18767122209232978,
+      "det_icon_seamless": 0.16063657726818753,
+      "ensemble_mean": 0.17198500551692864
+    },
+    "low": {
+      "det_ecmwf_ifs025": 0.1754500871076511,
+      "det_gem_seamless": 0.15690226096513232,
+      "det_gfs_hrrr": 0.1779110669665609,
+      "det_gfs_seamless": 0.1779110669665609,
+      "det_icon_seamless": 0.16838707491257993,
+      "ensemble_mean": 0.14343844308151485
+    }
+  },
+  "cooling": {
+    "cloud_thresh": 30,
+    "wind_thresh": 10,
+    "n_clear_calm": 9,
+    "low_offset": -0.56
+  },
+  "settlement_offset": {
+    "high": 0.72,
+    "low": -0.35,
+    "high_std": 0.61,
+    "low_std": 0.52,
+    "n_days": 46
+  },
+  "bias_correction": {
+    "by_lead": {
+      "24": {
+        "high": 0.48,
+        "low": -0.48
+      }
+    }
+  }
+}
