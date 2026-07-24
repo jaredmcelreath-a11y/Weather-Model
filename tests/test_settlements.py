@@ -26,12 +26,12 @@ def _forecast_rows():
 
 def test_record_persists_settled_actuals(tmp_path, monkeypatch):
     p = str(tmp_path / "settlements.jsonl")
-    monkeypatch.setattr(forecast_log, "load", lambda path=None: _forecast_rows())
+    monkeypatch.setattr(forecast_log, "load", lambda path=None, station=None: _forecast_rows())
     monkeypatch.setattr(station_history, "fetch_actual",
-                        lambda s, e: {date(2026, 6, 16): (90.0, 77.0),
+                        lambda s, e, station=None: {date(2026, 6, 16): (90.0, 77.0),
                                       date(2026, 6, 17): (92.0, 78.0)})
     monkeypatch.setattr(station_history, "fetch_actual_cli",
-                        lambda s, e: {date(2026, 6, 16): (91.0, 76.0),
+                        lambda s, e, station=None: {date(2026, 6, 16): (91.0, 76.0),
                                       date(2026, 6, 17): (93.0, 77.0)})
     settlements.record(today=TODAY, path=p)
     by = {(r["target_date"], r["basis"]): r for r in settlements.load(p)}
@@ -47,11 +47,11 @@ def test_record_persists_settled_actuals(tmp_path, monkeypatch):
 
 def test_record_is_append_once(tmp_path, monkeypatch):
     p = str(tmp_path / "settlements.jsonl")
-    monkeypatch.setattr(forecast_log, "load", lambda path=None: _forecast_rows())
+    monkeypatch.setattr(forecast_log, "load", lambda path=None, station=None: _forecast_rows())
     monkeypatch.setattr(station_history, "fetch_actual",
-                        lambda s, e: {date(2026, 6, 16): (90.0, 77.0),
+                        lambda s, e, station=None: {date(2026, 6, 16): (90.0, 77.0),
                                       date(2026, 6, 17): (92.0, 78.0)})
-    monkeypatch.setattr(station_history, "fetch_actual_cli", lambda s, e: {})
+    monkeypatch.setattr(station_history, "fetch_actual_cli", lambda s, e, station=None: {})
     settlements.record(today=TODAY, path=p)
     settlements.record(today=TODAY, path=p)  # rerun must not duplicate
     rows = settlements.load(p)
@@ -60,11 +60,11 @@ def test_record_is_append_once(tmp_path, monkeypatch):
 
 def test_record_skips_days_without_actual(tmp_path, monkeypatch):
     p = str(tmp_path / "settlements.jsonl")
-    monkeypatch.setattr(forecast_log, "load", lambda path=None: _forecast_rows())
+    monkeypatch.setattr(forecast_log, "load", lambda path=None, station=None: _forecast_rows())
     # 6/17 missing from the fetch (e.g. archive not yet posted) -> skipped, no error.
     monkeypatch.setattr(station_history, "fetch_actual",
-                        lambda s, e: {date(2026, 6, 16): (90.0, 77.0)})
-    monkeypatch.setattr(station_history, "fetch_actual_cli", lambda s, e: {})
+                        lambda s, e, station=None: {date(2026, 6, 16): (90.0, 77.0)})
+    monkeypatch.setattr(station_history, "fetch_actual_cli", lambda s, e, station=None: {})
     settlements.record(today=TODAY, path=p)
     keys = {(r["target_date"], r["basis"]) for r in settlements.load(p)}
     assert keys == {("2026-06-16", "hourly")}
@@ -72,11 +72,11 @@ def test_record_skips_days_without_actual(tmp_path, monkeypatch):
 
 def test_as_map_returns_date_keyed_extremes(tmp_path, monkeypatch):
     p = str(tmp_path / "settlements.jsonl")
-    monkeypatch.setattr(forecast_log, "load", lambda path=None: _forecast_rows())
+    monkeypatch.setattr(forecast_log, "load", lambda path=None, station=None: _forecast_rows())
     monkeypatch.setattr(station_history, "fetch_actual",
-                        lambda s, e: {date(2026, 6, 16): (90.0, 77.0)})
+                        lambda s, e, station=None: {date(2026, 6, 16): (90.0, 77.0)})
     monkeypatch.setattr(station_history, "fetch_actual_cli",
-                        lambda s, e: {date(2026, 6, 16): (91.0, 76.0)})
+                        lambda s, e, station=None: {date(2026, 6, 16): (91.0, 76.0)})
     settlements.record(today=TODAY, path=p)
     assert settlements.as_map("hourly", p) == {date(2026, 6, 16): (90.0, 77.0)}
     assert settlements.as_map("cli", p) == {date(2026, 6, 16): (91.0, 76.0)}

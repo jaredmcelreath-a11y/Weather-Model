@@ -18,10 +18,18 @@ import math
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import config
 from config import BIN_HIGH, BIN_LOW, CLIMATE_TZ, TIMEZONE
 
 TZ = ZoneInfo(TIMEZONE)
 _CLIMATE_TZ = ZoneInfo(CLIMATE_TZ)
+
+
+def _ctz(station: str = config.DEFAULT_STATION) -> ZoneInfo:
+    """The settlement (climate) timezone for `station`. KDFW and KAUS both use
+    fixed LST (UTC−6) today, so this returns the same zone for both; the param
+    keeps the boundary math correct if a future station differs."""
+    return ZoneInfo(config.station(station).climate_tz)
 
 
 def round_half_up(x: float) -> int:
@@ -31,7 +39,8 @@ def round_half_up(x: float) -> int:
     return math.floor(x + 0.5)
 
 
-def local_day_bounds(day: date) -> tuple[datetime, datetime]:
+def local_day_bounds(day: date,
+                     station: str = config.DEFAULT_STATION) -> tuple[datetime, datetime]:
     """[start, end) of the settlement (NWS climate) day, as tz-aware datetimes.
 
     Built in fixed Local Standard Time (CLIMATE_TZ, UTC−6) — the CLIDFW climate
@@ -41,22 +50,24 @@ def local_day_bounds(day: date) -> tuple[datetime, datetime]:
     the zone difference is transparent to them; only the day *boundary* moves.
     Fixed UTC−6 means every settlement day is exactly 24h (no DST 23h/25h days).
     """
-    start = datetime(day.year, day.month, day.day, tzinfo=_CLIMATE_TZ)
+    start = datetime(day.year, day.month, day.day, tzinfo=_ctz(station))
     end = start + timedelta(days=1)
     return start, end
 
 
-def climate_day_of(moment: datetime) -> date:
+def climate_day_of(moment: datetime,
+                   station: str = config.DEFAULT_STATION) -> date:
     """The settlement (climate) day `moment` falls in.
 
     Equals the clock date except in the summer 00:00–00:59 CDT hour, when the
     previous climate day is still running (it ends 01:00 CDT). Converting into
     fixed LST does the whole job: the LST calendar date IS the climate day.
     """
-    return moment.astimezone(_CLIMATE_TZ).date()
+    return moment.astimezone(_ctz(station)).date()
 
 
-def open_prior_day(moment: datetime) -> date | None:
+def open_prior_day(moment: datetime,
+                   station: str = config.DEFAULT_STATION) -> date | None:
     """Clock-yesterday's date while its settlement day is still open, else None.
 
     Non-None only during the final climate hour (00:00–00:59 CDT in summer) —
@@ -65,7 +76,7 @@ def open_prior_day(moment: datetime) -> date | None:
     clock midnight, so this is always None.
     """
     prior = moment.astimezone(TZ).date() - timedelta(days=1)
-    _start, end = local_day_bounds(prior)
+    _start, end = local_day_bounds(prior, station)
     return prior if moment < end else None
 
 

@@ -23,7 +23,9 @@ import json
 import os
 from datetime import date, datetime
 
+import config
 import forecast_log
+import paths
 from config import TIMEZONE
 from forecast_log import _load_github, _parse
 from sources import station_history
@@ -34,25 +36,28 @@ _PATH = os.path.join(os.path.dirname(__file__), "settlements.jsonl")
 BASES = ("hourly", "cli")
 
 
-def _github_cfg() -> dict | None:
+def _github_cfg(station: str = config.DEFAULT_STATION) -> dict | None:
     """Remote-log config from env, pointing at the settlements file.
 
     Shares the repo/ref/token with forecast_log (set from Streamlit secrets);
     only the file path differs. Present on the cloud deploy, absent locally and
-    in the scheduled Action — both of which work the local file directly.
+    in the scheduled Action — both of which work the local file directly. KDFW
+    keeps the env-configured bare path; other stations namespace on the branch.
     """
     repo = os.environ.get("FORECAST_LOG_GH_REPO")
     if not repo:
         return None
+    base = os.environ.get("FORECAST_LOG_GH_SETTLEMENTS_PATH", "settlements.jsonl")
+    path = base if station == config.DEFAULT_STATION else paths.github_path("settlements.jsonl", station)
     return {
         "repo": repo,
         "ref": os.environ.get("FORECAST_LOG_GH_REF", "data"),
-        "path": os.environ.get("FORECAST_LOG_GH_SETTLEMENTS_PATH", "settlements.jsonl"),
+        "path": path,
         "token": os.environ.get("FORECAST_LOG_GH_TOKEN") or None,
     }
 
 
-def load(path: str | None = None) -> list[dict]:
+def load(path: str | None = None, station: str = config.DEFAULT_STATION) -> list[dict]:
     """All recorded settlements, oldest-written first.
 
     With no explicit path, transparently reads the GitHub-hosted file when the
@@ -60,10 +65,13 @@ def load(path: str | None = None) -> list[dict]:
     explicit path always reads locally (used by record() and the Action).
     """
     if path is None:
-        cfg = _github_cfg()
+        cfg = _github_cfg(station)
         if cfg:
             return _load_github(cfg)
-    path = path or _PATH
+    # KDFW keeps the module _PATH anchor (byte-identical, monkeypatchable); other
+    # stations route to their namespaced file.
+    path = path or (_PATH if station == config.DEFAULT_STATION
+                    else paths.data_path("settlements.jsonl", station))
     if not os.path.exists(path):
         return []
     with open(path) as fh:
@@ -71,24 +79,27 @@ def load(path: str | None = None) -> list[dict]:
 
 
 def _write(rows: list[dict], path: str) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as fh:
         for rec in rows:
             fh.write(json.dumps(rec) + "\n")
 
 
-def _settled_days(today: date) -> list[date]:
+def _settled_days(today: date, station: str = config.DEFAULT_STATION) -> list[date]:
     """Distinct forecast target dates now in the past — the days worth settling."""
-    days = {date.fromisoformat(r["target_date"]) for r in forecast_log.load()}
+    days = {date.fromisoformat(r["target_date"]) for r in forecast_log.load(station=station)}
     return sorted(d for d in days if d < today)
 
 
-def _fetch(basis: str, start: date, end: date) -> dict[date, tuple[float, float]]:
+def _fetch(basis: str, start: date, end: date,
+           station: str = config.DEFAULT_STATION) -> dict[date, tuple[float, float]]:
     fn = (station_history.fetch_actual_cli if basis == "cli"
           else station_history.fetch_actual)
-    return fn(start, end)
+    return fn(start, end, station=station)
 
 
-def record(today: date | None = None, path: str | None = None) -> None:
+def record(today: date | None = None, path: str | None = None,
+           station: str = config.DEFAULT_STATION) -> None:
     """Fetch and append actual settlements for newly settled days.
 
     For each basis, finds the settled forecast days not yet recorded, fetches
@@ -97,15 +108,16 @@ def record(today: date | None = None, path: str | None = None) -> None:
     for a later run). No-op on the cloud deploy (remote log configured, no
     explicit path): there the scheduled Action is the sole writer.
     """
-    if path is None and _github_cfg() is not None:
+    if path is None and _github_cfg(station) is not None:
         return
     today = today or date.today()
-    settled = _settled_days(today)
+    settled = _settled_days(today, station)
     if not settled:
         return
 
-    target_path = path or _PATH
-    rows = load(target_path)
+    target_path = path or (_PATH if station == config.DEFAULT_STATION
+                           else paths.data_path("settlements.jsonl", station))
+    rows = load(target_path, station)
     have = {(r["target_date"], r.get("basis", "hourly")) for r in rows}
     recorded_at = datetime.now(TZ).isoformat(timespec="seconds")
 
@@ -114,7 +126,7 @@ def record(today: date | None = None, path: str | None = None) -> None:
         missing = [d for d in settled if (d.isoformat(), basis) not in have]
         if not missing:
             continue
-        actual = _fetch(basis, min(missing), max(missing))
+        actual = _fetch(basis, min(missing), max(missing), station)
         for d in missing:
             hl = actual.get(d)
             if not hl:
@@ -133,11 +145,12 @@ def record(today: date | None = None, path: str | None = None) -> None:
         _write(rows, target_path)
 
 
-def as_map(basis: str = "hourly", path: str | None = None) -> dict[date, tuple[float, float]]:
+def as_map(basis: str = "hourly", path: str | None = None,
+           station: str = config.DEFAULT_STATION) -> dict[date, tuple[float, float]]:
     """{day: (high, low)} for one basis — the durable counterpart to
     station_history.fetch_actual, served from the persisted log."""
     out: dict[date, tuple[float, float]] = {}
-    for r in load(path):
+    for r in load(path, station):
         if r.get("basis", "hourly") != basis:
             continue
         try:

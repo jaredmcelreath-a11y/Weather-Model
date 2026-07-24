@@ -17,6 +17,8 @@ import json
 import os
 from datetime import datetime
 
+import config
+import paths
 from config import TIMEZONE, lead_bucket
 from zoneinfo import ZoneInfo
 
@@ -47,19 +49,22 @@ def _key(rec: dict) -> tuple:
             rec.get("basis", "hourly"), rec.get("capture_cohort"))
 
 
-def _github_cfg() -> dict | None:
+def _github_cfg(station: str = config.DEFAULT_STATION) -> dict | None:
     """Remote-log config from env (the dashboard sets it from Streamlit secrets).
 
     Present only on the cloud deploy; absent locally and in the scheduled Action,
-    which both work the local file directly.
+    which both work the local file directly. KDFW keeps the env-configured bare
+    path; other stations are namespaced on the data branch via github_path.
     """
     repo = os.environ.get("FORECAST_LOG_GH_REPO")
     if not repo:
         return None
+    base = os.environ.get("FORECAST_LOG_GH_PATH", "forecast_log.jsonl")
+    path = base if station == config.DEFAULT_STATION else paths.github_path("forecast_log.jsonl", station)
     return {
         "repo": repo,
         "ref": os.environ.get("FORECAST_LOG_GH_REF", "data"),
-        "path": os.environ.get("FORECAST_LOG_GH_PATH", "forecast_log.jsonl"),
+        "path": path,
         "token": os.environ.get("FORECAST_LOG_GH_TOKEN") or None,
     }
 
@@ -87,7 +92,7 @@ def _load_github(cfg: dict) -> list[dict]:
     return _parse(r.text)
 
 
-def load(path: str | None = None) -> list[dict]:
+def load(path: str | None = None, station: str = config.DEFAULT_STATION) -> list[dict]:
     """All logged records, oldest-written first.
 
     With no explicit path, transparently reads the GitHub-hosted log when the
@@ -96,10 +101,13 @@ def load(path: str | None = None) -> list[dict]:
     source -> [].
     """
     if path is None:
-        cfg = _github_cfg()
+        cfg = _github_cfg(station)
         if cfg:
             return _load_github(cfg)
-    path = path or _PATH
+    # KDFW keeps the module _PATH anchor (preserves the monkeypatch point and is
+    # byte-identical); other stations route to their namespaced file.
+    path = path or (_PATH if station == config.DEFAULT_STATION
+                    else paths.data_path("forecast_log.jsonl", station))
     if not os.path.exists(path):
         return []
     with open(path) as fh:
