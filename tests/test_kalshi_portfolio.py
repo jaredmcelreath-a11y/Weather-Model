@@ -60,6 +60,31 @@ def test_fills_pages_merges_filters_and_dedupes():
     assert t2["price"] == 0.70                        # no buy -> no_price_dollars
 
 
+def test_fills_cut_off_by_weather_day_not_utc_timestamp():
+    """A bet placed the evening of the PRIOR weather day rolls into `start` in UTC
+    but belongs to that earlier day (the page buckets by weather day). It must be
+    dropped by ticker date, not kept by its timestamp; a genuine `start`-day market
+    bought that same evening must be kept even though its timestamp is a day earlier."""
+    pages = {
+        ("/portfolio/fills", None): {"fills": [
+            # Jul 22 market, bought 8pm CDT Jul 22 -> 01:10Z Jul 23. Timestamp is on
+            # the Jul 23 start, but the weather day is Jul 22 -> DROP.
+            {"fill_id": "prev", "trade_id": "prev", "ticker": "KXHIGHTDAL-26JUL22-B97",
+             "side": "yes", "action": "buy", "count_fp": "3",
+             "yes_price_dollars": "0.5000", "no_price_dollars": "0.5000",
+             "created_time": "2026-07-23T01:10:00Z"},
+            # Jul 23 market, bought 11pm CDT Jul 22 -> 04:00Z Jul 23. Weather day is
+            # Jul 23 -> KEEP (even though someone might expect a Jul 22-ish timestamp).
+            {"fill_id": "keep", "trade_id": "keep", "ticker": "KXHIGHTDAL-26JUL23-B97",
+             "side": "yes", "action": "buy", "count_fp": "4",
+             "yes_price_dollars": "0.5000", "no_price_dollars": "0.5000",
+             "created_time": "2026-07-23T04:00:00Z"},
+        ], "cursor": ""},
+    }
+    out = kp.fills(date(2026, 7, 23), fetch=lambda p, params=None: pages[(p, None)])
+    assert sorted(f["trade_id"] for f in out) == ["keep"]
+
+
 def test_settlements_keyed_by_ticker():
     def fetch(path, params=None):
         if path == "/portfolio/settlements":

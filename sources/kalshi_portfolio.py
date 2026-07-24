@@ -3,7 +3,8 @@
 Pulls the user's fills and settlements for the Dallas temp series (both the recent
 /portfolio tier and the older /historical tier), pages through Kalshi's cursor
 pagination, and normalizes to plain dicts. `fills` filters by series AND start
-date; `settlements` filters by series only (it's keyed by ticker and looked up
+date (by the ticker's WEATHER day, not the fill timestamp — see fills());
+`settlements` filters by series only (it's keyed by ticker and looked up
 only for tickers already date-filtered via fills) — its `start` param is
 accepted for signature symmetry with `fills`, not used to filter.
 Market metadata (strike range) comes from the PUBLIC markets endpoint (no auth).
@@ -29,6 +30,16 @@ def variable_of(ticker: str) -> str | None:
 def _parse_ts(s: str) -> datetime:
     # Kalshi timestamps are ISO 8601 with a trailing Z; normalize to +00:00.
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+
+def _ticker_date(ticker: str) -> date | None:
+    """Weather (target) day from a ticker like 'KXHIGHTDAL-26JUL22-B97', or None
+    if unparsable. (Duplicated from bet_history._ticker_date to keep the sources
+    layer from importing upward.)"""
+    try:
+        return datetime.strptime(ticker.split("-")[1], "%y%b%d").date()
+    except (IndexError, ValueError):
+        return None
 
 
 def _iter_pages(fetch, path, items_key):
@@ -63,7 +74,14 @@ def fills(start: date, fetch=None) -> list[dict]:
             if var is None:
                 continue
             ts = _parse_ts(f["created_time"])
-            if ts.date() < start:
+            # Cut off by the ticker's WEATHER day, not the fill's UTC timestamp:
+            # the whole page buckets bets by weather day, and a bet placed the
+            # evening of day D Central rolls into D+1 in UTC — filtering on ts.date()
+            # let such a fill slip past `start` and then display under weather day D
+            # (e.g. a Jul 22 market showing after a Jul 23 reset). Fall back to the
+            # timestamp only when the ticker can't be parsed.
+            wday = _ticker_date(ticker)
+            if (wday or ts.date()) < start:
                 continue
             fid = f.get("fill_id") or f.get("trade_id")
             if fid in seen:
