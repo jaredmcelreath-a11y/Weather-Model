@@ -14,10 +14,15 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
+import config
 from config import CACHE_TTL_SECONDS
 from sources.common import TZ, get_json
 
-LIST_URL = "https://api.weather.gov/products/types/CLI/locations/DFW"
+
+def list_url(station: str = config.DEFAULT_STATION) -> str:
+    """NWS CLI product-list endpoint for `station`'s climate report."""
+    return ("https://api.weather.gov/products/types/CLI/locations/"
+            + config.station(station).cli_location)
 
 _DATE_RE = re.compile(r"CLIMATE SUMMARY FOR ([A-Z]+ \d{1,2} \d{4})")
 _MAX_RE = re.compile(r"^\s*MAXIMUM\s+(-?\d+)\s+(\d{1,4})\s+([AP]M)", re.M)
@@ -45,15 +50,16 @@ def parse_cli(text: str, issued: datetime) -> dict | None:
     }
 
 
-def fetch_latest_cli(ttl: int | None = None) -> dict | None:
-    """Fetch and parse the newest CLIDFW product, or None on any failure.
+def fetch_latest_cli(ttl: int | None = None,
+                     station: str = config.DEFAULT_STATION) -> dict | None:
+    """Fetch and parse the newest CLI product for `station`, or None on failure.
 
     `ttl` controls the cache freshness of the product list; pass 0 for an
     always-fresh read (the scheduled Action), or a short TTL for the dashboard.
     """
     t = CACHE_TTL_SECONDS if ttl is None else ttl
     try:
-        listing = get_json(LIST_URL, ttl=t)
+        listing = get_json(list_url(station), ttl=t)
         graph = listing.get("@graph") or []
         if not graph:
             return None

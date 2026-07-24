@@ -18,7 +18,7 @@ def test_fetch_accepts_an_explicit_window_start(monkeypatch):
         return {"features": []}
 
     monkeypatch.setattr(nws_observations, "get_json", fake_get_json)
-    monkeypatch.setattr(nws_observations, "_iem_fallback", lambda s, n: ([], []))
+    monkeypatch.setattr(nws_observations, "_iem_fallback", lambda s, n, station=None: ([], []))
 
     now = datetime(2026, 7, 20, 0, 30, tzinfo=_TZ)
     start = datetime(2026, 7, 19, 1, 0, tzinfo=_TZ)
@@ -34,7 +34,7 @@ def test_fetch_defaults_to_clock_midnight(monkeypatch):
         return {"features": []}
 
     monkeypatch.setattr(nws_observations, "get_json", fake_get_json)
-    monkeypatch.setattr(nws_observations, "_iem_fallback", lambda s, n: ([], []))
+    monkeypatch.setattr(nws_observations, "_iem_fallback", lambda s, n, station=None: ([], []))
 
     now = datetime(2026, 7, 20, 15, 0, tzinfo=_TZ)
     nws_observations.fetch(now=now)

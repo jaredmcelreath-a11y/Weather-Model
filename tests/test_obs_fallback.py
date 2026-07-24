@@ -33,7 +33,7 @@ def _iem(hours=(0, 1, 2, 3)):
 def test_empty_nws_falls_back_to_iem(monkeypatch):
     monkeypatch.setattr(nws, "get_json", lambda *a, **k: {"features": []})
     monkeypatch.setattr(station_history, "_fetch_series",
-                        lambda s, e, ttl=None: _iem())
+                        lambda s, e, ttl=None, station=None: _iem())
     out = nws.fetch(continuous=True, now=NOW)
     times, temps = out["obs"]
     assert temps == [81.0, 80.5, 80.0, 79.5]
@@ -46,7 +46,7 @@ def test_stale_nws_falls_back_to_iem(monkeypatch):
     monkeypatch.setattr(nws, "get_json", lambda *a, **k: {
         "features": [_feat(datetime(2026, 7, 18, 0, 53, tzinfo=_TZ), 27.0)]})
     monkeypatch.setattr(station_history, "_fetch_series",
-                        lambda s, e, ttl=None: _iem())
+                        lambda s, e, ttl=None, station=None: _iem())
     out = nws.fetch(now=NOW)
     assert out["obs"][1] == [81.0, 80.5, 80.0, 79.5]
 
@@ -78,6 +78,6 @@ def test_iem_empty_keeps_nws_result(monkeypatch):
     monkeypatch.setattr(nws, "get_json", lambda *a, **k: {
         "features": [_feat(datetime(2026, 7, 18, 0, 53, tzinfo=_TZ), 27.0)]})
     monkeypatch.setattr(station_history, "_fetch_series",
-                        lambda s, e, ttl=None: ([], []))
+                        lambda s, e, ttl=None, station=None: ([], []))
     out = nws.fetch(now=NOW)
     assert len(out["obs"][1]) == 1

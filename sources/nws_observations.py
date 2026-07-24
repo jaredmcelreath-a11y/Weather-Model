@@ -9,11 +9,16 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from config import STATION_ID, TIMEZONE
+import config
+from config import TIMEZONE
 from sources.common import c_to_f, get_json, parse_local_times, to_hourly
 
-OBS_URL = f"https://api.weather.gov/stations/{STATION_ID}/observations"
 TZ = ZoneInfo(TIMEZONE)
+
+
+def obs_url(station: str = config.DEFAULT_STATION) -> str:
+    """NWS observations endpoint for `station`."""
+    return f"https://api.weather.gov/stations/{config.station(station).id}/observations"
 
 # The NWS feed counts as down when it has served nothing this recent. Routine
 # METARs land ~hourly with ~20 min propagation lag, so 90 min means "missed at
@@ -21,7 +26,8 @@ TZ = ZoneInfo(TIMEZONE)
 STALE_AFTER_S = 90 * 60
 
 
-def _iem_fallback(start: datetime, now: datetime):
+def _iem_fallback(start: datetime, now: datetime,
+                  station: str = config.DEFAULT_STATION):
     """The same station's METARs from the IEM ASOS archive (independent
     pipeline), for the NWS-outage path. Best-effort: any failure returns an
     empty series and the caller keeps whatever NWS gave it."""
@@ -30,7 +36,7 @@ def _iem_fallback(start: datetime, now: datetime):
     try:
         # asos.py's day2 is exclusive — +1 day so today's rows are included.
         times, temps = station_history._fetch_series(
-            start.date(), now.date() + timedelta(days=1), ttl=60)
+            start.date(), now.date() + timedelta(days=1), ttl=60, station=station)
     except Exception:
         return [], []
     pairs = [(t, v) for t, v in zip(times, temps) if start <= t <= now]
@@ -38,7 +44,7 @@ def _iem_fallback(start: datetime, now: datetime):
 
 
 def fetch(limit: int = 500, continuous: bool = False, now: datetime | None = None,
-          start: datetime | None = None
+          start: datetime | None = None, station: str = config.DEFAULT_STATION
           ) -> dict[str, tuple[list[datetime], list[float]]]:
     """Return {'obs': (times, temps_f)} sorted ascending in time.
 
@@ -65,7 +71,7 @@ def fetch(limit: int = 500, continuous: bool = False, now: datetime | None = Non
     # The dashboard re-blends every ~60s and NWS publishes a new 5-min reading only
     # every 5 min, so 60s adds at most ~1 min of staleness on top of the feed's own
     # ~20-min propagation lag (down from up to 5 min with the old 300s window).
-    data = get_json(OBS_URL, {"limit": limit, "start": start.isoformat()}, ttl=60)
+    data = get_json(obs_url(station), {"limit": limit, "start": start.isoformat()}, ttl=60)
     pairs = []
     for feature in data["features"]:
         props = feature["properties"]
@@ -84,7 +90,7 @@ def fetch(limit: int = 500, continuous: bool = False, now: datetime | None = Non
     # feed never consults IEM, and if IEM comes back empty the (stale) NWS
     # readings are kept.
     if not raw[0] or (now - raw[0][-1]).total_seconds() > STALE_AFTER_S:
-        fb = _iem_fallback(start, now)
+        fb = _iem_fallback(start, now, station)
         if fb[0]:
             raw = fb
     # Settle on the routine hourly readings, not 5-minute spikes.

@@ -118,7 +118,7 @@ def test_fetch_actual_widens_raw_fetch_past_end_for_lst_tail(monkeypatch):
     end = date(2026, 7, 11)
     seen = {}
 
-    def _fake_fetch_series(s, e):
+    def _fake_fetch_series(s, e, station=None):
         seen["start"], seen["end"] = s, e
         # A boundary night: end's true low (68) only shows up in the LST tail,
         # i.e. clock hour 0 of the day AFTER end -- only present if the raw
