@@ -27,7 +27,8 @@ from config import (BIN_HIGH, BIN_LOW, CACHE_TTL_SECONDS, CALM_WIND_MAX,
                     FRONT_SIGMA_MIN,
                     FRONT_UNDERCUT_MARGIN, HIGH_BUMPY_STD, HIGH_LOCK_DROP,
                     HIGH_LOCK_NOON_OFFSET_HOURS, HIGH_PLATEAU_MAX,
-                    LEAD_SIGMA_INFLATION, LOW_LOCK_RISE, MAX_CLI_GAP,
+                    LEAD_SIGMA_INFLATION, LOW_FORMING_RESOLVED_CAP,
+                    LOW_FORMING_SIGMA_MIN, LOW_LOCK_RISE, MAX_CLI_GAP,
                     PEAK_LOCK_DROP, TIMEZONE, bin_labels, lead_bucket)
 from settlement import (climate_day_of, covers_extreme, local_day_bounds,
                         observed_so_far, observed_so_far_robust, open_prior_day,
@@ -765,9 +766,11 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     # early false-lock un-locks it), which is exactly what dropped Resolved mid-day. The
     # noisy `locked_ratio` (momentary ensemble agreement) is not used here either.
     resolved = 0.0
+    resolved_collapse = 0.0   # the physically ruled-out mass alone (no clock term)
     if observed is not None and now is not None and fullday_sd > 1e-6:
         below = _norm_cdf(observed, fullday_mean, fullday_sd)
         collapse = below if variable == "high" else 1.0 - below
+        resolved_collapse = collapse
         w0, w1 = _HIGH_WINDOW if variable == "high" else _LOW_WINDOW
         lt = now.astimezone(TZ)
         hr = lt.hour + lt.minute / 60.0
@@ -779,6 +782,20 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     # for this lead bucket (today=0 -> 1.0, tomorrow wider). The nowcast
     # locked_ratio then collapses it as observations come in (today only).
     bucket = lead_bucket(now, day) if now is not None else 0
+
+    # Dawn-low "still forming": today's low, past midnight with observations in,
+    # but the trough is not yet physically locked (see _extreme_locked — needs
+    # past sunrise + a confirming rise, or the 2°F fallback). Until then the true
+    # summer minimum is still landing at/after sunrise and can keep dipping to
+    # 7-7:30; the hourly forecast fields under-resolve that last 1-3°F, so the
+    # ensemble collapses and the bins over-report confidence in the current
+    # reading's bracket. Flag it so the sigma floor below hedges the bins downward
+    # and the display (Resolved card + lock badge) refuses the premature green.
+    # No live data read — safe to evaluate in backtest/replay, unlike the
+    # convective floor.
+    low_forming = (variable == "low" and now is not None and observed is not None
+                   and bucket == 0 and not locked)
+
     by_lead = (calib or {}).get("sigma", {}).get("by_lead", {})
     emp = (by_lead.get(str(bucket)) or by_lead.get(bucket) or {}).get(variable)
     if emp is not None:
@@ -850,6 +867,13 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     if front_widened:
         sigma = max(sigma, FRONT_SIGMA_MIN)
 
+    # Dawn-low forming floor: keep the spread wide enough to hold the still-
+    # possible colder readings until the trough physically locks. The low's hard
+    # bound below makes the widening one-sided (downside) — mass spreads toward
+    # the cooler brackets the current reading hasn't ruled out, not above it.
+    if low_forming:
+        sigma = max(sigma, LOW_FORMING_SIGMA_MIN)
+
     probs = _bin_probabilities(samples, sigma, weights)
     probs = _apply_hard_bound(probs, variable, observed_bound)
 
@@ -863,6 +887,8 @@ def predict_variable(series, obs_series, day, variable, now, calib,
         "sigma_used": round(sigma, 1),
         "locked_ratio": round(locked_ratio, 2),
         "resolved": round(resolved, 2),
+        "resolved_collapse": round(resolved_collapse, 2),
+        "low_forming": low_forming,
         "n_samples": len(samples),
         "observed_so_far": observed,
         "observed_continuous": observed_cont,
@@ -1173,4 +1199,12 @@ def displayed_resolved(d):
     pct = int(d.get("resolved", 1 - d.get("locked_ratio", 0.0)) * 100)
     if d.get("convective_widened") or d.get("front_widened"):
         pct = min(pct, CONVECTIVE_RESOLVED_CAP)
+    # Dawn low still forming: the `resolved` clock term (tprog, midnight->9am)
+    # inflates the card toward 90% before the trough is physically in — and the
+    # one-sided `collapse` mass is high too whenever the reading sits below the
+    # forecast mean, though neither means the min has landed. Until the trough
+    # locks the low is definitionally unsettled (it can still dip 2-3°F), so cap
+    # the card at "half-open, wait". Older snapshots lack the flag and are untouched.
+    if d.get("low_forming"):
+        pct = min(pct, LOW_FORMING_RESOLVED_CAP)
     return pct
