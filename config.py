@@ -8,6 +8,7 @@ is currently listing for Dallas.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -281,3 +282,56 @@ CONVECTIVE_UPSTREAM_UGC = tuple(CONVECTIVE_UPSTREAM_COUNTIES)
 
 # Disk cache TTL (seconds) for live API calls, to avoid hammering on refresh.
 CACHE_TTL_SECONDS = 600
+
+
+# --- Station registry ---
+# Multi-station support: every genuinely station-specific value lives in a
+# StationConfig. The KDFW entry is built FROM the module constants above so the
+# bare names stay authoritative for Dallas (zero behavior change); new stations
+# add their own entry. Physics-ish tuning (lock/bias constants, LEAD_*) stays
+# shared at module level. `station(code)` is the accessor the rest of the code
+# threads a `station` argument through; `None`/"" resolves to DEFAULT_STATION.
+@dataclass(frozen=True)
+class StationConfig:
+    code: str
+    id: str
+    lat: float
+    lon: float
+    timezone: str
+    climate_tz: str
+    cli_location: str
+    bin_low: int
+    bin_high: int
+    nws_user_agent: str
+    convective_counties: dict
+    warm_low_threshold: float
+
+
+DEFAULT_STATION = "KDFW"
+
+STATIONS: dict[str, StationConfig] = {
+    "KDFW": StationConfig(
+        code="KDFW", id=STATION_ID, lat=LAT, lon=LON,
+        timezone=TIMEZONE, climate_tz=CLIMATE_TZ, cli_location="DFW",
+        bin_low=BIN_LOW, bin_high=BIN_HIGH, nws_user_agent=NWS_USER_AGENT,
+        convective_counties=CONVECTIVE_UPSTREAM_COUNTIES,
+        warm_low_threshold=WARM_LOW_THRESHOLD,
+    ),
+    # Austin-Bergstrom (KAUS). Working values pending settlement-basis
+    # verification (CLIAUS vs Camp Mabry/KATT). Convective map ships empty: the
+    # convective-downside guard runs degraded for Austin until its own
+    # storm-approach county map is built in a later plan.
+    "KAUS": StationConfig(
+        code="KAUS", id="KAUS", lat=30.1975, lon=-97.6664,
+        timezone="America/Chicago", climate_tz="Etc/GMT+6", cli_location="AUS",
+        bin_low=-10, bin_high=115,
+        nws_user_agent="kaus-weather-model (jaredmcelreath@gmail.com)",
+        convective_counties={}, warm_low_threshold=76,
+    ),
+}
+STATION_CODES = list(STATIONS)
+
+
+def station(code: str | None = None) -> StationConfig:
+    """StationConfig for `code`; None/"" -> DEFAULT_STATION. Unknown -> KeyError."""
+    return STATIONS[code or DEFAULT_STATION]
