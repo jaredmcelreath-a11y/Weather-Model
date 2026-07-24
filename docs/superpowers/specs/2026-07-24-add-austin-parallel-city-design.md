@@ -117,8 +117,12 @@ visit but remember their own last selection within the page.
    rigor applied to KDFW (CLIDFW, climate day = LST window). Confirm the CLI
    product (`CLIAUS`), its climate-day boundary, and **which physical station
    Kalshi settles Austin on** — Austin has both Camp Mabry (KATT) and
-   Austin-Bergstrom (KAUS). Kalshi's choice dictates the lat/lon and the
-   observation feed. Nothing downstream is trustworthy until this is nailed.
+   Austin-Bergstrom (KAUS). **Working assumption: KAUS (Austin-Bergstrom)** per
+   user recollection — treat as unverified until confirmed against a real Kalshi
+   Austin contract's settlement text, because CLIAUS has historically been issued
+   for Camp Mabry (KATT), so the airport code and the CLI product may disagree.
+   Kalshi's choice dictates the lat/lon and the observation feed. Nothing
+   downstream is trustworthy until this is nailed.
 2. **Station-specific convective geography.** KDFW's upstream storm-approach
    counties are hand-mapped for its position between Dallas and Fort Worth.
    Austin needs its own county map, or the convective-downside guard runs
