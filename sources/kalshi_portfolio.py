@@ -20,11 +20,10 @@ SERIES_PREFIXES = ("KXHIGHTDAL", "KXLOWTDAL")
 
 
 def variable_of(ticker: str) -> str | None:
-    if ticker.startswith("KXHIGHTDAL"):
-        return "high"
-    if ticker.startswith("KXLOWTDAL"):
-        return "low"
-    return None
+    # Delegates to the config-driven classifier so both cities' series resolve
+    # (Dallas KXHIGHTDAL/KXLOWTDAL, Austin KXHIGHAUS/KXLOWTAUS).
+    from sources import kalshi
+    return kalshi.variable_of_ticker(ticker)
 
 
 def _parse_ts(s: str) -> datetime:

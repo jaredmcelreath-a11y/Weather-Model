@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Callable
 
+import config
 import trade_logic
 import trade_log
 import trade_params
@@ -67,7 +68,8 @@ def _managed_positions(mode: str, held_truth: list, runtime: dict) -> list[dict]
             for tkr, e in entries.items()]
 
 
-def run_once(now: datetime | None = None, *, deps: Deps) -> dict:
+def run_once(now: datetime | None = None, *, deps: Deps,
+             station: str = config.DEFAULT_STATION) -> dict:
     import settlement
     now = now or datetime.now()
     params = deps.load_state()
@@ -77,7 +79,7 @@ def run_once(now: datetime | None = None, *, deps: Deps) -> dict:
     if not trade_params.within_market_window(now, params):
         return {"halted": "closed"}
 
-    today: date = settlement.climate_day_of(now)
+    today: date = settlement.climate_day_of(now, station)
     today_iso = today.isoformat()
     runtime = deps.load_runtime() or {}
     runtime.setdefault("entries", {})
@@ -211,7 +213,7 @@ def run_once(now: datetime | None = None, *, deps: Deps) -> dict:
     return {"halted": None, **summary}
 
 
-def _real_deps() -> Deps:
+def _real_deps(station: str = config.DEFAULT_STATION) -> Deps:
     import calibration
     import model
     import notify
@@ -219,29 +221,43 @@ def _real_deps() -> Deps:
     from sources import kalshi, kalshi_orders, kalshi_portfolio
 
     def snapshot():
-        calib = calibration.get(refresh=True)
-        return model.snapshot(calib) if calib else {}
+        calib = calibration.get(refresh=True, station=station)
+        return model.snapshot(calib, station=station) if calib else {}
+
+    def positions():
+        # Isolation invariant: manage only THIS city's markets, never the other's.
+        return [p for p in (kalshi_portfolio.positions() or [])
+                if kalshi.station_of_ticker(p["ticker"]) == station]
 
     return Deps(
-        load_state=trade_state.load_state,
-        load_runtime=trade_state.load_runtime,
-        save_runtime=trade_state.save_runtime,
+        load_state=lambda: trade_state.load_state(station=station),
+        load_runtime=lambda: trade_state.load_runtime(station=station),
+        save_runtime=lambda r: trade_state.save_runtime(r, station=station),
         snapshot=snapshot,
         balance=kalshi_portfolio.balance,
-        positions=kalshi_portfolio.positions,
-        fetch_contracts=kalshi.fetch_contracts,
+        positions=positions,
+        fetch_contracts=lambda v, d: kalshi.fetch_contracts(v, d, station=station),
         fetch_orderbook=kalshi.fetch_orderbook,
-        implied_forecast=kalshi.implied_forecast,
+        implied_forecast=lambda v, d: kalshi.implied_forecast(v, d, station=station),
         place_order=kalshi_orders.place_order,
-        append_log=lambda rec: trade_state.append_jsonl(trade_state.LOG_PATH, rec),
+        append_log=lambda rec: trade_state.append_jsonl(
+            trade_state._path(trade_state.LOG_PATH, station), rec),
         notify=notify.send_ntfy,
     )
 
 
 def main() -> None:
+    """Run one pass for every configured station, isolating failures so one
+    city's outage never blocks the other. Each city is gated independently by
+    its own kill switch / mode / daily-loss halt."""
     from sources.common import TZ
-    out = run_once(now=datetime.now(TZ), deps=_real_deps())
-    print(f"trader run: {out}")
+    now = datetime.now(TZ)
+    for code in config.STATION_CODES:
+        try:
+            out = run_once(now=now, deps=_real_deps(code), station=code)
+            print(f"[{code}] trader run: {out}")
+        except Exception as e:
+            print(f"[{code}] trader run failed: {e}")
 
 
 if __name__ == "__main__":
