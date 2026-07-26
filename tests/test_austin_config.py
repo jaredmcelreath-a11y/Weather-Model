@@ -25,6 +25,18 @@ def test_kdfw_kalshi_series_unchanged():
     assert dfw.kalshi_low_series == "KXLOWTDAL"
 
 
+def test_kaus_convective_map_populated():
+    aus = config.station("KAUS")
+    m = aus.convective_counties
+    assert m, "Austin convective map must be non-empty"
+    # Travis County (the airport) is the metro anchor.
+    assert any(v[1] == "metro" for v in m.values())
+    # Values are (county_name, approach_direction) like KDFW's.
+    assert all(isinstance(v, tuple) and len(v) == 2 for v in m.values())
+    # Travis is present and tagged metro.
+    assert m.get("TXC453") == ("Travis", "metro")
+
+
 def test_cli_parser_accepts_both_office_time_formats():
     """CLIAUS (Austin/San Antonio) prints colon times; CLIDFW (Fort Worth) does
     not. One parser must handle both."""

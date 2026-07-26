@@ -330,7 +330,22 @@ STATIONS: dict[str, StationConfig] = {
         timezone="America/Chicago", climate_tz="Etc/GMT+6", cli_location="AUS",
         bin_low=-10, bin_high=115,
         nws_user_agent="kaus-weather-model (jaredmcelreath@gmail.com)",
-        convective_counties={}, warm_low_threshold=76,
+        # Austin storm-approach counties (verified UGC 2026-07-26). Central Texas
+        # storms move W/NW -> E/SE and SW -> NE, so the upstream set is the N/NW/W/
+        # SW/S ring; Travis (the airport) is the metro anchor. Bastrop (E) is
+        # downstream and deliberately excluded. Mirrors the KDFW methodology.
+        convective_counties={
+            "TXC491": ("Williamson", "N"),
+            "TXC027": ("Bell", "N"),
+            "TXC053": ("Burnet", "NW"),
+            "TXC299": ("Llano", "NW"),
+            "TXC171": ("Gillespie", "W"),
+            "TXC031": ("Blanco", "W"),
+            "TXC209": ("Hays", "SW"),
+            "TXC055": ("Caldwell", "S"),
+            "TXC453": ("Travis", "metro"),
+        },
+        warm_low_threshold=76,
         kalshi_high_series="KXHIGHAUS", kalshi_low_series="KXLOWTAUS",
     ),
 }
