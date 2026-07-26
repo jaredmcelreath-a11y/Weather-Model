@@ -19,6 +19,7 @@ import streamlit.components.v1 as components
 from streamlit_autorefresh import st_autorefresh
 
 import calibration
+import config
 import kelly
 import model
 from model import CONVECTIVE_RESOLVED_CAP, displayed_resolved  # metric-card helper, shared with the cron
@@ -1836,6 +1837,12 @@ def _render_accuracy(load_accuracy, calib=None, history_loader=None):
             pass
 
 
+def page_title(snap: dict) -> str:
+    """The page's H1, derived from the snapshot's station tag, e.g.
+    'Austin Daily High & Low'. Defaults to Dallas when untagged."""
+    return f"{config.station(snap.get('station', config.DEFAULT_STATION)).name} Daily High & Low"
+
+
 def render_page(snap, calib, adapter, load_accuracy, recap_loader=None,
                 history_loader=None, bankroll=None):
     """Draw the full dashboard body for one market. `snap`/`calib` come from the
@@ -1845,7 +1852,7 @@ def render_page(snap, calib, adapter, load_accuracy, recap_loader=None,
     st_autorefresh(interval=60_000, key=f"refresh_{adapter.name}")
     _inject_theme(_seed_theme())
 
-    st.title("Dallas Daily High & Low")
+    st.title(page_title(snap))
 
     cur = snap.get("current")
     ki = _kalshi_implied(snap["today"]["day"])      # Kalshi market-implied hi/lo (today)
