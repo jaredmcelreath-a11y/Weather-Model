@@ -366,7 +366,9 @@ def load_hourly(station: str = config.DEFAULT_STATION):
 
 
 def hourly_page():
-    hourly_view.render(load_hourly, cli_report=load_cli_report())
+    station = city_view.city_control("hourly", arity=2)
+    hourly_view.render(lambda: load_hourly(station),
+                       cli_report=load_cli_report(station), station=station)
 
 
 def edge_page():

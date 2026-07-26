@@ -158,5 +158,12 @@ def test_render_degrades_when_loader_raises(monkeypatch):
     # Loader failure must not raise out of render — the page warns instead.
     def boom():
         raise RuntimeError("twc down")
-    monkeypatch.setattr(hourly_view, "_kdfw_current", lambda: None)
+    monkeypatch.setattr(hourly_view, "_current", lambda station=None: None)
     hourly_view.render(boom)  # should not raise
+
+
+def test_render_accepts_station(monkeypatch):
+    import hourly_view
+    # Austin: no PWS, empty rows — render must accept station and not raise.
+    monkeypatch.setattr(hourly_view, "_current", lambda station=None: None)
+    hourly_view.render(lambda: ([], None), cli_report=None, station="KAUS")

@@ -13,6 +13,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 from streamlit_autorefresh import st_autorefresh
 
+import config
 import market_view
 from config import TIMEZONE
 
@@ -61,12 +62,12 @@ def chart_frame(rows: list[dict]) -> list[dict]:
     return out
 
 
-def _kdfw_current() -> dict | None:
-    """Official KDFW current temp = latest 5-minute ASOS reading (display only,
-    no settlement logic), matching the Forecast page's Current Temp source."""
+def _current(station: str = config.DEFAULT_STATION) -> dict | None:
+    """Official current temp for the station = latest 5-minute ASOS reading
+    (display only, no settlement logic), matching the Forecast page's source."""
     try:
         from sources import nws_observations
-        data = nws_observations.fetch(continuous=True)
+        data = nws_observations.fetch(continuous=True, station=station)
         times, temps = data.get("obs_continuous") or data["obs"]
         if temps:
             return {"temp": temps[-1], "time": times[-1]}
@@ -261,17 +262,18 @@ def cli_report_box(cli):
     return value, issued
 
 
-def render(load_hourly, cli_report=None):
+def render(load_hourly, cli_report=None, station: str = config.DEFAULT_STATION):
     """Draw the Hourly page. `load_hourly` is the cached () -> (rows, pws) callable
     where `rows` is wunderground.hourly() and `pws` is wunderground.pws_current().
-    `cli_report` is today's parsed CLIDFW report (or None) for the climate box."""
+    `cli_report` is today's parsed CLI report (or None) for the climate box."""
+    s = config.station(station)
     market_view._theme_controls()  # sidebar Settings (theme picker) + injects theme
     theme = market_view._seed_theme()
     st_autorefresh(interval=60_000, key="refresh_hourly")
-    st.title("Hourly")
-    st.caption("Tracking Wunderground's KDFW hourly forecast (The Weather Company).")
+    st.title(f"{s.name} Hourly")
+    st.caption(f"Tracking Wunderground's {s.id} hourly forecast (The Weather Company).")
 
-    kdfw = _kdfw_current()
+    cur = _current(station)
     rows, pws = [], None
     try:
         rows, pws = load_hourly()
@@ -279,28 +281,35 @@ def render(load_hourly, cli_report=None):
         st.warning("Wunderground's hourly feed is unavailable right now — showing "
                    "the current temperature only.")
 
-    kdfw_val = f"{kdfw['temp']:.0f}°F" if kdfw else _EM
-    pws_val = f"{pws['temp']:.0f}°F" if pws and pws.get("temp") is not None else _EM
-    kdfw_cap = kdfw["time"].strftime("%-I:%M %p") if kdfw else None
-    pws_cap = pws["obs_time"].astimezone(TZ).strftime("%-I:%M %p") if pws else None
-    # Wrap in a metrics2_ container so the boxes and their tap tooltips get the
-    # shared mobile treatment (2-per-row ≤640px; tooltip as a fixed bottom sheet
-    # that never clips off-screen). See the metrics2_ CSS in market_view.
-    with st.container(key="metrics2_hourly"):
-        cols = st.columns(2)
-    cols[0].markdown(
-        market_view.metric_card("KDFW (official)", kdfw_val,
-                                 help_text="Latest KDFW airport ASOS reading — the "
-                                 "official station the model and Kalshi settle on."),
-        unsafe_allow_html=True)
-    cols[1].markdown(
-        market_view.metric_card("Euless PWS (live)", pws_val,
-                                 help_text="A nearby backyard weather station "
-                                 "(KTXEULES41). Updates faster than the airport but "
-                                 "can differ by a degree or two."),
-        unsafe_allow_html=True)
-    if kdfw_cap or pws_cap:
-        st.caption(f"KDFW as of {kdfw_cap or _EM} · PWS as of {pws_cap or _EM}")
+    cur_val = f"{cur['temp']:.0f}°F" if cur else _EM
+    cur_cap = cur["time"].strftime("%-I:%M %p") if cur else None
+    official_card = market_view.metric_card(
+        f"{s.id} (official)", cur_val,
+        help_text=f"Latest {s.id} airport ASOS reading — the official station the "
+        "model and Kalshi settle on.")
+    # Only KDFW has a configured live PWS (Euless). Other stations show just the
+    # official reading in a single full-width box rather than a dead '—' card.
+    if pws is not None:
+        pws_val = f"{pws['temp']:.0f}°F" if pws.get("temp") is not None else _EM
+        pws_cap = pws["obs_time"].astimezone(TZ).strftime("%-I:%M %p")
+        # Wrap in a metrics2_ container so the boxes and their tap tooltips get the
+        # shared mobile treatment (2-per-row ≤640px; tooltip as a fixed bottom sheet
+        # that never clips off-screen). See the metrics2_ CSS in market_view.
+        with st.container(key="metrics2_hourly"):
+            cols = st.columns(2)
+        cols[0].markdown(official_card, unsafe_allow_html=True)
+        cols[1].markdown(
+            market_view.metric_card("Euless PWS (live)", pws_val,
+                                     help_text="A nearby backyard weather station "
+                                     "(KTXEULES41). Updates faster than the airport but "
+                                     "can differ by a degree or two."),
+            unsafe_allow_html=True)
+        if cur_cap or pws_cap:
+            st.caption(f"{s.id} as of {cur_cap or _EM} · PWS as of {pws_cap or _EM}")
+    else:
+        st.markdown(official_card, unsafe_allow_html=True)
+        if cur_cap:
+            st.caption(f"{s.id} as of {cur_cap}")
 
     # Official NWS climate report box, under the two live-reading boxes. Only
     # appears once today's afternoon CLIDFW is issued (~4:41 PM) — it reports the
@@ -310,9 +319,9 @@ def render(load_hourly, cli_report=None):
         value, issued = cli_box
         st.markdown(
             market_view.metric_card("NWS Climate Report", value,
-                                     help_text="Official NWS CLIDFW daily climate "
-                                     "report — today's settled high / low, the basis "
-                                     "Kalshi resolves on. Issued mid-afternoon."),
+                                     help_text=f"Official NWS CLI{s.cli_location} daily "
+                                     "climate report — today's settled high / low, the "
+                                     "basis Kalshi resolves on. Issued mid-afternoon."),
             unsafe_allow_html=True)
         st.caption(f"Climate report as of {issued}")
 
@@ -337,4 +346,4 @@ def render(load_hourly, cli_report=None):
     st.caption("Past ~2 h of storm movement, continuing into RainViewer's "
                "~30-minute forecast nowcast. Tap ⏸ to pause.")
     palette = market_view.THEMES.get(theme, market_view.THEMES[market_view.DEFAULT_THEME])
-    components.html(_radar_html(palette=palette), height=460)
+    components.html(_radar_html(lat=s.lat, lon=s.lon, palette=palette), height=460)
