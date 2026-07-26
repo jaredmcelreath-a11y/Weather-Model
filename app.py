@@ -15,6 +15,8 @@ import streamlit as st
 import accuracy_view
 import bet_view
 import calibration
+import city_view
+import config
 import edge_view
 import forecast_log
 import hourly_view
@@ -89,12 +91,13 @@ def load_snapshot():
 
 
 @st.cache_data(ttl=60, show_spinner="Fetching forecasts and observations…")
-def load_snapshot_kalshi():
+def load_snapshot_kalshi(station: str = config.DEFAULT_STATION):
     """Snapshot shifted to the Kalshi/CLI settlement basis via the calibrated
-    settlement_offset (absent offset -> behaves like the hourly snapshot)."""
-    calib = calibration.get(refresh=True)
+    settlement_offset (absent offset -> behaves like the hourly snapshot).
+    Keyed on `station` so Dallas and Austin cache separately."""
+    calib = calibration.get(refresh=True, station=station)
     snap = model.snapshot(calib, settle_offset=(calib or {}).get("settlement_offset"),
-                          continuous_obs=True, include_candidate=True)
+                          continuous_obs=True, include_candidate=True, station=station)
     return snap, calib
 
 
@@ -116,23 +119,25 @@ def load_accuracy():
 
 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
-def load_accuracy_kalshi():
-    """Backtest + live self-scoring on the Kalshi/CLI settlement basis."""
+def load_accuracy_kalshi(station: str = config.DEFAULT_STATION):
+    """Backtest + live self-scoring on the Kalshi/CLI settlement basis, per station."""
     import backtest
     import scoring
-    calib = calibration.get(refresh=True) or {}
+    calib = calibration.get(refresh=True, station=station) or {}
     off = calib.get("settlement_offset")
     bt = live = None
     try:
+        # TODO(plan3b): station-aware backtest. The immediate-history backtest is
+        # still KDFW; the live self-scoring below already reflects the station.
         bt = backtest.run(cli=True, settle_offset=off)
     except Exception:
         pass
     try:
-        live = scoring.score(basis="cli")
+        live = scoring.score(basis="cli", station=station)
     except Exception:
         pass
     try:
-        market = scoring.market_accuracy()
+        market = scoring.market_accuracy(station=station)
         if market and market.get("n"):
             live = dict(live or {})
             live["market"] = market
@@ -142,7 +147,7 @@ def load_accuracy_kalshi():
 
 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
-def load_recap():
+def load_recap(station: str = config.DEFAULT_STATION):
     """Yesterday's scorecard for the Morning Recap card (CLI/Kalshi settlement
     basis), including realized bet P&L. Changes at most once a day, so a long TTL
     is fine. None on any error or before yesterday settles."""
@@ -159,8 +164,8 @@ def load_recap():
     except Exception:
         bet_rows = None
     try:
-        return recap.yesterday_scorecard(date.today(), settlements.as_map("cli"),
-                                          forecast_log.load(), bet_rows=bet_rows)
+        return recap.yesterday_scorecard(date.today(), settlements.as_map("cli", station=station),
+                                          forecast_log.load(station=station), bet_rows=bet_rows)
     except Exception:
         return None
 
@@ -287,8 +292,8 @@ def load_portfolio_value():
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def load_cli_report():
-    """Today's official CLIDFW report (high/low) if NWS has issued it, else None.
+def load_cli_report(station: str = config.DEFAULT_STATION):
+    """Today's official CLI report (high/low) if NWS has issued it, else None.
     Gated to the climate day so yesterday's overnight product never shows."""
     try:
         from datetime import datetime
@@ -296,8 +301,8 @@ def load_cli_report():
         from sources import nws_cli
         from sources.common import TZ
         now = datetime.now(TZ)
-        cli = nws_cli.fetch_latest_cli(ttl=300)
-        if cli and cli["report_date"] == settlement.climate_day_of(now):
+        cli = nws_cli.fetch_latest_cli(ttl=300, station=station)
+        if cli and cli["report_date"] == settlement.climate_day_of(now, station):
             return cli
     except Exception:
         return None
@@ -348,12 +353,13 @@ def kalshi_page():
 
 
 @st.cache_data(ttl=60, show_spinner="Fetching Wunderground hourly forecast…")
-def load_hourly():
-    """Wunderground/TWC hourly forecast + Euless PWS current temp for the Hourly
-    page. 60s TTL matches the page autorefresh; the source layer's own TTLs
-    (300s hourly, 60s PWS) keep this from refetching every cycle."""
+def load_hourly(station: str = config.DEFAULT_STATION):
+    """Wunderground/TWC hourly forecast + nearby PWS current temp for the Hourly
+    page (per station). 60s TTL matches the page autorefresh; the source layer's
+    own TTLs (300s hourly, 60s PWS) keep this from refetching every cycle. PWS is
+    KDFW-only today, so it returns None for other stations."""
     from sources import wunderground
-    return wunderground.hourly(), wunderground.pws_current()
+    return wunderground.hourly(station=station), wunderground.pws_current(station=station)
 
 
 def hourly_page():
