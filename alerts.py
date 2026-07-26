@@ -13,7 +13,9 @@ import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import config
 import notify
+import paths
 import settlement
 from config import TIMEZONE
 
@@ -21,6 +23,20 @@ _TZ = ZoneInfo(TIMEZONE)
 
 EVENT_STATE_PATH = os.path.join(os.path.dirname(__file__), "event_alert_state.json")
 RECAP_HOUR, RECAP_MINUTE = 6, 30
+
+
+def event_state_path(station: str = config.DEFAULT_STATION) -> str:
+    """Per-station event-alert state file. KDFW keeps the module path (byte-
+    identical, monkeypatchable); other stations namespace under data/<STATION>/."""
+    return EVENT_STATE_PATH if station == config.DEFAULT_STATION \
+        else paths.data_path("event_alert_state.json", station)
+
+
+def _title(base: str, station: str) -> str:
+    """Alert title. Default station keeps its familiar unprefixed title; other
+    stations get a 'Austin: …' name prefix so multi-city pushes are unambiguous."""
+    return base if station == config.DEFAULT_STATION \
+        else f"{config.station(station).name}: {base}"
 
 
 def load_state(path: str) -> dict:
@@ -113,13 +129,15 @@ def _build_recap_body(snap: dict) -> str:
         return ""
 
 
-def maybe_fire_events(snap: dict, now: datetime) -> None:
+def maybe_fire_events(snap: dict, now: datetime,
+                      station: str = config.DEFAULT_STATION) -> None:
     """Fire the storm/front/recap alerts, each once per day. Best-effort per
     alert (one failing never blocks another) and overall."""
-    state = load_state(EVENT_STATE_PATH)
+    state_path = event_state_path(station)
+    state = load_state(state_path)
     dirty = False
     try:
-        cday = settlement.climate_day_of(now).isoformat()
+        cday = settlement.climate_day_of(now, station).isoformat()
     except Exception:
         cday = None
 
@@ -137,27 +155,27 @@ def maybe_fire_events(snap: dict, now: datetime) -> None:
     try:
         storm = snap.get("storm") or {}
         if storm.get("level") == "active":
-            _send("storm", cday, "Storm Watch Active", storm_body(storm))
+            _send("storm", cday, _title("Storm Watch Active", station), storm_body(storm))
     except Exception as e:
         print(f"Event alert skipped (storm): {e}")
 
     try:
         low = (snap.get("today") or {}).get("low") or {}
         if low.get("front_widened"):
-            _send("front", cday, "Front Risk", front_body(low))
+            _send("front", cday, _title("Front Risk", station), front_body(low))
     except Exception as e:
         print(f"Event alert skipped (front): {e}")
 
     try:
         local = now.astimezone(_TZ)
         if (local.hour, local.minute) >= (RECAP_HOUR, RECAP_MINUTE):
-            _send("recap", local.date().isoformat(), "Morning Recap",
+            _send("recap", local.date().isoformat(), _title("Morning Recap", station),
                   _build_recap_body(snap))
     except Exception as e:
         print(f"Event alert skipped (recap): {e}")
 
     if dirty:
         try:
-            save_state(EVENT_STATE_PATH, state)
+            save_state(state_path, state)
         except Exception as e:
             print(f"Event alert state save failed: {e}")

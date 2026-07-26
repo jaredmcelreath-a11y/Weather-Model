@@ -294,6 +294,7 @@ CACHE_TTL_SECONDS = 600
 @dataclass(frozen=True)
 class StationConfig:
     code: str
+    name: str          # display name for titles/UI, e.g. "Dallas" / "Austin"
     id: str
     lat: float
     lon: float
@@ -305,28 +306,48 @@ class StationConfig:
     nws_user_agent: str
     convective_counties: dict
     warm_low_threshold: float
+    kalshi_high_series: str
+    kalshi_low_series: str
 
 
 DEFAULT_STATION = "KDFW"
 
 STATIONS: dict[str, StationConfig] = {
     "KDFW": StationConfig(
-        code="KDFW", id=STATION_ID, lat=LAT, lon=LON,
+        code="KDFW", name="Dallas", id=STATION_ID, lat=LAT, lon=LON,
         timezone=TIMEZONE, climate_tz=CLIMATE_TZ, cli_location="DFW",
         bin_low=BIN_LOW, bin_high=BIN_HIGH, nws_user_agent=NWS_USER_AGENT,
         convective_counties=CONVECTIVE_UPSTREAM_COUNTIES,
         warm_low_threshold=WARM_LOW_THRESHOLD,
+        kalshi_high_series="KXHIGHTDAL", kalshi_low_series="KXLOWTDAL",
     ),
-    # Austin-Bergstrom (KAUS). Working values pending settlement-basis
-    # verification (CLIAUS vs Camp Mabry/KATT). Convective map ships empty: the
-    # convective-downside guard runs degraded for Austin until its own
-    # storm-approach county map is built in a later plan.
+    # Austin-Bergstrom (KAUS). Settlement basis VERIFIED 2026-07-26
+    # (docs/benchmarks/2026-07-26-austin-basis/FINDINGS.md): Kalshi settles on the
+    # CLIAUS "Austin Bergstrom" daily climate report (LST climate day, same as
+    # CLIDFW). Kalshi series are asymmetric — high dropped the 'T' (KXHIGHAUS)
+    # while low kept it (KXLOWTAUS). Convective map ships empty until Task 2.
     "KAUS": StationConfig(
-        code="KAUS", id="KAUS", lat=30.1975, lon=-97.6664,
+        code="KAUS", name="Austin", id="KAUS", lat=30.1975, lon=-97.6664,
         timezone="America/Chicago", climate_tz="Etc/GMT+6", cli_location="AUS",
         bin_low=-10, bin_high=115,
         nws_user_agent="kaus-weather-model (jaredmcelreath@gmail.com)",
-        convective_counties={}, warm_low_threshold=76,
+        # Austin storm-approach counties (verified UGC 2026-07-26). Central Texas
+        # storms move W/NW -> E/SE and SW -> NE, so the upstream set is the N/NW/W/
+        # SW/S ring; Travis (the airport) is the metro anchor. Bastrop (E) is
+        # downstream and deliberately excluded. Mirrors the KDFW methodology.
+        convective_counties={
+            "TXC491": ("Williamson", "N"),
+            "TXC027": ("Bell", "N"),
+            "TXC053": ("Burnet", "NW"),
+            "TXC299": ("Llano", "NW"),
+            "TXC171": ("Gillespie", "W"),
+            "TXC031": ("Blanco", "W"),
+            "TXC209": ("Hays", "SW"),
+            "TXC055": ("Caldwell", "S"),
+            "TXC453": ("Travis", "metro"),
+        },
+        warm_low_threshold=76,
+        kalshi_high_series="KXHIGHAUS", kalshi_low_series="KXLOWTAUS",
     ),
 }
 STATION_CODES = list(STATIONS)

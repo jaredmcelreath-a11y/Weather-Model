@@ -25,7 +25,7 @@ def test_implied_forecast_distills_ev_and_pmf(monkeypatch):
         {"strike_type": "greater", "floor": 90, "cap": None,
          "yes_bid": 0.10, "yes_ask": 0.14, "volume": 20},
     ]
-    monkeypatch.setattr(kalshi, "fetch_contracts", lambda v, d: contracts)
+    monkeypatch.setattr(kalshi, "fetch_contracts", lambda v, d, station=None: contracts)
     out = kalshi.implied_forecast("high", date(2026, 6, 16))
     assert out is not None
     # PMF normalizes to 1; mass concentrated on the 88-90 bucket (mid 89).
@@ -51,7 +51,7 @@ def test_implied_forecast_trims_noise_tails(monkeypatch):
         {"strike_type": "greater", "floor": 96, "cap": None,
          "yes_bid": 0.01, "yes_ask": 0.03, "volume": 5},     # 2c noise, mid 96.5
     ]
-    monkeypatch.setattr(kalshi, "fetch_contracts", lambda v, d: contracts)
+    monkeypatch.setattr(kalshi, "fetch_contracts", lambda v, d, station=None: contracts)
     out = kalshi.implied_forecast("high", date(2026, 6, 16))
     assert len(out["buckets"]) == 1                          # only the 90c bucket survives
     assert out["buckets"][0][:2] == [90, 92]
@@ -68,14 +68,14 @@ def test_implied_forecast_keeps_all_when_every_bucket_below_floor(monkeypatch):
         {"strike_type": "between", "floor": 90, "cap": 92,
          "yes_bid": 0.01, "yes_ask": 0.01, "volume": 1},
     ]
-    monkeypatch.setattr(kalshi, "fetch_contracts", lambda v, d: contracts)
+    monkeypatch.setattr(kalshi, "fetch_contracts", lambda v, d, station=None: contracts)
     out = kalshi.implied_forecast("high", date(2026, 6, 16))
     assert out is not None and len(out["buckets"]) == 2      # guard kept both
 
 
 def test_implied_forecast_none_when_unpriced(monkeypatch):
     monkeypatch.setattr(kalshi, "fetch_contracts",
-                        lambda v, d: [{"strike_type": "between", "floor": 88,
+                        lambda v, d, station=None: [{"strike_type": "between", "floor": 88,
                                        "cap": 90, "yes_bid": None, "yes_ask": None}])
     assert kalshi.implied_forecast("high", date(2026, 6, 16)) is None
 

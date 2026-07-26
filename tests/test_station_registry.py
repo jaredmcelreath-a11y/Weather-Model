@@ -26,12 +26,14 @@ def test_default_and_lookup():
     assert "KAUS" in config.STATION_CODES
 
 
-def test_kaus_entry_present_with_empty_convective_map():
+def test_kaus_entry_present():
     aus = config.station("KAUS")
     assert aus.id == "KAUS"
     assert aus.cli_location == "AUS"
     assert aus.lat == 30.1975 and aus.lon == -97.6664
-    assert aus.convective_counties == {}  # degraded guard until Austin's map is built
+    # Convective map populated in Plan 2 Task 2 (was empty at Plan 1); the
+    # detailed map is asserted in test_austin_config.
+    assert aus.convective_counties
 
 
 def test_unknown_station_raises():

@@ -25,8 +25,12 @@ def list_url(station: str = config.DEFAULT_STATION) -> str:
             + config.station(station).cli_location)
 
 _DATE_RE = re.compile(r"CLIMATE SUMMARY FOR ([A-Z]+ \d{1,2} \d{4})")
-_MAX_RE = re.compile(r"^\s*MAXIMUM\s+(-?\d+)\s+(\d{1,4})\s+([AP]M)", re.M)
-_MIN_RE = re.compile(r"^\s*MINIMUM\s+(-?\d+)\s+(\d{1,4})\s+([AP]M)", re.M)
+# The time column differs by issuing office: NWS Fort Worth (CLIDFW) prints
+# "1220 PM" while NWS Austin/San Antonio (CLIAUS) prints "12:20 AM". Accept both
+# so the same parser serves every station's CLI product.
+_TIME = r"(\d{1,2}:\d{2}|\d{1,4})"
+_MAX_RE = re.compile(r"^\s*MAXIMUM\s+(-?\d+)\s+" + _TIME + r"\s+([AP]M)", re.M)
+_MIN_RE = re.compile(r"^\s*MINIMUM\s+(-?\d+)\s+" + _TIME + r"\s+([AP]M)", re.M)
 
 
 def parse_cli(text: str, issued: datetime) -> dict | None:
