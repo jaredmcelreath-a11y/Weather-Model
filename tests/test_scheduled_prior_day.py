@@ -9,7 +9,7 @@ _TZ = ZoneInfo(TIMEZONE)
 
 
 def test_ask_rows_returns_raw_quotes(monkeypatch):
-    monkeypatch.setattr(kalshi, "fetch_contracts", lambda v, d: [
+    monkeypatch.setattr(kalshi, "fetch_contracts", lambda v, d, station=None: [
         {"floor": None, "cap": 98, "yes_bid": 0.02, "yes_ask": 0.05},
         {"floor": 99, "cap": 100, "yes_bid": 0.93, "yes_ask": 0.97},
     ])
@@ -25,8 +25,8 @@ def test_yesterday_market_attached_in_the_final_hour(monkeypatch):
     monkeypatch.setattr(scheduled_log.kalshi, "implied_block",
                         lambda t, m: {"today": {}, "tomorrow": {}})
     monkeypatch.setattr(scheduled_log.kalshi, "implied_forecast",
-                        lambda v, d: {"ev": 98.9, "buckets": [[99, 100, 1.0]]})
-    monkeypatch.setattr(scheduled_log.kalshi, "ask_rows", lambda v, d: [[99, 100, 0.9, 0.95]])
+                        lambda v, d, station=None: {"ev": 98.9, "buckets": [[99, 100, 1.0]]})
+    monkeypatch.setattr(scheduled_log.kalshi, "ask_rows", lambda v, d, station=None: [[99, 100, 0.9, 0.95]])
 
     snap = _snap()
     scheduled_log._attach_market(snap, datetime(2026, 7, 20, 0, 45, tzinfo=_TZ))
@@ -37,7 +37,7 @@ def test_no_yesterday_market_during_the_day(monkeypatch):
     monkeypatch.setattr(scheduled_log.kalshi, "implied_block",
                         lambda t, m: {"today": {}, "tomorrow": {}})
     monkeypatch.setattr(scheduled_log.kalshi, "implied_forecast",
-                        lambda v, d: {"ev": 1.0, "buckets": []})
+                        lambda v, d, station=None: {"ev": 1.0, "buckets": []})
     snap = _snap()
     scheduled_log._attach_market(snap, datetime(2026, 7, 20, 15, 0, tzinfo=_TZ))
     assert "yesterday" not in snap["market"]
@@ -47,8 +47,8 @@ def test_asks_attached_only_on_close_slots(monkeypatch):
     monkeypatch.setattr(scheduled_log.kalshi, "implied_block",
                         lambda t, m: {"today": {}, "tomorrow": {}})
     monkeypatch.setattr(scheduled_log.kalshi, "implied_forecast",
-                        lambda v, d: {"ev": 98.9, "buckets": []})
-    monkeypatch.setattr(scheduled_log.kalshi, "ask_rows", lambda v, d: [[99, 100, 0.9, 0.95]])
+                        lambda v, d, station=None: {"ev": 98.9, "buckets": []})
+    monkeypatch.setattr(scheduled_log.kalshi, "ask_rows", lambda v, d, station=None: [[99, 100, 0.9, 0.95]])
 
     at_close = _snap()
     scheduled_log._attach_market(at_close, datetime(2026, 7, 20, 0, 45, tzinfo=_TZ))

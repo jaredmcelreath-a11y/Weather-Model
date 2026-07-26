@@ -13,11 +13,19 @@ from __future__ import annotations
 
 from datetime import date
 
+import config
 from config import MARKET_MIN_BUCKET_PRICE
 from sources.common import get_json
 
 BASE = "https://api.elections.kalshi.com/trade-api/v2"
-SERIES = {"high": "KXHIGHTDAL", "low": "KXLOWTDAL"}
+
+
+def series_for(variable: str, station: str = config.DEFAULT_STATION) -> str | None:
+    """Kalshi series ticker for `variable` at `station`, or None for an unknown
+    variable. Austin's high/low tickers are asymmetric, so these come from the
+    station config, not a pattern (see the KAUS StationConfig)."""
+    s = config.station(station)
+    return {"high": s.kalshi_high_series, "low": s.kalshi_low_series}.get(variable)
 
 
 def _event_suffix(day: date) -> str:
@@ -29,13 +37,14 @@ def _f(x):
     return None if x is None or x == "" else float(x)
 
 
-def fetch_contracts(variable: str, day: date) -> list[dict]:
+def fetch_contracts(variable: str, day: date,
+                    station: str = config.DEFAULT_STATION) -> list[dict]:
     """Live range-bucket contracts for `variable` ('high'/'low') on `day`.
 
     Each dict: label, strike_type/floor/cap (for model mapping), and current
     yes/no bid/ask, last price, volume (all prices in dollars 0–1).
     """
-    series = SERIES.get(variable)
+    series = series_for(variable, station)
     if not series:
         return []
     data = get_json(f"{BASE}/markets",
@@ -122,7 +131,8 @@ def _bucket_mid(c) -> float | None:
     return None
 
 
-def implied_forecast(variable: str, day: date) -> dict | None:
+def implied_forecast(variable: str, day: date,
+                     station: str = config.DEFAULT_STATION) -> dict | None:
     """The market's own forecast, distilled from the live contract ladder.
 
     Each bucket's mid YES price ≈ its implied probability; we normalize across
@@ -132,7 +142,7 @@ def implied_forecast(variable: str, day: date) -> dict | None:
     the same way we score the model. None when no priced contracts are live.
     """
     rows = []
-    for c in fetch_contracts(variable, day):
+    for c in fetch_contracts(variable, day, station):
         mid = _bucket_mid(c)
         if mid is None:
             continue
@@ -158,7 +168,8 @@ def implied_forecast(variable: str, day: date) -> dict | None:
     }
 
 
-def implied_block(today: date, tomorrow: date) -> dict:
+def implied_block(today: date, tomorrow: date,
+                  station: str = config.DEFAULT_STATION) -> dict:
     """{which: {variable: implied_forecast}} for today/tomorrow — the market half
     of a logged snapshot. Empty branches are omitted (no live market)."""
     out: dict = {}
@@ -166,7 +177,7 @@ def implied_block(today: date, tomorrow: date) -> dict:
         day_block = {}
         for var in ("high", "low"):
             try:
-                f = implied_forecast(var, day)
+                f = implied_forecast(var, day, station)
             except Exception:
                 f = None
             if f:
@@ -176,7 +187,8 @@ def implied_block(today: date, tomorrow: date) -> dict:
     return out
 
 
-def ask_rows(variable: str, day: date) -> list:
+def ask_rows(variable: str, day: date,
+             station: str = config.DEFAULT_STATION) -> list:
     """[[floor, cap, yes_bid, yes_ask], ...] — the untouched contract ladder.
 
     `implied_forecast`'s PMF is normalized (the bid/ask overround removed), so it
@@ -185,4 +197,4 @@ def ask_rows(variable: str, day: date) -> list:
     bracket still buyable under a dollar? — is answerable after the fact.
     """
     return [[c.get("floor"), c.get("cap"), c.get("yes_bid"), c.get("yes_ask")]
-            for c in fetch_contracts(variable, day)]
+            for c in fetch_contracts(variable, day, station)]
