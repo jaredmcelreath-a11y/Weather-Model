@@ -36,3 +36,25 @@ def test_load_state_defaults_ship_safe_for_absent_station():
 
     p = trade_state.load_state(transport=_T(), station="KAUS")
     assert p["kill_switch"] is True and p["mode"] == "shadow"   # ships DISABLED
+
+
+def test_real_deps_positions_are_station_isolated(monkeypatch):
+    import trader
+    from sources import kalshi_portfolio
+    monkeypatch.setattr(kalshi_portfolio, "positions", lambda: [
+        {"ticker": "KXHIGHTDAL-26JUL27-B99"}, {"ticker": "KXHIGHAUS-26JUL27-T96"}])
+    aus = trader._real_deps("KAUS").positions()
+    assert [p["ticker"] for p in aus] == ["KXHIGHAUS-26JUL27-T96"]
+    dfw = trader._real_deps("KDFW").positions()
+    assert [p["ticker"] for p in dfw] == ["KXHIGHTDAL-26JUL27-B99"]
+
+
+def test_main_runs_every_station(monkeypatch):
+    import config
+    import trader
+    seen = []
+    monkeypatch.setattr(trader, "_real_deps", lambda code: code)
+    monkeypatch.setattr(trader, "run_once",
+                        lambda now=None, *, deps, station: seen.append(station) or {})
+    trader.main()
+    assert seen == config.STATION_CODES
