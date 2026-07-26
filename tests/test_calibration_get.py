@@ -39,7 +39,7 @@ def test_stale_computed_recomputes_despite_fresh_mtime(tmp_path, monkeypatch):
     p = str(tmp_path / "calibration.json")
     monkeypatch.setattr(calibration, "_PATH", p)
     _write(p, {"computed": _stamp(30)})
-    monkeypatch.setattr(calibration, "compute_and_save", lambda: {"computed": "new"})
+    monkeypatch.setattr(calibration, "compute_and_save", lambda station=None: {"computed": "new"})
     assert calibration.get(refresh=True) == {"computed": "new"}
 
 
@@ -58,7 +58,7 @@ def test_corrupt_file_recomputes(tmp_path, monkeypatch):
     p = str(tmp_path / "calibration.json")
     monkeypatch.setattr(calibration, "_PATH", p)
     open(p, "w").close()
-    monkeypatch.setattr(calibration, "compute_and_save", lambda: {"computed": "new"})
+    monkeypatch.setattr(calibration, "compute_and_save", lambda station=None: {"computed": "new"})
     assert calibration.get(refresh=True) == {"computed": "new"}
 
 

@@ -76,7 +76,7 @@ def test_score_reports_same_day_0900_and_keeps_it_out_of_by_lead(tmp_path, monke
     forecast_log.record(_snapshot(datetime(2026, 6, 16, 9, 0, tzinfo=TZ)), path=p)
     monkeypatch.setattr(forecast_log, "_PATH", p)
     monkeypatch.setattr(station_history, "fetch_actual",
-                        lambda s, e: {TODAY: (95.0, 77.0)})
+                        lambda s, e, station=None: {TODAY: (95.0, 77.0)})
     res = scoring.score(today=date(2026, 6, 18))
     sd = res["same_day_0900"]
     assert sd["high"]["n"] == 1 and sd["high"]["exact_peak"] == 100

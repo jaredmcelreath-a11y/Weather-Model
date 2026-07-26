@@ -25,6 +25,8 @@ import os
 import time
 from datetime import date, datetime, timedelta
 
+import config
+import paths
 from config import (CALIBRATION_WINDOW_DAYS, CALM_WIND_MAX, CLEAR_CLOUD_MAX,
                     WARM_LOW_THRESHOLD)
 from sources import open_meteo_ensemble, open_meteo_models, station_history
@@ -34,9 +36,16 @@ _PATH = os.path.join(os.path.dirname(__file__), "calibration.json")
 _MAX_AGE = 24 * 3600
 
 
-def _forecast_daily_extremes(start: date, end: date):
+def _cache_path(station: str = config.DEFAULT_STATION) -> str:
+    """Calibration cache file for `station`. KDFW keeps the _PATH anchor
+    (byte-identical, monkeypatchable); others namespace via data_path."""
+    return _PATH if station == config.DEFAULT_STATION else paths.data_path("calibration.json", station)
+
+
+def _forecast_daily_extremes(start: date, end: date,
+                             station: str = config.DEFAULT_STATION):
     """{day: {'high':[per-model], 'low':[per-model]}} from archived forecasts."""
-    series = open_meteo_models.fetch_historical(start, end)
+    series = open_meteo_models.fetch_historical(start, end, station=station)
     out: dict[date, dict[str, list[float]]] = {}
     day = start
     while day <= end:
@@ -284,7 +293,7 @@ def _conditional_settlement_offset(cli: dict, hourly: dict, cond: dict,
     return out
 
 
-def _system_extremes(start, end):
+def _system_extremes(start, end, station: str = config.DEFAULT_STATION):
     """{day: {system: {'high':v, 'low':v}}} over [start, end].
 
     Systems = one combined 'ensemble_mean' (mean of all member extremes) plus
@@ -299,9 +308,9 @@ def _system_extremes(start, end):
     come from the forward log at matched lead instead (see
     docs/benchmarks/2026-07-17-mos-weighting/ASSESSMENT.md).
     """
-    det = open_meteo_models.fetch_historical(start, end)
+    det = open_meteo_models.fetch_historical(start, end, station=station)
     try:
-        ens = open_meteo_ensemble.fetch_historical(start, end)
+        ens = open_meteo_ensemble.fetch_historical(start, end, station=station)
     except Exception:
         ens = {}
     out: dict = {}
@@ -500,15 +509,15 @@ def active_corrections(calib: dict | None) -> list[str]:
     return out
 
 
-def compute() -> dict:
+def compute(station: str = config.DEFAULT_STATION) -> dict:
     end = date.today() - timedelta(days=1)
     start = end - timedelta(days=CALIBRATION_WINDOW_DAYS)
-    actual = station_history.fetch_actual(start, end)
+    actual = station_history.fetch_actual(start, end, station=station)
     try:
-        cli_actual = station_history.fetch_actual_cli(start, end)
+        cli_actual = station_history.fetch_actual_cli(start, end, station=station)
     except Exception:
         cli_actual = {}
-    fcst = _forecast_daily_extremes(start, end)
+    fcst = _forecast_daily_extremes(start, end, station)
 
     # Error of the *consensus* (model mean), since the model predicts around the
     # consensus — pooling individual-model errors would overstate uncertainty.
@@ -540,7 +549,7 @@ def compute() -> dict:
     # Per-system archived extremes (deterministic models + combined ensemble mean),
     # fetched once and reused for both the ensemble bias and the skill weights.
     try:
-        sysext = _system_extremes(start, end)
+        sysext = _system_extremes(start, end, station)
     except Exception:
         sysext = {}
 
@@ -565,16 +574,16 @@ def compute() -> dict:
     # have settled (lazy import avoids a cycle: scoring -> backtest -> calibration).
     try:
         import scoring
-        by_lead = scoring.per_lead_sigma(basis="cli")
+        by_lead = scoring.per_lead_sigma(basis="cli", station=station)
         if by_lead:
             sigma["by_lead"] = by_lead
     except Exception:
         pass
 
-    cooling = _cooling_offset(start, end, fcst, actual, bias.get("low", 0.0))
+    cooling = _cooling_offset(start, end, fcst, actual, bias.get("low", 0.0), station)
 
     try:
-        cond = open_meteo_models.historical_night_conditions(start, end)
+        cond = open_meteo_models.historical_night_conditions(start, end, station=station)
     except Exception:
         cond = {}
     settlement_offset = _conditional_settlement_offset(cli_actual, actual, cond) \
@@ -630,7 +639,7 @@ def compute() -> dict:
 
 
 def _cooling_offset(start: date, end: date, fcst: dict, actual: dict,
-                    bias_low: float) -> dict:
+                    bias_low: float, station: str = config.DEFAULT_STATION) -> dict:
     """Extra cooling the bias-corrected model still misses on clear+calm nights.
 
     For each clear+calm night (overnight cloud & wind below thresholds), measure
@@ -639,7 +648,7 @@ def _cooling_offset(start: date, end: date, fcst: dict, actual: dict,
     on future clear+calm nights. Needs >= 5 such nights to be trusted, else 0.
     """
     try:
-        cond = open_meteo_models.historical_night_conditions(start, end)
+        cond = open_meteo_models.historical_night_conditions(start, end, station=station)
     except Exception:
         cond = {}
     resid = []
@@ -659,9 +668,13 @@ def _cooling_offset(start: date, end: date, fcst: dict, actual: dict,
     }
 
 
-def compute_and_save() -> dict:
-    calib = compute()
-    with open(_PATH, "w") as fh:
+def compute_and_save(station: str = config.DEFAULT_STATION) -> dict:
+    calib = compute(station)
+    cache = _cache_path(station)
+    d = os.path.dirname(cache)
+    if d:
+        os.makedirs(d, exist_ok=True)
+    with open(cache, "w") as fh:
         json.dump(calib, fh, indent=2)
     # Append a drift-history row for this recompute (best-effort: history logging
     # must never break calibration). Deduped on the `computed` stamp inside record.
@@ -673,7 +686,7 @@ def compute_and_save() -> dict:
     return calib
 
 
-def _is_fresh(cached: dict) -> bool:
+def _is_fresh(cached: dict, station: str = config.DEFAULT_STATION) -> bool:
     """Freshness travels with the FILE CONTENT, not the file's mtime: the
     scheduled Action restores calibration.json from the data branch on every
     run, which resets mtime to 'just now' — mtime-based freshness would never
@@ -688,27 +701,28 @@ def _is_fresh(cached: dict) -> bool:
             return age.total_seconds() < _MAX_AGE
         except ValueError:
             pass
-    return time.time() - os.path.getmtime(_PATH) < _MAX_AGE
+    return time.time() - os.path.getmtime(_cache_path(station)) < _MAX_AGE
 
 
-def get(refresh: bool = True) -> dict | None:
+def get(refresh: bool = True, station: str = config.DEFAULT_STATION) -> dict | None:
     """Return cached calibration, recomputing if stale. A corrupt/empty file
     (e.g. a failed data-branch restore) reads as absent; a failed recompute
     serves the last cached copy even if stale (a 2-day-old settlement offset
     beats logging unshifted rows) — None only when nothing usable exists, so
     callers can treat None as 'no calibration at all'."""
+    cache = _cache_path(station)
     cached = None
-    if os.path.exists(_PATH):
+    if os.path.exists(cache):
         try:
-            with open(_PATH) as fh:
+            with open(cache) as fh:
                 cached = json.load(fh)
         except (json.JSONDecodeError, OSError):
             cached = None
-    if cached is not None and (not refresh or _is_fresh(cached)):
+    if cached is not None and (not refresh or _is_fresh(cached, station)):
         return cached
     if not refresh:
         return None
     try:
-        return compute_and_save()
+        return compute_and_save(station)
     except Exception:
         return cached
