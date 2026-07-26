@@ -58,3 +58,21 @@ def test_main_runs_every_station(monkeypatch):
                         lambda now=None, *, deps, station: seen.append(station) or {})
     trader.main()
     assert seen == config.STATION_CODES
+
+
+def test_kaus_run_once_no_ops_at_default_kill_switch():
+    import trader
+    import trade_params
+    from datetime import datetime
+    from types import SimpleNamespace
+    placed = []
+    deps = SimpleNamespace(
+        load_state=lambda: trade_params.DEFAULT_PARAMS.copy(),
+        load_runtime=lambda: {}, save_runtime=lambda r: None,
+        snapshot=lambda: {}, balance=lambda: 100.0, positions=lambda: [],
+        fetch_contracts=lambda v, d: [], fetch_orderbook=lambda t: {},
+        implied_forecast=lambda v, d: None,
+        place_order=lambda **k: placed.append(k), append_log=lambda r: None,
+        notify=lambda *a, **k: True)
+    out = trader.run_once(now=datetime(2026, 7, 27, 12, 0), deps=deps, station="KAUS")
+    assert out == {"halted": "kill_switch"} and placed == []
