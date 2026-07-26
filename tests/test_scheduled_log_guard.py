@@ -14,13 +14,13 @@ from sources import kalshi
 
 
 def test_main_skips_model_logging_without_calibration(monkeypatch, capsys):
-    monkeypatch.setattr(calibration, "get", lambda refresh=True: None)
+    monkeypatch.setattr(calibration, "get", lambda refresh=True, station=None: None)
     def boom(*a, **k):
         raise AssertionError("model.snapshot must not run without calibration")
     monkeypatch.setattr(model, "snapshot", boom)
     called = {}
-    monkeypatch.setattr(settlements, "record", lambda: called.setdefault("rec", True))
-    monkeypatch.setattr(settlements, "load", lambda path=None: [])
+    monkeypatch.setattr(settlements, "record", lambda station=None: called.setdefault("rec", True))
+    monkeypatch.setattr(settlements, "load", lambda path=None, station=None: [])
     scheduled_log.main()
     assert called.get("rec") is True
     assert "skipping model logging" in capsys.readouterr().out
@@ -32,19 +32,19 @@ def test_main_logs_when_calibration_present(monkeypatch):
     snap = {"updated": "2026-07-13T10:00:00",
             "today": {"day": "2026-07-13"}, "tomorrow": {"day": "2026-07-14"}}
     seen = []
-    monkeypatch.setattr(calibration, "get", lambda refresh=True: calib)
+    monkeypatch.setattr(calibration, "get", lambda refresh=True, station=None: calib)
     monkeypatch.setattr(model, "snapshot",
                         lambda c, settle_offset=None, continuous_obs=False,
-                        include_candidate=False: snap)
-    monkeypatch.setattr(kalshi, "implied_block", lambda t, tm: {})
+                        include_candidate=False, station=None: snap)
+    monkeypatch.setattr(kalshi, "implied_block", lambda t, tm, station=None: {})
     monkeypatch.setattr(forecast_log, "record",
-                        lambda s, path=None, basis="hourly": seen.append(("forecast", basis)))
+                        lambda s, path=None, basis="hourly", station=None: seen.append(("forecast", basis)))
     monkeypatch.setattr(consensus_log, "record",
-                        lambda s, path=None, basis="hourly": seen.append(("consensus", basis)))
+                        lambda s, path=None, basis="hourly", station=None: seen.append(("consensus", basis)))
     monkeypatch.setattr(betting_log, "current_slot", lambda now, **k: None)
-    monkeypatch.setattr(settlements, "record", lambda: seen.append(("settlements",)))
-    monkeypatch.setattr(settlements, "load", lambda path=None: [])
-    monkeypatch.setattr(forecast_log, "load", lambda path=None: [])
+    monkeypatch.setattr(settlements, "record", lambda station=None: seen.append(("settlements",)))
+    monkeypatch.setattr(settlements, "load", lambda path=None, station=None: [])
+    monkeypatch.setattr(forecast_log, "load", lambda path=None, station=None: [])
     scheduled_log.main()
     assert ("forecast", "cli") in seen
     assert ("consensus", "cli") in seen

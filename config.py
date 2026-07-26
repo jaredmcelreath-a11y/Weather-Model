@@ -294,6 +294,7 @@ CACHE_TTL_SECONDS = 600
 @dataclass(frozen=True)
 class StationConfig:
     code: str
+    name: str          # display name for titles/UI, e.g. "Dallas" / "Austin"
     id: str
     lat: float
     lon: float
@@ -313,7 +314,7 @@ DEFAULT_STATION = "KDFW"
 
 STATIONS: dict[str, StationConfig] = {
     "KDFW": StationConfig(
-        code="KDFW", id=STATION_ID, lat=LAT, lon=LON,
+        code="KDFW", name="Dallas", id=STATION_ID, lat=LAT, lon=LON,
         timezone=TIMEZONE, climate_tz=CLIMATE_TZ, cli_location="DFW",
         bin_low=BIN_LOW, bin_high=BIN_HIGH, nws_user_agent=NWS_USER_AGENT,
         convective_counties=CONVECTIVE_UPSTREAM_COUNTIES,
@@ -326,7 +327,7 @@ STATIONS: dict[str, StationConfig] = {
     # CLIDFW). Kalshi series are asymmetric — high dropped the 'T' (KXHIGHAUS)
     # while low kept it (KXLOWTAUS). Convective map ships empty until Task 2.
     "KAUS": StationConfig(
-        code="KAUS", id="KAUS", lat=30.1975, lon=-97.6664,
+        code="KAUS", name="Austin", id="KAUS", lat=30.1975, lon=-97.6664,
         timezone="America/Chicago", climate_tz="Etc/GMT+6", cli_location="AUS",
         bin_low=-10, bin_high=115,
         nws_user_agent="kaus-weather-model (jaredmcelreath@gmail.com)",

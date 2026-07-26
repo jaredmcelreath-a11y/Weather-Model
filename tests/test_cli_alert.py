@@ -20,7 +20,7 @@ def _patch(monkeypatch, tmp_path, cli, sends):
     monkeypatch.setattr(scheduled_log, "STATE_PATH", str(tmp_path / "state.json"))
     from sources import nws_cli
     import notify
-    monkeypatch.setattr(nws_cli, "fetch_latest_cli", lambda ttl=None: cli)
+    monkeypatch.setattr(nws_cli, "fetch_latest_cli", lambda ttl=None, station=None: cli)
 
     def fake_send(title, message):
         sends.append((title, message))

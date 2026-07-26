@@ -199,13 +199,13 @@ def test_scheduled_log_records_cli_only(monkeypatch):
     import model
 
     monkeypatch.setattr(calibration, "get",
-                        lambda refresh=True: {"settlement_offset": {"high": 1.0, "low": 0.0}})
+                        lambda refresh=True, station=None: {"settlement_offset": {"high": 1.0, "low": 0.0}})
     monkeypatch.setattr(model, "snapshot",
                         lambda calib, settle_offset=None, continuous_obs=False,
-                        include_candidate=False: {"_off": settle_offset})
+                        include_candidate=False, station=None: {"_off": settle_offset})
     calls = []
     monkeypatch.setattr(scheduled_log.forecast_log, "record",
-                        lambda snap, basis="hourly": calls.append((snap.get("_off"), basis)))
+                        lambda snap, basis="hourly", station=None: calls.append((snap.get("_off"), basis)))
     monkeypatch.setattr(scheduled_log.forecast_log, "load", lambda path=None, station=None: [])
 
     scheduled_log.main()
