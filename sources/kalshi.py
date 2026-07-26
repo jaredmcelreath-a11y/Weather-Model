@@ -28,6 +28,30 @@ def series_for(variable: str, station: str = config.DEFAULT_STATION) -> str | No
     return {"high": s.kalshi_high_series, "low": s.kalshi_low_series}.get(variable)
 
 
+def station_of_ticker(ticker: str) -> str | None:
+    """The station code whose Kalshi series prefixes `ticker` (e.g.
+    'KXHIGHAUS-26JUL27-T96' -> 'KAUS'), or None. The trader uses this to keep
+    each city's position management to its own markets."""
+    t = (ticker or "").upper()
+    for code in config.STATION_CODES:
+        s = config.station(code)
+        if t.startswith(s.kalshi_high_series) or t.startswith(s.kalshi_low_series):
+            return code
+    return None
+
+
+def variable_of_ticker(ticker: str) -> str | None:
+    """'high'/'low' from the ticker's Kalshi series across all stations, or None."""
+    t = (ticker or "").upper()
+    for code in config.STATION_CODES:
+        s = config.station(code)
+        if t.startswith(s.kalshi_high_series):
+            return "high"
+        if t.startswith(s.kalshi_low_series):
+            return "low"
+    return None
+
+
 def _event_suffix(day: date) -> str:
     return day.strftime("%y%b%d").upper()  # e.g. date(2026,6,16) -> "26JUN16"
 
