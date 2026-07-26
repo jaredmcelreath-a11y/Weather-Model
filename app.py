@@ -309,7 +309,8 @@ def load_cli_report(station: str = config.DEFAULT_STATION):
     return None
 
 
-def _page(adapter, snapshot_loader, accuracy_loader, record_basis):
+def _page(adapter, snapshot_loader, accuracy_loader, record_basis,
+          station=config.DEFAULT_STATION):
     snap, calib = snapshot_loader()
     dropped = snap.get("dropped_sources") or []
     if dropped:
@@ -325,11 +326,11 @@ def _page(adapter, snapshot_loader, accuracy_loader, record_basis):
             from sources import kalshi
             snap["market"] = kalshi.implied_block(
                 date.fromisoformat(snap["today"]["day"]),
-                date.fromisoformat(snap["tomorrow"]["day"]))
+                date.fromisoformat(snap["tomorrow"]["day"]), station=station)
         except Exception:
             pass
     try:
-        forecast_log.record(snap, basis=record_basis)  # per-basis upsert
+        forecast_log.record(snap, basis=record_basis)  # auto-routes by snap station
     except Exception:
         pass  # logging must never break the dashboard
     try:
@@ -339,7 +340,7 @@ def _page(adapter, snapshot_loader, accuracy_loader, record_basis):
         pass
     bankroll = load_portfolio_value() if record_basis == "cli" else None
     market_view.render_page(snap, calib, adapter, accuracy_loader,
-                             recap_loader=load_recap,
+                             recap_loader=lambda: load_recap(station),
                              history_loader=load_calibration_history,
                              bankroll=bankroll)
 
@@ -349,7 +350,9 @@ def robinhood_page():
 
 
 def kalshi_page():
-    _page(KALSHI, load_snapshot_kalshi, load_accuracy_kalshi, "cli")
+    station = city_view.city_control("forecast", arity=2)
+    _page(KALSHI, lambda: load_snapshot_kalshi(station),
+          lambda: load_accuracy_kalshi(station), "cli", station)
 
 
 @st.cache_data(ttl=60, show_spinner="Fetching Wunderground hourly forecast…")

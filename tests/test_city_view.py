@@ -33,3 +33,13 @@ def test_resolve_3way_defaults_both_but_remembers_own_pick():
     assert city_view.resolve_selection(state, "edge", 3) == "Both"
     state["city_edge"] = "Dallas"       # the page's own remembered pick wins
     assert city_view.resolve_selection(state, "edge", 3) == "Dallas"
+
+
+def test_market_view_title_from_snapshot():
+    for m in ("streamlit", "streamlit.components", "streamlit.components.v1",
+              "streamlit_autorefresh"):
+        sys.modules.setdefault(m, MagicMock())
+    import market_view
+    assert market_view.page_title({"station": "KAUS"}) == "Austin Daily High & Low"
+    assert market_view.page_title({"station": "KDFW"}) == "Dallas Daily High & Low"
+    assert market_view.page_title({}) == "Dallas Daily High & Low"   # default
