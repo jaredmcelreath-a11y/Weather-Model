@@ -64,6 +64,14 @@ jobs:
             git show origin/data:resolved_alert_state.json > resolved_alert_state.json 2>/dev/null || true
             git show origin/data:event_alert_state.json > event_alert_state.json 2>/dev/null || true
             git show origin/data:det_models.json > det_models.json 2>/dev/null || true
+            # Per-station (non-KDFW) logs live under data/<STATION>/ on the branch.
+            mkdir -p data/KAUS
+            for f in forecast_log.jsonl consensus_history.jsonl settlements.jsonl \
+                     betting_log.jsonl calibration.json calibration_history.jsonl \
+                     det_models.json cli_alert_state.json resolved_alert_state.json \
+                     event_alert_state.json; do
+              git show origin/data:data/KAUS/$f > data/KAUS/$f 2>/dev/null || true
+            done
           fi
 
       - name: Append this snapshot
@@ -85,6 +93,14 @@ jobs:
           [ -f resolved_alert_state.json ] && cp resolved_alert_state.json "$tmp/resolved_alert_state.json"
           [ -f event_alert_state.json ] && cp event_alert_state.json "$tmp/event_alert_state.json"
           [ -f det_models.json ] && cp det_models.json "$tmp/det_models.json"
+          # Per-station (non-KDFW) files: copy only non-empty ones so the empty
+          # placeholders the restore step creates don't get committed.
+          if [ -d data/KAUS ]; then
+            mkdir -p "$tmp/data/KAUS"
+            for f in data/KAUS/*; do
+              [ -s "$f" ] && cp "$f" "$tmp/data/KAUS/"
+            done
+          fi
           cd "$tmp"
           git init -q
           git config user.name "weather-log-bot"
@@ -100,6 +116,9 @@ jobs:
           [ -f resolved_alert_state.json ] && git add -f resolved_alert_state.json
           [ -f event_alert_state.json ] && git add -f event_alert_state.json
           [ -f det_models.json ] && git add -f det_models.json
+          if [ -d data/KAUS ] && [ -n "$(ls -A data/KAUS 2>/dev/null)" ]; then
+            git add -f data/KAUS/
+          fi
           git commit -q -m "log: snapshot $(date -u +%FT%TZ)"
           git push -fq \
             "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" \
