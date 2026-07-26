@@ -12,6 +12,7 @@ import csv
 import io
 from datetime import date, datetime
 
+import config
 from config import TIMEZONE
 from settlement import day_high_low
 from sources.common import get_text, to_hourly
@@ -22,13 +23,14 @@ URL = "https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py"
 DAILY_URL = "https://mesonet.agron.iastate.edu/cgi-bin/request/daily.py"
 
 
-def _fetch_series(start: date, end: date,
-                  ttl: int | None = None) -> tuple[list[datetime], list[float]]:
+def _fetch_series(start: date, end: date, ttl: int | None = None,
+                  station: str = config.DEFAULT_STATION
+                  ) -> tuple[list[datetime], list[float]]:
     """`ttl` None keeps get_text's long archive TTL (immutable past days —
     calibration/backtest). Live callers fetching TODAY's still-growing series
     (the NWS-outage fallback in nws_observations) pass a short ttl."""
     params = {
-        "station": "DFW", "network": "TX_ASOS", "data": "tmpf",
+        "station": config.station(station).cli_location, "network": "TX_ASOS", "data": "tmpf",
         "year1": start.year, "month1": start.month, "day1": start.day,
         "year2": end.year, "month2": end.month, "day2": end.day,
         "tz": TIMEZONE, "format": "onlycomma", "latlon": "no",
@@ -48,7 +50,8 @@ def _fetch_series(start: date, end: date,
     return times, temps
 
 
-def fetch_actual(start: date, end: date) -> dict[date, tuple[float, float]]:
+def fetch_actual(start: date, end: date,
+                 station: str = config.DEFAULT_STATION) -> dict[date, tuple[float, float]]:
     """{day: (actual_high_f, actual_low_f)} for each day in [start, end].
 
     Resampled to hourly so the calibration/backtest ground truth matches the
@@ -61,7 +64,7 @@ def fetch_actual(start: date, end: date) -> dict[date, tuple[float, float]]:
     emission loop below still stops at `end` inclusive, so no extra day is
     emitted."""
     from datetime import timedelta
-    times, temps = to_hourly(*_fetch_series(start, end + timedelta(days=1)))
+    times, temps = to_hourly(*_fetch_series(start, end + timedelta(days=1), station=station))
     out: dict[date, tuple[float, float]] = {}
     day = start
     while day <= end:
@@ -90,8 +93,8 @@ def _parse_daily(text: str) -> dict[date, tuple[float, float]]:
     return out
 
 
-def fetch_actual_cli(start: date, end: date,
-                     ttl: int | None = None) -> dict[date, tuple[float, float]]:
+def fetch_actual_cli(start: date, end: date, ttl: int | None = None,
+                     station: str = config.DEFAULT_STATION) -> dict[date, tuple[float, float]]:
     """{day: (cli_high_f, cli_low_f)} from the IEM daily summary for [start, end].
 
     The CLI daily max/min come from continuous (1-minute) ASOS data, so they can
@@ -104,7 +107,7 @@ def fetch_actual_cli(start: date, end: date,
     a short live-data ttl (e.g. CACHE_TTL_SECONDS) so it isn't frozen stale by
     the archive cache for a week."""
     params = {
-        "network": "TX_ASOS", "stations": "DFW", "format": "comma",
+        "network": "TX_ASOS", "stations": config.station(station).cli_location, "format": "comma",
         "year1": start.year, "month1": start.month, "day1": start.day,
         "year2": end.year, "month2": end.month, "day2": end.day,
     }

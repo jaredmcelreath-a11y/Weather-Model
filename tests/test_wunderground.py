@@ -51,7 +51,8 @@ def test_hourly_requests_kdfw_geocode_imperial(monkeypatch):
     monkeypatch.setattr(wunderground, "get_json", fake_get_json)
     wunderground.hourly()
     assert "forecast/hourly" in seen["url"]
-    assert seen["params"]["geocode"] == wunderground.KDFW_GEOCODE
+    # Geocode is now derived from the station's registry lat/lon (same KDFW point).
+    assert seen["params"]["geocode"] == wunderground._geocode()
     assert seen["params"]["units"] == "e"
     assert seen["params"]["apiKey"] == wunderground.WEB_API_KEY
 

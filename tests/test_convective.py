@@ -91,7 +91,7 @@ def test_cape_alone_no_longer_widens():
     convective.open_meteo_models.convective_window  # ensure attr exists
     import pytest
     mp = pytest.MonkeyPatch()
-    mp.setattr(open_meteo_models, "convective_window", lambda d, n: (0.0, 1820.0))
+    mp.setattr(open_meteo_models, "convective_window", lambda d, n, station=None: (0.0, 1820.0))
     mp.setattr(nws_alerts, "fetch_active", lambda: {"features": []})
     try:
         assert convective.convective_sigma(DAY, now) == 0.0
@@ -158,7 +158,7 @@ def test_storm_status_levels(monkeypatch):
     no_alerts = {"features": []}
 
     # active: upstream SVR warning -> level active, county surfaced, full sigma
-    monkeypatch.setattr(open_meteo_models, "convective_window", lambda d, n: (10.0, 0.0))
+    monkeypatch.setattr(open_meteo_models, "convective_window", lambda d, n, station=None: (10.0, 0.0))
     monkeypatch.setattr(nws_alerts, "fetch_active", lambda: svr)
     s = convective.storm_status(DAY, now)
     assert s["level"] == "active"
@@ -166,7 +166,7 @@ def test_storm_status_levels(monkeypatch):
     assert s["sigma"] == config.CONVECTIVE_SIGMA
 
     # watch: POP armed but no warning -> partial downside
-    monkeypatch.setattr(open_meteo_models, "convective_window", lambda d, n: (50.0, 0.0))
+    monkeypatch.setattr(open_meteo_models, "convective_window", lambda d, n, station=None: (50.0, 0.0))
     monkeypatch.setattr(nws_alerts, "fetch_active", lambda: no_alerts)
     s = convective.storm_status(DAY, now)
     assert s["level"] == "watch"
@@ -174,7 +174,7 @@ def test_storm_status_levels(monkeypatch):
     assert s["upstream"]["active"] is False
 
     # clear: quiet POP, no warning
-    monkeypatch.setattr(open_meteo_models, "convective_window", lambda d, n: (5.0, 0.0))
+    monkeypatch.setattr(open_meteo_models, "convective_window", lambda d, n, station=None: (5.0, 0.0))
     s = convective.storm_status(DAY, now)
     assert s["level"] == "clear" and s["sigma"] == 0.0
 
@@ -210,14 +210,14 @@ def test_convective_sigma_combines_signals_and_is_best_effort(monkeypatch):
         "event": "Severe Thunderstorm Warning", "geocode": {"UGC": [one_zone]}}}]}
 
     # point POP alone scales the downside (50% POP -> a partial floor)
-    monkeypatch.setattr(open_meteo_models, "convective_window", lambda d, n: (50.0, 200.0))
+    monkeypatch.setattr(open_meteo_models, "convective_window", lambda d, n, station=None: (50.0, 200.0))
     monkeypatch.setattr(nws_alerts, "fetch_active", lambda: no_alerts)
     s = convective.convective_sigma(DAY, now)
     assert 0 < s < config.CONVECTIVE_SIGMA
     assert convective.convective_risk(DAY, now) is True
 
     # an upstream severe warning commands the full floor even with quiet point POP
-    monkeypatch.setattr(open_meteo_models, "convective_window", lambda d, n: (0.0, 0.0))
+    monkeypatch.setattr(open_meteo_models, "convective_window", lambda d, n, station=None: (0.0, 0.0))
     monkeypatch.setattr(nws_alerts, "fetch_active", lambda: svr)
     assert convective.convective_sigma(DAY, now) == config.CONVECTIVE_SIGMA
 
@@ -252,9 +252,9 @@ def test_convective_widens_locked_low(monkeypatch):
     fc, obs, base = _locked_low_inputs()
     now = datetime(DAY.year, DAY.month, DAY.day, 16, tzinfo=TZ)
 
-    monkeypatch.setattr(model, "convective_sigma", lambda day, now: 0.0)
+    monkeypatch.setattr(model, "convective_sigma", lambda day, now, station=None: 0.0)
     off = model.predict_variable(fc, obs, DAY, "low", now, None, live=True)
-    monkeypatch.setattr(model, "convective_sigma", lambda day, now: config.CONVECTIVE_SIGMA)
+    monkeypatch.setattr(model, "convective_sigma", lambda day, now, station=None: config.CONVECTIVE_SIGMA)
     on = model.predict_variable(fc, obs, DAY, "low", now, None, live=True)
 
     # sanity: the low is locked in both runs
@@ -277,9 +277,9 @@ def test_convective_does_not_touch_high(monkeypatch):
     import model
     fc, obs, base = _locked_low_inputs()
     now = datetime(DAY.year, DAY.month, DAY.day, 16, tzinfo=TZ)
-    monkeypatch.setattr(model, "convective_sigma", lambda day, now: config.CONVECTIVE_SIGMA)
+    monkeypatch.setattr(model, "convective_sigma", lambda day, now, station=None: config.CONVECTIVE_SIGMA)
     hi_on = model.predict_variable(fc, obs, DAY, "high", now, None, live=True)
-    monkeypatch.setattr(model, "convective_sigma", lambda day, now: 0.0)
+    monkeypatch.setattr(model, "convective_sigma", lambda day, now, station=None: 0.0)
     hi_off = model.predict_variable(fc, obs, DAY, "high", now, None, live=True)
     assert hi_on["probabilities"] == hi_off["probabilities"]
     assert hi_on["convective_widened"] is False
@@ -292,7 +292,7 @@ def test_convective_no_op_when_not_live(monkeypatch):
     fc, obs, base = _locked_low_inputs()
     now = datetime(DAY.year, DAY.month, DAY.day, 16, tzinfo=TZ)
 
-    def boom(day, now):
+    def boom(day, now, station=None):
         raise AssertionError("convective_sigma must not run when live=False")
 
     monkeypatch.setattr(model, "convective_sigma", boom)

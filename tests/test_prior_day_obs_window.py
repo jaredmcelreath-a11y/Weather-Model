@@ -18,7 +18,7 @@ def test_fetch_accepts_an_explicit_window_start(monkeypatch):
         return {"features": []}
 
     monkeypatch.setattr(nws_observations, "get_json", fake_get_json)
-    monkeypatch.setattr(nws_observations, "_iem_fallback", lambda s, n: ([], []))
+    monkeypatch.setattr(nws_observations, "_iem_fallback", lambda s, n, station=None: ([], []))
 
     now = datetime(2026, 7, 20, 0, 30, tzinfo=_TZ)
     start = datetime(2026, 7, 19, 1, 0, tzinfo=_TZ)
@@ -34,7 +34,7 @@ def test_fetch_defaults_to_clock_midnight(monkeypatch):
         return {"features": []}
 
     monkeypatch.setattr(nws_observations, "get_json", fake_get_json)
-    monkeypatch.setattr(nws_observations, "_iem_fallback", lambda s, n: ([], []))
+    monkeypatch.setattr(nws_observations, "_iem_fallback", lambda s, n, station=None: ([], []))
 
     now = datetime(2026, 7, 20, 15, 0, tzinfo=_TZ)
     nws_observations.fetch(now=now)
@@ -44,7 +44,7 @@ def test_fetch_defaults_to_clock_midnight(monkeypatch):
 def test_cli_daily_fetches_a_range(monkeypatch):
     seen = {}
 
-    def fake_fetch_actual_cli(start, end, ttl=None):
+    def fake_fetch_actual_cli(start, end, ttl=None, station=None):
         seen["range"] = (start, end)
         return {start: (99.0, 79.0)}
 
@@ -56,7 +56,7 @@ def test_cli_daily_fetches_a_range(monkeypatch):
 def test_cli_daily_single_day_unchanged(monkeypatch):
     seen = {}
 
-    def fake_fetch_actual_cli(start, end, ttl=None):
+    def fake_fetch_actual_cli(start, end, ttl=None, station=None):
         seen["range"] = (start, end)
         return {}
 
@@ -68,13 +68,13 @@ def test_cli_daily_single_day_unchanged(monkeypatch):
 def test_gather_series_extends_the_window_in_the_final_hour(monkeypatch):
     seen = {}
 
-    def fake_obs_fetch(limit=500, continuous=False, now=None, start=None):
+    def fake_obs_fetch(limit=500, continuous=False, now=None, start=None, station=None):
         seen["start"] = start
         seen["limit"] = limit
         return {"obs": ([], []), "obs_continuous": (None, None)}
 
     monkeypatch.setattr(model.nws_observations, "fetch", fake_obs_fetch)
-    monkeypatch.setattr(model, "_fetch_cli_daily", lambda d, t=None: {})
+    monkeypatch.setattr(model, "_fetch_cli_daily", lambda d, t=None, station=None: {})
     for src in ("open_meteo_ensemble", "open_meteo_models", "nws_forecast", "iem_mos"):
         monkeypatch.setattr(getattr(model, src), "fetch", lambda *a, **k: {})
 
@@ -90,13 +90,13 @@ def test_gather_series_extends_the_window_in_the_final_hour(monkeypatch):
 def test_gather_series_normal_window_unchanged(monkeypatch):
     seen = {}
 
-    def fake_obs_fetch(limit=500, continuous=False, now=None, start=None):
+    def fake_obs_fetch(limit=500, continuous=False, now=None, start=None, station=None):
         seen["start"] = start
         seen["limit"] = limit
         return {"obs": ([], []), "obs_continuous": (None, None)}
 
     monkeypatch.setattr(model.nws_observations, "fetch", fake_obs_fetch)
-    monkeypatch.setattr(model, "_fetch_cli_daily", lambda d, t=None: {})
+    monkeypatch.setattr(model, "_fetch_cli_daily", lambda d, t=None, station=None: {})
     for src in ("open_meteo_ensemble", "open_meteo_models", "nws_forecast", "iem_mos"):
         monkeypatch.setattr(getattr(model, src), "fetch", lambda *a, **k: {})
 
@@ -110,7 +110,7 @@ def test_gather_series_cli_daily_covers_both_days_in_the_final_hour(monkeypatch)
     monkeypatch.setattr(model.nws_observations, "fetch",
                         lambda **k: {"obs": ([], []), "obs_continuous": (None, None)})
     monkeypatch.setattr(model, "_fetch_cli_daily",
-                        lambda d, t=None: seen.update(range=(d, t)) or {})
+                        lambda d, t=None, station=None: seen.update(range=(d, t)) or {})
     for src in ("open_meteo_ensemble", "open_meteo_models", "nws_forecast", "iem_mos"):
         monkeypatch.setattr(getattr(model, src), "fetch", lambda *a, **k: {})
 

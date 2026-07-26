@@ -13,8 +13,8 @@ from datetime import date, datetime
 
 import requests
 
-from config import (DETERMINISTIC_MODELS, LAT, LON, NIGHT_WINDOW_HOURS,
-                    TIMEZONE)
+import config
+from config import DETERMINISTIC_MODELS, NIGHT_WINDOW_HOURS, TIMEZONE
 from settlement import local_day_bounds
 from sources.common import get_open_meteo, parse_local_times
 
@@ -43,11 +43,12 @@ def _parse(data: dict) -> dict[str, tuple[list[datetime], list[float]]]:
     return out
 
 
-def _fetch_live_raw(forecast_days: int, models) -> dict:
+def _fetch_live_raw(forecast_days: int, models,
+                    station: str = config.DEFAULT_STATION) -> dict:
     """The raw Open-Meteo forecast response for the deterministic models."""
     return get_open_meteo(FORECAST_URL, {
-        "latitude": LAT,
-        "longitude": LON,
+        "latitude": config.station(station).lat,
+        "longitude": config.station(station).lon,
         "hourly": "temperature_2m",
         "models": ",".join(models or DETERMINISTIC_MODELS),
         "temperature_unit": "fahrenheit",
@@ -74,7 +75,8 @@ def _load_published_raw() -> dict:
     return json.loads(r.text)
 
 
-def fetch(forecast_days: int = 2, models=None) -> dict[str, tuple[list[datetime], list[float]]]:
+def fetch(forecast_days: int = 2, models=None,
+          station: str = config.DEFAULT_STATION) -> dict[str, tuple[list[datetime], list[float]]]:
     """Live deterministic forecasts, {model_label: (times, temps_f)}.
 
     `models` overrides the production DETERMINISTIC_MODELS (used by the shadow
@@ -83,7 +85,7 @@ def fetch(forecast_days: int = 2, models=None) -> dict[str, tuple[list[datetime]
     Action-published copy so the models stay in the consensus instead of dropping;
     a custom `models` set has no published copy, so it just raises."""
     try:
-        data = _fetch_live_raw(forecast_days, models)
+        data = _fetch_live_raw(forecast_days, models, station)
     except requests.exceptions.RequestException as live_err:
         if models is not None:
             raise
@@ -98,17 +100,18 @@ def fetch(forecast_days: int = 2, models=None) -> dict[str, tuple[list[datetime]
     return _parse(data)
 
 
-def write_published(path: str, forecast_days: int = 3) -> None:
+def write_published(path: str, forecast_days: int = 3,
+                    station: str = config.DEFAULT_STATION) -> None:
     """Fetch the live production deterministic response and write it to `path`
     (the Action calls this from an un-throttled IP; log.yml ships it to the data
     branch). Raw response so the app's fallback runs the identical _parse path."""
-    data = _fetch_live_raw(forecast_days, None)
+    data = _fetch_live_raw(forecast_days, None, station)
     with open(path, "w") as fh:
         json.dump(data, fh)
 
 
-def fetch_historical(start: date, end: date,
-                     ttl: int = 24 * 3600, models=None) -> dict[str, tuple[list[datetime], list[float]]]:
+def fetch_historical(start: date, end: date, ttl: int = 24 * 3600, models=None,
+                     station: str = config.DEFAULT_STATION) -> dict[str, tuple[list[datetime], list[float]]]:
     """Archived past *forecasts* over [start, end] for bias calibration.
 
     The historical-forecast archive stores what each model predicted, letting us
@@ -117,8 +120,8 @@ def fetch_historical(start: date, end: date,
     production behavior.
     """
     data = get_open_meteo(HISTORICAL_URL, {
-        "latitude": LAT,
-        "longitude": LON,
+        "latitude": config.station(station).lat,
+        "longitude": config.station(station).lon,
         "hourly": "temperature_2m",
         "models": ",".join(models or DETERMINISTIC_MODELS),
         "temperature_unit": "fahrenheit",
@@ -155,11 +158,12 @@ def _overnight_mean(times, cloud, wind, day: date):
     return sum(cs) / len(cs), sum(ws) / len(ws)
 
 
-def night_conditions(day: date, forecast_days: int = 2):
+def night_conditions(day: date, forecast_days: int = 2,
+                     station: str = config.DEFAULT_STATION):
     """Forecast (mean_cloud_pct, mean_wind_kmh) for `day`'s overnight window."""
     data = get_open_meteo(FORECAST_URL, {
-        "latitude": LAT,
-        "longitude": LON,
+        "latitude": config.station(station).lat,
+        "longitude": config.station(station).lon,
         "hourly": CONDITION_VARS,
         "timezone": TIMEZONE,
         "forecast_days": forecast_days,
@@ -167,12 +171,12 @@ def night_conditions(day: date, forecast_days: int = 2):
     return _overnight_mean(*_parse_conditions(data), day)
 
 
-def historical_night_conditions(start: date, end: date,
-                                ttl: int = 24 * 3600) -> dict[date, tuple]:
+def historical_night_conditions(start: date, end: date, ttl: int = 24 * 3600,
+                                station: str = config.DEFAULT_STATION) -> dict[date, tuple]:
     """{day: (mean_cloud_pct, mean_wind_kmh)} over [start, end] for calibration."""
     data = get_open_meteo(HISTORICAL_URL, {
-        "latitude": LAT,
-        "longitude": LON,
+        "latitude": config.station(station).lat,
+        "longitude": config.station(station).lon,
         "hourly": CONDITION_VARS,
         "timezone": TIMEZONE,
         "start_date": start.isoformat(),
@@ -212,12 +216,13 @@ def _window_max(times, pop, cape, day: date, now: datetime):
     return (max(ps) if ps else None, max(cs) if cs else None)
 
 
-def convective_window(day: date, now: datetime, forecast_days: int = 2):
+def convective_window(day: date, now: datetime, forecast_days: int = 2,
+                      station: str = config.DEFAULT_STATION):
     """Forecast (max_pop_pct, max_cape) over [now, settlement-day end) for
-    `day` at KDFW."""
+    `day` at the station."""
     data = get_open_meteo(FORECAST_URL, {
-        "latitude": LAT,
-        "longitude": LON,
+        "latitude": config.station(station).lat,
+        "longitude": config.station(station).lon,
         "hourly": CONVECTIVE_VARS,
         "timezone": TIMEZONE,
         "forecast_days": forecast_days,

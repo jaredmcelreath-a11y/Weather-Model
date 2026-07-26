@@ -97,7 +97,7 @@ def test_snapshot_requests_enough_forecast_days_for_settlement_tail(monkeypatch)
     members aren't blind to that final settlement hour."""
     captured = {}
 
-    def _fake_gather_series(forecast_days=2, continuous_obs=False, now=None):
+    def _fake_gather_series(forecast_days=2, continuous_obs=False, now=None, station=None):
         captured["forecast_days"] = forecast_days
         times, temps = _series(DAY, range(24))
         series = {"nws_ndfd": (times, temps)}
@@ -118,7 +118,7 @@ def test_fetch_actual_widens_raw_fetch_past_end_for_lst_tail(monkeypatch):
     end = date(2026, 7, 11)
     seen = {}
 
-    def _fake_fetch_series(s, e):
+    def _fake_fetch_series(s, e, station=None):
         seen["start"], seen["end"] = s, e
         # A boundary night: end's true low (68) only shows up in the LST tail,
         # i.e. clock hour 0 of the day AFTER end -- only present if the raw

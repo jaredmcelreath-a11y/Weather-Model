@@ -14,6 +14,8 @@ import json
 import os
 from datetime import date, datetime, timedelta
 
+import config
+import paths
 from config import TIMEZONE
 from forecast_log import _load_github
 from zoneinfo import ZoneInfo
@@ -118,30 +120,36 @@ def _parse(text: str) -> list[dict]:
 
 
 def _write(rows: list[dict], path: str) -> None:
+    d = os.path.dirname(path)
+    if d:
+        os.makedirs(d, exist_ok=True)
     with open(path, "w") as fh:
         for rec in rows:
             fh.write(json.dumps(rec) + "\n")
 
 
-def _github_cfg() -> dict | None:
+def _github_cfg(station: str = config.DEFAULT_STATION) -> dict | None:
     """Remote-log config from env, pointing at the betting-log file.
 
     Shares the repo/ref/token with forecast_log (set from Streamlit secrets);
     only the file path differs. Present on the cloud deploy, absent locally and
-    in the scheduled Action — both of which work the local file directly.
+    in the scheduled Action — both of which work the local file directly. KDFW
+    keeps the env-configured bare path; other stations namespace on the branch.
     """
     repo = os.environ.get("FORECAST_LOG_GH_REPO")
     if not repo:
         return None
+    base = os.environ.get("FORECAST_LOG_GH_BETTING_PATH", "betting_log.jsonl")
+    path = base if station == config.DEFAULT_STATION else paths.github_path("betting_log.jsonl", station)
     return {
         "repo": repo,
         "ref": os.environ.get("FORECAST_LOG_GH_REF", "data"),
-        "path": os.environ.get("FORECAST_LOG_GH_BETTING_PATH", "betting_log.jsonl"),
+        "path": path,
         "token": os.environ.get("FORECAST_LOG_GH_TOKEN") or None,
     }
 
 
-def load(path: str | None = None) -> list[dict]:
+def load(path: str | None = None, station: str = config.DEFAULT_STATION) -> list[dict]:
     """All betting-time rows, oldest-written first.
 
     With no explicit path, transparently reads the GitHub-hosted file when the
@@ -149,10 +157,11 @@ def load(path: str | None = None) -> list[dict]:
     explicit path always reads locally (used by record() and the Action).
     """
     if path is None:
-        cfg = _github_cfg()
+        cfg = _github_cfg(station)
         if cfg:
             return _load_github(cfg)
-    path = path or _PATH
+    path = path or (_PATH if station == config.DEFAULT_STATION
+                    else paths.data_path("betting_log.jsonl", station))
     if not os.path.exists(path):
         return []
     with open(path) as fh:
@@ -247,9 +256,11 @@ def _target_block(cli_snapshot: dict, slot: str, now: datetime):
 
 
 def record(cli_snapshot: dict, hourly_snapshot: dict, slot: str, calib: dict,
-           path: str | None = None, now: datetime | None = None) -> None:
+           path: str | None = None, now: datetime | None = None,
+           station: str | None = None) -> None:
     """Upsert the betting-time row(s) for `slot` — only the variable(s) that slot
     captures (see SLOT_VARS) on the day that slot targets (see slot_target_day)."""
+    station = station or cli_snapshot.get("station") or config.DEFAULT_STATION
     now = now or _snapshot_now(cli_snapshot)
     block, block_name = _target_block(cli_snapshot, slot, now)
     if not block or not block.get("day"):
@@ -267,13 +278,14 @@ def record(cli_snapshot: dict, hourly_snapshot: dict, slot: str, calib: dict,
         if not cli_var or not cli_var.get("probabilities"):
             continue
         flat_offset, _std = model._offset_bucket(
-            calib.get("settlement_offset"), variable, day_d, calib)
+            calib.get("settlement_offset"), variable, day_d, calib, station)
         new_recs.append(_row(day, variable, slot, cli_var,
                              hourly_block.get(variable), market_block.get(variable),
                              flat_offset, captured, market_asks=asks.get(variable)))
 
-    target = path or _PATH
-    rows = load(target)
+    target = path or (_PATH if station == config.DEFAULT_STATION
+                      else paths.data_path("betting_log.jsonl", station))
+    rows = load(target, station)
     index = {_key(r): i for i, r in enumerate(rows)}
     for rec in new_recs:
         k = _key(rec)

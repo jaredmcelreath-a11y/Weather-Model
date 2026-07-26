@@ -153,11 +153,11 @@ def test_score_filters_by_basis_and_uses_matching_truth(monkeypatch):
         {"target_date": "2026-06-10", "variable": "high", "lead_bucket": 0,
          "basis": "cli", "consensus": 91, "probabilities": {"91": 1.0}},
     ]
-    monkeypatch.setattr(scoring.forecast_log, "load", lambda path=None: recs)
+    monkeypatch.setattr(scoring.forecast_log, "load", lambda path=None, station=None: recs)
     monkeypatch.setattr(station_history, "fetch_actual",
-                        lambda s, e: {date(2026, 6, 10): (90.0, 70.0)})
+                        lambda s, e, station=None: {date(2026, 6, 10): (90.0, 70.0)})
     monkeypatch.setattr(station_history, "fetch_actual_cli",
-                        lambda s, e: {date(2026, 6, 10): (91.0, 70.0)})
+                        lambda s, e, station=None: {date(2026, 6, 10): (91.0, 70.0)})
     today = date(2026, 6, 11)
     h = scoring.score(today=today, basis="hourly")
     c = scoring.score(today=today, basis="cli")
@@ -176,9 +176,9 @@ def test_backtest_cli_uses_cli_truth_and_applies_offset(monkeypatch):
     series = {"det_a": _member(day, 90.0)}  # daily high 90, low 75
     monkeypatch.setattr(open_meteo_models, "fetch_historical", lambda s, e, **kw: series)
     monkeypatch.setattr(station_history, "fetch_actual",
-                        lambda s, e: {day: (90.0, 75.0)})
+                        lambda s, e, station=None: {day: (90.0, 75.0)})
     monkeypatch.setattr(station_history, "fetch_actual_cli",
-                        lambda s, e: {day: (91.0, 75.0)})
+                        lambda s, e, station=None: {day: (91.0, 75.0)})
     monkeypatch.setattr(calibration, "get", lambda refresh=True: {
         "bias": {"deterministic": {"high": 0.0, "low": 0.0}},
         "sigma": {"high": 2.0, "low": 2.0}})
@@ -206,7 +206,7 @@ def test_scheduled_log_records_cli_only(monkeypatch):
     calls = []
     monkeypatch.setattr(scheduled_log.forecast_log, "record",
                         lambda snap, basis="hourly": calls.append((snap.get("_off"), basis)))
-    monkeypatch.setattr(scheduled_log.forecast_log, "load", lambda path=None: [])
+    monkeypatch.setattr(scheduled_log.forecast_log, "load", lambda path=None, station=None: [])
 
     scheduled_log.main()
 
@@ -335,9 +335,9 @@ def test_backtest_cli_std_widens_distribution(monkeypatch):
     series = {"det_a": _member(day, 90.0)}
     monkeypatch.setattr(open_meteo_models, "fetch_historical", lambda s, e, **kw: series)
     monkeypatch.setattr(station_history, "fetch_actual",
-                        lambda s, e: {day: (90.0, 75.0)})
+                        lambda s, e, station=None: {day: (90.0, 75.0)})
     monkeypatch.setattr(station_history, "fetch_actual_cli",
-                        lambda s, e: {day: (91.0, 75.0)})
+                        lambda s, e, station=None: {day: (91.0, 75.0)})
     monkeypatch.setattr(calibration, "get", lambda refresh=True: {
         "bias": {"deterministic": {"high": 0.0, "low": 0.0}},
         "sigma": {"high": 2.0, "low": 2.0}})
@@ -480,12 +480,12 @@ def test_robinhood_low_ignores_daily_summary():
 def test_fetch_cli_daily_returns_summary(monkeypatch):
     day = date(2026, 7, 3)
     monkeypatch.setattr(model, "fetch_actual_cli",
-                        lambda s, e, ttl=None: {day: (83.0, 78.0)})
+                        lambda s, e, ttl=None, station=None: {day: (83.0, 78.0)})
     assert model._fetch_cli_daily(day) == {day: (83.0, 78.0)}
 
 
 def test_fetch_cli_daily_swallows_errors(monkeypatch):
-    def boom(s, e, ttl=None):
+    def boom(s, e, ttl=None, station=None):
         raise RuntimeError("network down")
     monkeypatch.setattr(model, "fetch_actual_cli", boom)
     assert model._fetch_cli_daily(date(2026, 7, 3)) == {}
@@ -498,7 +498,7 @@ def test_fetch_cli_daily_uses_live_ttl(monkeypatch):
     day = date(2026, 7, 3)
     captured = {}
 
-    def fake(s, e, ttl=None):
+    def fake(s, e, ttl=None, station=None):
         captured["ttl"] = ttl
         return {day: (83.0, 78.0)}
 

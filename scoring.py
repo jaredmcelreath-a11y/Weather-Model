@@ -13,6 +13,7 @@ import math
 import statistics
 from datetime import date, timedelta
 
+import config
 import forecast_log
 from backtest import contract_points, reliability_bins, _brier
 from model import bin_temp
@@ -41,7 +42,8 @@ def _flagged(rec: dict) -> bool:
     return bool(rec.get("convective_widened") or rec.get("front_widened"))
 
 
-def _correction_residuals(today: date | None = None, basis: str = "hourly"
+def _correction_residuals(today: date | None = None, basis: str = "hourly",
+                          station: str = config.DEFAULT_STATION
                           ) -> dict[tuple, list[float]]:
     """{(lead_bucket, variable): [signed consensus errors]} for the correction
     estimators.
@@ -53,14 +55,14 @@ def _correction_residuals(today: date | None = None, basis: str = "hourly"
     """
     today = today or date.today()
     cutoff = today - timedelta(days=CALIBRATION_WINDOW_DAYS)
-    records = [r for r in _settled_records(today)
+    records = [r for r in _settled_records(today, station=station)
                if r.get("basis", "hourly") == basis
                and date.fromisoformat(r["target_date"]) >= cutoff
                and not _flagged(r)
                and r.get("consensus") is not None]
     if not records:
         return {}
-    actual = _actuals_for(records, basis)
+    actual = _actuals_for(records, basis, station)
     out: dict[tuple, list[float]] = {}
     for r in records:
         d = date.fromisoformat(r["target_date"])
@@ -71,40 +73,42 @@ def _correction_residuals(today: date | None = None, basis: str = "hourly"
     return out
 
 
-def _settled_records(today: date | None = None, cohort: str | None = None) -> list[dict]:
+def _settled_records(today: date | None = None, cohort: str | None = None,
+                     station: str = config.DEFAULT_STATION) -> list[dict]:
     """Settled logged rows. `cohort` selects the capture cohort: the default None
     returns the rolling rows (no capture_cohort) — so score(), the correction
     residuals, and per_lead_sigma/bias all keep using the rolling captures and the
     fixed-time cohort rows never pollute them. Pass a cohort id (e.g. "0900") for
     that cohort's rows only."""
-    rows = forecast_log.load()
+    rows = forecast_log.load(station=station)
     today = today or date.today()
     return [r for r in rows
             if date.fromisoformat(r["target_date"]) < today
             and r.get("capture_cohort") == cohort]
 
 
-def _actuals_for(records: list[dict], basis: str = "hourly") -> dict[date, tuple[float, float]]:
+def _actuals_for(records: list[dict], basis: str = "hourly",
+                 station: str = config.DEFAULT_STATION) -> dict[date, tuple[float, float]]:
     if not records:
         return {}
     days = [date.fromisoformat(r["target_date"]) for r in records]
     fetch = (station_history.fetch_actual_cli if basis == "cli"
              else station_history.fetch_actual)
-    return fetch(min(days), max(days))
+    return fetch(min(days), max(days), station=station)
 
 
 def same_day_cohort(today: date | None = None, basis: str = "hourly",
-                    cohort: str = "0900") -> dict:
+                    cohort: str = "0900", station: str = config.DEFAULT_STATION) -> dict:
     """Exact-bin accuracy of the fixed-time same-day cohort — an honest decision-
     time same-day number, since the rolling lead-0 row is dominated by the
     ~11:45pm capture (the day is already settled by then). {variable: {n,
     exact_peak, exact_consensus, within1}} for the settled cohort rows; {} until
     any settle."""
-    records = [r for r in _settled_records(today, cohort=cohort)
+    records = [r for r in _settled_records(today, cohort=cohort, station=station)
                if r.get("basis", "hourly") == basis]
     if not records:
         return {}
-    actual = _actuals_for(records, basis)
+    actual = _actuals_for(records, basis, station)
     if not actual:
         return {}
     hits: dict[str, dict[str, list[bool]]] = {
@@ -137,7 +141,8 @@ def same_day_cohort(today: date | None = None, basis: str = "hourly",
     return out
 
 
-def score(today: date | None = None, basis: str = "hourly") -> dict:
+def score(today: date | None = None, basis: str = "hourly",
+          station: str = config.DEFAULT_STATION) -> dict:
     """Grade all settled logged predictions.
 
     Returns per-variable Brier + reliability curve, per-(lead, variable) signed-
@@ -145,12 +150,12 @@ def score(today: date | None = None, basis: str = "hourly") -> dict:
     unsettled log -> zeroed structure (never raises on no data; network errors
     during the actuals fetch propagate to the caller).
     """
-    records = [r for r in _settled_records(today)
+    records = [r for r in _settled_records(today, station=station)
                if r.get("basis", "hourly") == basis]
     empty = {"n_settled": 0, "by_variable": {}, "by_lead": {}, "same_day_0900": {}}
     if not records:
         return empty
-    actual = _actuals_for(records, basis)
+    actual = _actuals_for(records, basis, station)
     if not actual:
         return empty
 
@@ -224,10 +229,11 @@ def score(today: date | None = None, basis: str = "hourly") -> dict:
         by_lead.setdefault(bucket, {})[var] = entry
 
     return {"n_settled": n_settled, "by_variable": by_variable, "by_lead": by_lead,
-            "same_day_0900": same_day_cohort(today, basis)}
+            "same_day_0900": same_day_cohort(today, basis, station=station)}
 
 
-def market_accuracy(today: date | None = None) -> dict:
+def market_accuracy(today: date | None = None,
+                    station: str = config.DEFAULT_STATION) -> dict:
     """Compare the logged Kalshi market forecast to the model, vs CLI settlement.
 
     For every settled CLI record that carries a logged `market` block, score the
@@ -237,13 +243,13 @@ def market_accuracy(today: date | None = None) -> dict:
     'how much should the market influence us'. Empty until market-tagged records
     settle (one day's lead after the logging ships).
     """
-    records = [r for r in _settled_records(today)
+    records = [r for r in _settled_records(today, station=station)
                if r.get("basis") == "cli" and r.get("market")
                and r.get("consensus") is not None]
     out = {"n": 0, "by_variable": {}}
     if not records:
         return out
-    actual = _actuals_for(records, "cli")
+    actual = _actuals_for(records, "cli", station)
     if not actual:
         return out
 
@@ -277,7 +283,7 @@ def market_accuracy(today: date | None = None) -> dict:
 
 
 def per_lead_sigma(min_days: int = MIN_LEAD_DAYS, today: date | None = None,
-                   basis: str = "hourly") -> dict:
+                   basis: str = "hourly", station: str = config.DEFAULT_STATION) -> dict:
     """{lead_bucket: {variable: sigma}} for buckets with enough settled days.
 
     An honest std over the correction pool (_correction_residuals: windowed to
@@ -289,7 +295,7 @@ def per_lead_sigma(min_days: int = MIN_LEAD_DAYS, today: date | None = None,
     inflation there. `basis` selects the settlement cohort (the live site is CLI).
     """
     out: dict[int, dict[str, float]] = {}
-    for (bucket, var), errs in _correction_residuals(today, basis).items():
+    for (bucket, var), errs in _correction_residuals(today, basis, station).items():
         if len(errs) < min_days:
             continue
         m = sum(errs) / len(errs)
@@ -299,7 +305,7 @@ def per_lead_sigma(min_days: int = MIN_LEAD_DAYS, today: date | None = None,
 
 
 def per_lead_bias(min_days: int = MIN_LEAD_DAYS, today: date | None = None,
-                  basis: str = "hourly") -> dict[int, dict[str, float]]:
+                  basis: str = "hourly", station: str = config.DEFAULT_STATION) -> dict[int, dict[str, float]]:
     """{lead_bucket: {variable: correction}} signed bias to SUBTRACT from the
     consensus, for buckets the data can speak to.
 
@@ -313,7 +319,7 @@ def per_lead_bias(min_days: int = MIN_LEAD_DAYS, today: date | None = None,
     the model applies no correction there.
     """
     out: dict[int, dict[str, float]] = {}
-    for (bucket, var), errs in _correction_residuals(today, basis).items():
+    for (bucket, var), errs in _correction_residuals(today, basis, station).items():
         n = len(errs)
         if n < min_days:
             continue
@@ -327,14 +333,15 @@ def per_lead_bias(min_days: int = MIN_LEAD_DAYS, today: date | None = None,
     return out
 
 
-def correction_exclusions(today: date | None = None, basis: str = "cli") -> int:
+def correction_exclusions(today: date | None = None, basis: str = "cli",
+                          station: str = config.DEFAULT_STATION) -> int:
     """How many settled records inside the correction window were dropped for a
     storm/front flag — the dashboard shows this next to the active corrections
     so an exclusion is visible instead of a silent mystery. Counts candidates
     (no settlement join needed): a flagged record is excluded either way."""
     today = today or date.today()
     cutoff = today - timedelta(days=CALIBRATION_WINDOW_DAYS)
-    return sum(1 for r in _settled_records(today)
+    return sum(1 for r in _settled_records(today, station=station)
                if r.get("basis", "hourly") == basis
                and date.fromisoformat(r["target_date"]) >= cutoff
                and _flagged(r))

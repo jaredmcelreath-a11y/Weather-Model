@@ -8,21 +8,24 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from config import LAT, LON
+import config
 from sources.common import get_json, parse_local_times
 
-POINTS_URL = f"https://api.weather.gov/points/{LAT},{LON}"
+
+def points_url(station: str = config.DEFAULT_STATION) -> str:
+    s = config.station(station)
+    return f"https://api.weather.gov/points/{s.lat},{s.lon}"
 
 
-def _hourly_forecast_url() -> str:
+def _hourly_forecast_url(station: str = config.DEFAULT_STATION) -> str:
     # Gridpoint rarely changes; cache the point lookup for a day.
-    points = get_json(POINTS_URL, ttl=24 * 3600)
+    points = get_json(points_url(station), ttl=24 * 3600)
     return points["properties"]["forecastHourly"]
 
 
-def fetch() -> dict[str, tuple[list[datetime], list[float]]]:
+def fetch(station: str = config.DEFAULT_STATION) -> dict[str, tuple[list[datetime], list[float]]]:
     """Return {'nws_ndfd': (times, temps_f)} from the hourly NWS forecast."""
-    data = get_json(_hourly_forecast_url())
+    data = get_json(_hourly_forecast_url(station))
     periods = data["properties"]["periods"]
     iso_times = [p["startTime"] for p in periods]
     # NWS hourly forecast reports temperature in whole degrees F by default.

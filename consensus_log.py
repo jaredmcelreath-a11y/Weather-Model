@@ -18,6 +18,8 @@ import json
 import os
 from datetime import datetime, timedelta
 
+import config
+import paths
 from config import TIMEZONE
 from forecast_log import _load_github, _parse
 from zoneinfo import ZoneInfo
@@ -33,25 +35,28 @@ _PATH = os.path.join(os.path.dirname(__file__), "consensus_history.jsonl")
 MIN_INTERVAL_MIN = 7
 
 
-def _github_cfg() -> dict | None:
+def _github_cfg(station: str = config.DEFAULT_STATION) -> dict | None:
     """Remote-log config from env, pointing at the consensus history file.
 
     Shares the repo/ref/token with forecast_log (set from Streamlit secrets);
     only the file path differs. Present on the cloud deploy, absent locally and
-    in the scheduled Action — both of which work the local file directly.
+    in the scheduled Action — both of which work the local file directly. KDFW
+    keeps the env-configured bare path; other stations namespace on the branch.
     """
     repo = os.environ.get("FORECAST_LOG_GH_REPO")
     if not repo:
         return None
+    base = os.environ.get("FORECAST_LOG_GH_CONSENSUS_PATH", "consensus_history.jsonl")
+    path = base if station == config.DEFAULT_STATION else paths.github_path("consensus_history.jsonl", station)
     return {
         "repo": repo,
         "ref": os.environ.get("FORECAST_LOG_GH_REF", "data"),
-        "path": os.environ.get("FORECAST_LOG_GH_CONSENSUS_PATH", "consensus_history.jsonl"),
+        "path": path,
         "token": os.environ.get("FORECAST_LOG_GH_TOKEN") or None,
     }
 
 
-def load(path: str | None = None) -> list[dict]:
+def load(path: str | None = None, station: str = config.DEFAULT_STATION) -> list[dict]:
     """All logged samples, oldest-written first.
 
     With no explicit path, transparently reads the GitHub-hosted history when the
@@ -59,10 +64,11 @@ def load(path: str | None = None) -> list[dict]:
     explicit path always reads locally (used by record() and the Action).
     """
     if path is None:
-        cfg = _github_cfg()
+        cfg = _github_cfg(station)
         if cfg:
             return _load_github(cfg)
-    path = path or _PATH
+    path = path or (_PATH if station == config.DEFAULT_STATION
+                    else paths.data_path("consensus_history.jsonl", station))
     if not os.path.exists(path):
         return []
     with open(path) as fh:
@@ -70,12 +76,16 @@ def load(path: str | None = None) -> list[dict]:
 
 
 def _write(rows: list[dict], path: str) -> None:
+    d = os.path.dirname(path)
+    if d:
+        os.makedirs(d, exist_ok=True)
     with open(path, "w") as fh:
         for rec in rows:
             fh.write(json.dumps(rec) + "\n")
 
 
-def record(snapshot: dict, path: str | None = None, basis: str = "hourly") -> None:
+def record(snapshot: dict, path: str | None = None, basis: str = "hourly",
+           station: str | None = None) -> None:
     """Append a consensus sample for today+tomorrow, throttled per series.
 
     A point is added only when the most recent sample for that (target_date,
@@ -84,7 +94,8 @@ def record(snapshot: dict, path: str | None = None, basis: str = "hourly") -> No
     dates are pruned. No-op on the cloud deploy (remote log configured, no
     explicit path): there the scheduled Action is the sole writer.
     """
-    if path is None and _github_cfg() is not None:
+    station = station or snapshot.get("station") or config.DEFAULT_STATION
+    if path is None and _github_cfg(station) is not None:
         return
     captured = snapshot.get("updated") or datetime.now(TZ).isoformat(timespec="seconds")
     now = datetime.fromisoformat(captured)
@@ -95,8 +106,9 @@ def record(snapshot: dict, path: str | None = None, basis: str = "hourly") -> No
     current = snapshot.get("current") or {}
     current_temp = current.get("temp")
 
-    target_path = path or _PATH
-    rows = load(target_path)
+    target_path = path or (_PATH if station == config.DEFAULT_STATION
+                           else paths.data_path("consensus_history.jsonl", station))
+    rows = load(target_path, station)
     orig_len = len(rows)
     # Keep only today/tomorrow — all the chart ever shows.
     rows = [r for r in rows if r.get("target_date", "") >= today_iso]

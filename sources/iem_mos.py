@@ -22,7 +22,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from config import STATION_ID, TIMEZONE
+import config
+from config import TIMEZONE
 from sources.common import get_json
 
 URL = "https://mesonet.agron.iastate.edu/api/1/mos.json"
@@ -54,7 +55,8 @@ def _parse(data: dict) -> tuple[list[datetime], list[float]]:
     return times, temps
 
 
-def fetch(forecast_days: int = 2) -> dict[str, tuple[list[datetime], list[float]]]:
+def fetch(forecast_days: int = 2,
+          station: str = config.DEFAULT_STATION) -> dict[str, tuple[list[datetime], list[float]]]:
     """Live guidance, {f'mos_{model}': (times, temps_f)} for each MODEL.
 
     Omitting `runtime` returns the latest available run. A model that fails or
@@ -65,7 +67,7 @@ def fetch(forecast_days: int = 2) -> dict[str, tuple[list[datetime], list[float]
     out: dict[str, tuple[list[datetime], list[float]]] = {}
     for m in MODELS:
         try:
-            data = get_json(URL, {"station": STATION_ID, "model": m})
+            data = get_json(URL, {"station": config.station(station).id, "model": m})
         except Exception:
             continue
         times, temps = _parse(data)
@@ -74,7 +76,8 @@ def fetch(forecast_days: int = 2) -> dict[str, tuple[list[datetime], list[float]
     return out
 
 
-def historical_extremes(start, end, ttl: int = 24 * 3600):
+def historical_extremes(start, end, ttl: int = 24 * 3600,
+                        station: str = config.DEFAULT_STATION):
     """{target_day: {'mos_lav'/'mos_nbs': (high, low)}} from each day's
     prior-day 12Z run — a genuine ~24-38h day-ahead lead.
 
@@ -93,7 +96,7 @@ def historical_extremes(start, end, ttl: int = 24 * 3600):
         systems: dict = {}
         for m in MODELS:
             try:
-                data = get_json(URL, {"station": STATION_ID, "model": m,
+                data = get_json(URL, {"station": config.station(station).id, "model": m,
                                       "runtime": runtime}, ttl=ttl)
             except Exception:
                 continue

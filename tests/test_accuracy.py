@@ -139,7 +139,7 @@ def test_market_accuracy_compares_to_model(tmp_path, monkeypatch):
     monkeypatch.setattr(forecast_log, "_PATH", p)
     # CLI settlement high = 96 -> market (96) nails it, model (95) is 1 off.
     monkeypatch.setattr(station_history, "fetch_actual_cli",
-                        lambda s, e: {TODAY: (96, 77),
+                        lambda s, e, station=None: {TODAY: (96, 77),
                                       TODAY + timedelta(days=1): (96, 78)})
     res = scoring.market_accuracy(today=date(2026, 6, 18))
     hi = res["by_variable"]["high"]
@@ -155,7 +155,7 @@ def test_score_against_actuals(tmp_path, monkeypatch):
     monkeypatch.setattr(forecast_log, "_PATH", p)
     # Actuals: high 96 (so "95"/"96" each half right), low 77.
     monkeypatch.setattr(station_history, "fetch_actual",
-                        lambda s, e: {TODAY: (96, 77),
+                        lambda s, e, station=None: {TODAY: (96, 77),
                                       TODAY + timedelta(days=1): (96, 78)})
     result = scoring.score(today=date(2026, 6, 18))
     assert result["n_settled"] == 4
@@ -180,7 +180,7 @@ def test_score_exact_bin_metrics(tmp_path, monkeypatch):
     # peak misses but is within ±1; low peak "77" settles exactly. Tomorrow high
     # peak "96" settles 96 (hit); low peak "78" settles 78 (hit).
     monkeypatch.setattr(station_history, "fetch_actual",
-                        lambda s, e: {TODAY: (96, 77),
+                        lambda s, e, station=None: {TODAY: (96, 77),
                                       TODAY + timedelta(days=1): (96, 78)})
     res = scoring.score(today=date(2026, 6, 18))
     hi, lo = res["by_variable"]["high"], res["by_variable"]["low"]
@@ -239,9 +239,9 @@ def test_run_intraday_anchors_to_observations(monkeypatch):
 
     monkeypatch.setattr(backtest, "_TZ", TZ)
     monkeypatch.setattr(station_history, "fetch_actual",
-                        lambda s, e: {d: (95.0, 75.0) for d in days})
+                        lambda s, e, station=None: {d: (95.0, 75.0) for d in days})
     monkeypatch.setattr(open_meteo_models, "fetch_historical", lambda s, e, **kw: det)
-    monkeypatch.setattr(station_history, "_fetch_series", lambda s, e: (times, temps))
+    monkeypatch.setattr(station_history, "_fetch_series", lambda s, e, station=None: (times, temps))
     monkeypatch.setattr(backtest, "to_hourly", lambda ti, te: (ti, te))
     monkeypatch.setattr(backtest.calibration, "get", lambda refresh=True: {})
 
@@ -355,10 +355,10 @@ def test_cooling_offset_applied_on_clear_calm(monkeypatch):
     calib = {"cooling": {"low_offset": 3.0, "cloud_thresh": 30, "wind_thresh": 10}}
 
     monkeypatch.setattr(open_meteo_models, "night_conditions",
-                        lambda day, forecast_days=2: (10.0, 5.0))  # clear, calm
+                        lambda day, forecast_days=2, station=None: (10.0, 5.0))  # clear, calm
     cool = model.predict_variable(s, obs, tom, "low", now, calib)
     monkeypatch.setattr(open_meteo_models, "night_conditions",
-                        lambda day, forecast_days=2: (80.0, 20.0))  # cloudy, windy
+                        lambda day, forecast_days=2, station=None: (80.0, 20.0))  # cloudy, windy
     warm = model.predict_variable(s, obs, tom, "low", now, calib)
 
     assert cool["cooling_applied"] and not warm["cooling_applied"]
@@ -372,7 +372,7 @@ def test_per_lead_bias_shrinks_and_gates(monkeypatch):
             (24, "low"): [0.1, -0.1] * 5,    # median 0 -> gate fails
             (0, "high"): [2.0] * 5}          # below MIN_LEAD_DAYS -> dropped
     monkeypatch.setattr(scoring, "_correction_residuals",
-                        lambda today=None, basis="hourly": fake)
+                        lambda today=None, basis="hourly", station=None: fake)
     out = scoring.per_lead_bias()
     # high@24: median 1.5, sd 0 -> SE 0, passes; shrink 1.5 * 10/(10+8) = 0.83
     assert out[24]["high"] == 0.83
@@ -382,7 +382,7 @@ def test_per_lead_bias_shrinks_and_gates(monkeypatch):
 
 def test_per_lead_bias_empty_when_no_data(monkeypatch):
     monkeypatch.setattr(scoring, "_correction_residuals",
-                        lambda today=None, basis="hourly": {})
+                        lambda today=None, basis="hourly", station=None: {})
     assert scoring.per_lead_bias() == {}
 
 
@@ -390,7 +390,7 @@ def test_per_lead_bias_empty_when_no_data(monkeypatch):
 
 def test_per_lead_estimators_forward_basis_and_today(monkeypatch):
     seen = []
-    def fake(today=None, basis="hourly"):
+    def fake(today=None, basis="hourly", station=None):
         seen.append((today, basis))
         return {}
     monkeypatch.setattr(scoring, "_correction_residuals", fake)
@@ -407,7 +407,7 @@ def test_median_immune_to_storm_outliers(monkeypatch):
     errs = [0.1, -0.1, 0.2, -0.2, 0.0, 0.1, -0.1, 0.0, 0.2, -0.2,
             0.0, 0.1, -0.1, 0.0, 0.2, -0.2, 0.0, 0.1] + [3.7, 2.7, 3.6]
     monkeypatch.setattr(scoring, "_correction_residuals",
-                        lambda today=None, basis="hourly": {(0, "low"): errs})
+                        lambda today=None, basis="hourly", station=None: {(0, "low"): errs})
     assert scoring.per_lead_bias() == {}
     mean = sum(errs) / len(errs)
     sd = (sum((e - mean) ** 2 for e in errs) / len(errs)) ** 0.5
@@ -419,7 +419,7 @@ def test_consistent_bias_survives_median(monkeypatch):
     errs = [1.0, 1.1, 0.9, 1.0, 1.2, 0.8, 1.0, 1.1, 0.9, 1.0,
             1.1, 0.9, 1.0, 1.2, 0.8, 1.0, 1.1, 0.9, 1.0, 1.0]
     monkeypatch.setattr(scoring, "_correction_residuals",
-                        lambda today=None, basis="hourly": {(24, "high"): errs})
+                        lambda today=None, basis="hourly", station=None: {(24, "high"): errs})
     out = scoring.per_lead_bias()
     assert out[24]["high"] == round(1.0 * 20 / 28, 2)   # median 1.0, shrunk
 
@@ -427,7 +427,7 @@ def test_consistent_bias_survives_median(monkeypatch):
 def test_per_lead_sigma_std_over_pool(monkeypatch):
     errs = [1.0, -1.0] * 5                    # mean 0, population sd exactly 1.0
     monkeypatch.setattr(scoring, "_correction_residuals",
-                        lambda today=None, basis="hourly": {(24, "low"): errs})
+                        lambda today=None, basis="hourly", station=None: {(24, "low"): errs})
     assert scoring.per_lead_sigma() == {24: {"low": 1.0}}
 
 
@@ -449,7 +449,7 @@ def test_correction_pool_windows_and_excludes_flags(tmp_path, monkeypatch):
     forecast_log._write(rows, p)
     monkeypatch.setattr(forecast_log, "_PATH", p)
     monkeypatch.setattr(station_history, "fetch_actual",
-                        lambda s, e: {TODAY: (96, 78), old_day: (91, 70)})
+                        lambda s, e, station=None: {TODAY: (96, 78), old_day: (91, 70)})
     pool = scoring._correction_residuals(today=today)
     assert (0, "low") not in pool              # flagged record excluded
     assert pool[(0, "high")] == [-1.0]         # only the windowed clean record

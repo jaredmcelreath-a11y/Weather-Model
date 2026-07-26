@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+import config
 from config import (CONVECTIVE_POP_FULL, CONVECTIVE_POP_MIN, CONVECTIVE_SIGMA,
                     CONVECTIVE_SIGMA_MIN, CONVECTIVE_UPSTREAM_COUNTIES,
                     CONVECTIVE_UPSTREAM_UGC)
@@ -25,6 +26,16 @@ from sources import nws_alerts, open_meteo_models
 UPSTREAM_UGC = frozenset(CONVECTIVE_UPSTREAM_UGC)
 UPSTREAM_COUNTIES = dict(CONVECTIVE_UPSTREAM_COUNTIES)
 _SEVERE = "Severe Thunderstorm Warning"
+
+
+def _station_zones(station: str = config.DEFAULT_STATION) -> frozenset:
+    """UGC zones for `station`'s upstream storm approaches (empty = degraded
+    guard, e.g. Austin until its county map is built)."""
+    return frozenset(config.station(station).convective_counties)
+
+
+def _station_counties(station: str = config.DEFAULT_STATION) -> dict:
+    return config.station(station).convective_counties
 
 
 def _point_triggered(pop, pop_min=CONVECTIVE_POP_MIN) -> bool:
@@ -70,21 +81,22 @@ def _upstream_match(alerts: dict, counties=UPSTREAM_COUNTIES) -> dict | None:
     return None
 
 
-def storm_status(day: date, now: datetime) -> dict:
+def storm_status(day: date, now: datetime,
+                 station: str = config.DEFAULT_STATION) -> dict:
     """Storm-watch summary for the dashboard panel: remaining-hours POP, the
     convective downside sigma for today's low, any upstream severe-warning
     (county + approach direction), and an overall level (clear/watch/active).
     Best-effort — any data/network failure degrades a field, never raises."""
     try:
-        pop, _cape = open_meteo_models.convective_window(day, now)
+        pop, _cape = open_meteo_models.convective_window(day, now, station=station)
     except Exception:
         pop = None
     try:
-        upstream = _upstream_match(nws_alerts.fetch_active())
+        upstream = _upstream_match(nws_alerts.fetch_active(), _station_counties(station))
     except Exception:
         upstream = None
     try:
-        sigma = convective_sigma(day, now)
+        sigma = convective_sigma(day, now, station)
     except Exception:
         sigma = 0.0
     if upstream or sigma >= CONVECTIVE_SIGMA:
@@ -111,7 +123,8 @@ def risk_label(low_pred: dict) -> str | None:
     return None
 
 
-def convective_sigma(day: date, now: datetime) -> float:
+def convective_sigma(day: date, now: datetime,
+                     station: str = config.DEFAULT_STATION) -> float:
     """One-sided downside sigma floor for today's low (0.0 = no convective risk).
 
     An active upstream severe-thunderstorm warning is direct evidence of storms
@@ -120,17 +133,18 @@ def convective_sigma(day: date, now: datetime) -> float:
     each signal is guarded independently, and any data/network failure simply
     contributes no downside (never raises)."""
     try:
-        if _upstream_triggered(nws_alerts.fetch_active()):
+        if _upstream_triggered(nws_alerts.fetch_active(), _station_zones(station)):
             return CONVECTIVE_SIGMA
     except Exception:
         pass
     try:
-        pop, _cape = open_meteo_models.convective_window(day, now)
+        pop, _cape = open_meteo_models.convective_window(day, now, station=station)
         return _point_sigma(pop)
     except Exception:
         return 0.0
 
 
-def convective_risk(day: date, now: datetime) -> bool:
+def convective_risk(day: date, now: datetime,
+                    station: str = config.DEFAULT_STATION) -> bool:
     """Back-compat boolean: True when any convective downside applies."""
-    return convective_sigma(day, now) > 0.0
+    return convective_sigma(day, now, station) > 0.0

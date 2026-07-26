@@ -113,7 +113,7 @@ def test_model_skips_warm_low_when_obs_anchored():
 def test_model_warm_low_and_cooling_stack(monkeypatch):
     day = date(2030, 1, 1)
     monkeypatch.setattr(model.open_meteo_models, "night_conditions",
-                        lambda d: (10.0, 5.0))          # clear + calm
+                        lambda d, station=None: (10.0, 5.0))          # clear + calm
     calib = {
         "bias": {"deterministic": {"high": 0.0, "low": 0.0}},
         "sigma": {"high": 2.0, "low": 2.0},

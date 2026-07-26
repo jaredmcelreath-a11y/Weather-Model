@@ -22,7 +22,7 @@ def test_include_candidate_attaches_block_and_uses_candidate_models(monkeypatch)
     seen = {"det_models": []}
 
     def fake_gather(forecast_days=2, continuous_obs=False, now=None,
-                    det_models=None, ens_models=None):
+                    det_models=None, ens_models=None, station=None):
         seen["det_models"].append(det_models)
         marker = 0 if det_models is None else 1
         return _series_for(marker), {"obs": ([], [])}, []
@@ -41,7 +41,7 @@ def test_include_candidate_attaches_block_and_uses_candidate_models(monkeypatch)
 
 def test_default_snapshot_has_no_candidate_block(monkeypatch):
     def fake_gather(forecast_days=2, continuous_obs=False, now=None,
-                    det_models=None, ens_models=None):
+                    det_models=None, ens_models=None, station=None):
         return _series_for(0), {"obs": ([], [])}, []
     monkeypatch.setattr(model, "gather_series", fake_gather)
 
