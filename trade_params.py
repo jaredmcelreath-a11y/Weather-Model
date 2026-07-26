@@ -11,10 +11,16 @@ from zoneinfo import ZoneInfo
 
 import config
 
-# kill_switch True == ENGAGED == trading disabled. Ships engaged.
+# kill_switch True == ENGAGED == trading disabled.
+# Ships DISENGAGED (False) so the trader is ACTIVE by default — but `mode`
+# ships "shadow", and shadow places NO real orders (kalshi_orders.place_order
+# no-ops unless mode == "live"). So the real-money guard is the SHADOW default,
+# not the kill switch: a fresh/absent trade-state doc runs the shadow trader
+# (logs decisions, zero real fills); placing real orders still requires an
+# explicit, persisted mode="live".
 DEFAULT_PARAMS: dict = {
-    "kill_switch": True,
-    "mode": "shadow",                     # "shadow" | "live"
+    "kill_switch": False,
+    "mode": "shadow",                     # "shadow" | "live" — shadow = no real orders
     "enabled_variables": ["high", "low"],
     "min_resolved": 0.70,                 # fraction 0-1
     "agreement_tol": 1.0,                 # °F

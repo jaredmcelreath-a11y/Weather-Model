@@ -35,7 +35,8 @@ def test_load_state_defaults_ship_safe_for_absent_station():
             raise AssertionError("no write expected")
 
     p = trade_state.load_state(transport=_T(), station="KAUS")
-    assert p["kill_switch"] is True and p["mode"] == "shadow"   # ships DISABLED
+    # Ships active-but-shadow: kill switch off, mode shadow (no real orders).
+    assert p["kill_switch"] is False and p["mode"] == "shadow"
 
 
 def test_real_deps_positions_are_station_isolated(monkeypatch):
@@ -60,7 +61,10 @@ def test_main_runs_every_station(monkeypatch):
     assert seen == config.STATION_CODES
 
 
-def test_kaus_run_once_no_ops_at_default_kill_switch():
+def test_kaus_default_runs_active_but_places_nothing_live():
+    """New posture: default params ship kill-switch OFF + shadow. run_once is
+    ACTIVE (not halted by the kill switch) but with an empty market places no
+    order; any order it ever placed would carry mode='shadow'."""
     import trader
     import trade_params
     from datetime import datetime
@@ -75,4 +79,20 @@ def test_kaus_run_once_no_ops_at_default_kill_switch():
         place_order=lambda **k: placed.append(k), append_log=lambda r: None,
         notify=lambda *a, **k: True)
     out = trader.run_once(now=datetime(2026, 7, 27, 12, 0), deps=deps, station="KAUS")
-    assert out == {"halted": "kill_switch"} and placed == []
+    assert out.get("halted") != "kill_switch"          # active, not blocked
+    assert placed == []                                # empty market -> no orders
+
+
+def test_place_order_shadow_makes_no_network_call():
+    """The real-money guard: with the default mode='shadow', place_order returns a
+    synthetic ack and never touches the network transport, no matter the kill
+    switch. A transport that raises would fire if the network path were reached."""
+    from sources import kalshi_orders
+
+    def boom(*a, **k):
+        raise AssertionError("network transport used in shadow mode")
+
+    ack = kalshi_orders.place_order(ticker="KXHIGHAUS-26JUL27-T96", side="yes",
+                                    action="buy", count=1, price=0.5,
+                                    client_order_id="x", mode="shadow", transport=boom)
+    assert ack.get("shadow") is True
