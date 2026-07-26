@@ -41,6 +41,14 @@ def city_control(page_key: str, arity: int = 2) -> str:
     (3-way: one of Dallas/Austin/Both). The sticky single-city follows the user
     between pages."""
     options = SELECTIONS_3 if arity == 3 else SELECTIONS_2
+    # Deep-link support: ?city=Austin seeds the sticky single-city once (mirrors
+    # the theme's ?theme= handling), so a city is shareable/screenshottable by URL.
+    try:
+        qp = st.query_params.get("city")
+    except Exception:
+        qp = None
+    if qp in ("Dallas", "Austin") and "city" not in st.session_state:
+        st.session_state["city"] = qp
     default = resolve_selection(st.session_state, page_key, arity)
     choice = st.segmented_control(
         "City", options, default=default, key=f"citysel_{page_key}",
