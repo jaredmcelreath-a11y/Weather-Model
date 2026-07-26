@@ -38,6 +38,22 @@ def test_snapshot_tags_station(monkeypatch):
     assert seen["station"] == "KAUS"
 
 
+def test_kaus_snapshot_routes_every_source_call(monkeypatch):
+    """snapshot(station='KAUS') runs end-to-end against stubbed sources and every
+    gather_series call — production AND the candidate/shadow fetch — routes KAUS."""
+    import model
+    stations = set()
+
+    def fake_gather(*a, **k):
+        stations.add(k.get("station"))
+        return {}, {"obs": ([], []), "obs_continuous_display": (None, None)}, []
+
+    monkeypatch.setattr(model, "gather_series", fake_gather)
+    snap = model.snapshot(station="KAUS", include_candidate=True)
+    assert snap["station"] == "KAUS"
+    assert stations == {"KAUS"}  # no call fell back to the KDFW default
+
+
 def test_open_meteo_params_use_station_latlon(monkeypatch):
     captured = {}
 
