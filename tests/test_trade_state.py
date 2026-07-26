@@ -22,8 +22,8 @@ class FakeTransport:
 def test_load_state_absent_returns_defaults():
     t = FakeTransport()
     st = ts.load_state(transport=t)
-    assert st["kill_switch"] is True
-    assert st["mode"] == "shadow"
+    assert st["kill_switch"] is False        # ships active…
+    assert st["mode"] == "shadow"            # …but shadow = no real orders
 
 
 def test_save_then_load_roundtrip():

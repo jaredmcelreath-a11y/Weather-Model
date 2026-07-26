@@ -6,8 +6,10 @@ import trade_params as tp
 
 def test_defaults_are_safe():
     d = tp.DEFAULT_PARAMS
-    assert d["kill_switch"] is True          # engaged = trading disabled
-    assert d["mode"] == "shadow"
+    # Ships kill-switch OFF (trader active) but in SHADOW — the real-money guard
+    # is the shadow default (kalshi_orders places no real orders unless live).
+    assert d["kill_switch"] is False
+    assert d["mode"] == "shadow"             # no real orders until explicitly live
     assert d["max_price"] == 0.94
     assert d["min_resolved"] == 0.70
     assert d["agreement_tol"] == 1.0
