@@ -529,6 +529,22 @@ def _trusted_low_min(c_raw, c_robust, fullday, shift):
     return c_raw if support >= SPIKE_FORECAST_MIN else c_robust
 
 
+def _resolved_variants(locked_ratio: float, collapse: float) -> tuple[float, float]:
+    """Two extra 'Resolved' readings for the live three-way comparison.
+
+    orig   = 1 - locked_ratio                     (the month-ago metric; a pure
+             ensemble-convergence readout, can be non-monotonic)
+    hybrid = 1 - (1 - collapse) * locked_ratio    (convergence-driven; no clock
+             term). Reaches 1.0 when EITHER the ensemble fully converges
+             (locked_ratio -> 0) OR observations rule out all mass (collapse -> 1).
+
+    Both are 0.0 pre-observation (locked_ratio == 1.0, collapse == 0.0).
+    """
+    orig = 1.0 - locked_ratio
+    hybrid = 1.0 - (1.0 - collapse) * locked_ratio
+    return orig, hybrid
+
+
 def predict_variable(series, obs_series, day, variable, now, calib,
                      settle_offset=None, live=False,
                      station: str = config.DEFAULT_STATION):
@@ -780,6 +796,12 @@ def predict_variable(series, obs_series, day, variable, now, calib,
         tprog = min(1.0, max(0.0, (hr - w0) / (w1 - w0)))
         resolved = 1.0 - (1.0 - collapse) * (1.0 - tprog)
 
+    # Two extra Resolved formulations for the live three-way comparison
+    # (temporary; see docs/superpowers/specs/2026-07-26-...): the month-ago
+    # convergence readout and the convergence-driven hybrid. Both derive from
+    # already-computed terms and are 0 pre-obs (locked_ratio 1.0, collapse 0.0).
+    resolved_orig, resolved_hybrid = _resolved_variants(locked_ratio, resolved_collapse)
+
     # Lead-aware spread: an empirical per-lead sigma from the forward log wins
     # when available; otherwise inflate the day-ahead sigma by the interim factor
     # for this lead bucket (today=0 -> 1.0, tomorrow wider). The nowcast
@@ -891,6 +913,8 @@ def predict_variable(series, obs_series, day, variable, now, calib,
         "locked_ratio": round(locked_ratio, 2),
         "resolved": round(resolved, 2),
         "resolved_collapse": round(resolved_collapse, 2),
+        "resolved_orig": round(resolved_orig, 2),
+        "resolved_hybrid": round(resolved_hybrid, 2),
         "low_forming": low_forming,
         "n_samples": len(samples),
         "observed_so_far": observed,
