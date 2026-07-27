@@ -10,7 +10,7 @@
   "market_close": "20:00",
   "market_open": "06:00",
   "max_open_per_variable": 1,
-  "max_price": 0.94,
+  "max_price": 0.92,
   "min_price": 0.1,
   "min_resolved": 0.75,
   "mode": "shadow",
