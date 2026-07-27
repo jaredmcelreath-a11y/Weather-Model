@@ -171,46 +171,50 @@ def load_recap(station: str = config.DEFAULT_STATION):
 
 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
-def load_calibration_history():
+def load_calibration_history(station: str = config.DEFAULT_STATION):
     """Calibration recompute history for the drift sparklines. Changes ~1×/day."""
     import calibration_history
     try:
+        # TODO: per-station calibration_history — the recompute log isn't yet
+        # namespaced on disk, so every station reads the shared (KDFW) file. The
+        # drift sparkline is a secondary visual; live per-station scoring is
+        # accurate. Thread `station` here once per-station recompute history lands.
         return calibration_history.load()
     except Exception:
         return []
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def load_journal():
-    """Every settled day scored for the Journal page. Changes ~daily; 1h TTL
-    keeps same-day bet settlements reasonably fresh. Bet P&L is best-effort
-    (cloud-only)."""
+def load_journal(station: str = config.DEFAULT_STATION):
+    """Every settled day scored for the Journal page (per station). Changes
+    ~daily; 1h TTL keeps same-day bet settlements reasonably fresh. Bet P&L is
+    best-effort, account-wide (cloud-only)."""
     from datetime import date
     import settlements
     bet_rows = None
     try:
         import bet_history
-        bet_rows = bet_history.fetch_rows(bet_history.BETS_START)
+        bet_rows = bet_history.fetch_rows(bet_history.BETS_START)   # account-wide
     except Exception:
         bet_rows = None
-    return journal_view.assemble(date.today(), settlements.as_map("cli"),
-                                 forecast_log.load(), bet_rows)
+    return journal_view.assemble(date.today(), settlements.as_map("cli", station=station),
+                                 forecast_log.load(station=station), bet_rows)
 
 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
-def load_lab():
-    """Scored forward-log experiments for the Lab page. Changes ~daily."""
+def load_lab(station: str = config.DEFAULT_STATION):
+    """Scored forward-log experiments for the Lab page (per station). Changes ~daily."""
     import settlements
-    rows = forecast_log.load()
-    settled = settlements.as_map("cli")
+    rows = forecast_log.load(station=station)
+    settled = settlements.as_map("cli", station=station)
     return (lab_view.head_to_head(rows, settled),
             lab_view.per_model_scores(rows, settled))
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def load_status():
-    """Plain timestamps/counts for the Status page's checks. Each read is
-    best-effort — a missing log yields an 'unknown' card, never a crash."""
+def load_status(station: str = config.DEFAULT_STATION):
+    """Plain timestamps/counts for the Status page's checks, per station. Each
+    read is best-effort — a missing log yields an 'unknown' card, never a crash."""
     from datetime import date, datetime, timezone
     inputs: dict = {}
     counts: dict = {}
@@ -227,7 +231,7 @@ def load_status():
 
     try:
         import consensus_log
-        rows = consensus_log.load()
+        rows = consensus_log.load(station=station)
         counts["Consensus History"] = len(rows)
         cli = [r for r in rows if r.get("basis") == "cli"] or rows
         if cli:
@@ -235,12 +239,12 @@ def load_status():
     except Exception:
         pass
     try:
-        counts["Forecast Log"] = len(forecast_log.load())
+        counts["Forecast Log"] = len(forecast_log.load(station=station))
     except Exception:
         pass
     try:
         import betting_log
-        rows = betting_log.load()
+        rows = betting_log.load(station=station)
         counts["Betting Log"] = len(rows)
         today = date.today().isoformat()
         inputs["betting_rows_today"] = sum(
@@ -249,7 +253,7 @@ def load_status():
         pass
     try:
         import settlements
-        rows = settlements.load()
+        rows = settlements.load(station=station)
         counts["Settlements"] = len(rows)
         days = [date.fromisoformat(r["target_date"]) for r in rows
                 if r.get("basis") == "cli" and r.get("target_date")]
@@ -263,7 +267,7 @@ def load_status():
     except Exception:
         pass
     try:
-        calib = calibration.get(refresh=True) or {}
+        calib = calibration.get(refresh=True, station=station) or {}
         inputs["calib_computed"] = _dt(calib.get("computed"))
     except Exception:
         pass
@@ -372,35 +376,67 @@ def hourly_page():
 
 
 def edge_page():
-    edge_view.render()
+    market_view._theme_controls()
+    st.title("Edge")
+    sel, codes = city_view.city_sections("edge", arity=3)
+    for code in codes:
+        if sel == "Both":
+            st.subheader(city_view.display_name(code))
+        edge_view.render(station=code)
 
 
 def journal_page():
-    journal_view.render(load_journal)
+    market_view._theme_controls()
+    st.title("Journal")
+    sel, codes = city_view.city_sections("journal", arity=3)
+    for code in codes:
+        if sel == "Both":
+            st.subheader(city_view.display_name(code))
+        journal_view.render(lambda code=code: load_journal(code), station=code)
 
 
 def lab_page():
     # Live snapshot is best-effort here: the scored tables must render even
     # when the forecast pipeline is down; only the shadow expander needs it.
-    try:
-        snap, _calib = load_snapshot_kalshi()
-    except Exception:
-        snap = None
-    lab_view.render(load_lab, snap)
+    market_view._theme_controls()
+    st.title("Lab")
+    sel, codes = city_view.city_sections("lab", arity=3)
+    for code in codes:
+        if sel == "Both":
+            st.subheader(city_view.display_name(code))
+        s = None
+        try:
+            s, _ = load_snapshot_kalshi(code)
+        except Exception:
+            s = None
+        lab_view.render(lambda code=code: load_lab(code), snap=s, station=code)
 
 
 def status_page():
-    snap = None
-    try:
-        snap, _calib = load_snapshot_kalshi()
-    except Exception:
-        snap = None
-    inputs, counts = load_status()
-    status_view.render(snap, inputs, counts)
+    market_view._theme_controls()
+    st.title("Status")
+    st.caption("Log-derived health for both cities: every check reads the same "
+               "data the dashboard already loads — no extra credentials or probes.")
+    per, snaps = [], {}
+    for code in config.STATION_CODES:
+        try:
+            snaps[code], _ = load_snapshot_kalshi(code)
+        except Exception:
+            snaps[code] = None
+        inputs, counts = load_status(code)
+        per.append((code, inputs, counts))
+    status_view.render(per, snaps)
 
 
 def accuracy_page():
-    accuracy_view.render(load_accuracy_kalshi, load_calibration_history)
+    market_view._theme_controls()
+    st.title("Accuracy")
+    sel, codes = city_view.city_sections("accuracy", arity=3)
+    for code in codes:
+        if sel == "Both":
+            st.subheader(city_view.display_name(code))
+        accuracy_view.render(lambda code=code: load_accuracy_kalshi(code),
+                             lambda code=code: load_calibration_history(code), station=code)
 
 
 def trader_page():

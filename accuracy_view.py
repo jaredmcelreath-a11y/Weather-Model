@@ -6,6 +6,7 @@ from __future__ import annotations
 import streamlit as st
 
 import calibration
+import config
 import market_view
 from markets import KALSHI
 
@@ -36,21 +37,19 @@ def headline_tiles(live: dict) -> list[dict]:
     return tiles
 
 
-def render(load_accuracy, history_loader=None):
+def render(load_accuracy, history_loader=None, station: str = config.DEFAULT_STATION):
     """Draw the Accuracy Scorecard: headline tiles + the full self-scoring /
     reliability / calibration-drift body (market_view._render_accuracy).
     `load_accuracy` is the cached () -> (bt, live) callable; `history_loader`
-    the cached () -> calibration-history rows."""
-    market_view._theme_controls()  # sidebar Settings (theme picker) + injects theme
-    st.title("Accuracy")
-
+    the cached () -> calibration-history rows. Body-only: the page function owns
+    the title + theme controls (drawn once)."""
     try:
         _bt, live = load_accuracy()
     except Exception:
         live = None
     if live and live.get("n_settled"):
         tiles = headline_tiles(live)
-        with st.container(key="metrics2_accuracy"):
+        with st.container(key=f"metrics2_accuracy_{station}"):
             cols = st.columns(len(tiles))
         for col, t in zip(cols, tiles):
             col.markdown(market_view.metric_card(t["label"], t["value"]),

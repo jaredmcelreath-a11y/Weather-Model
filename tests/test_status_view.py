@@ -63,13 +63,19 @@ def test_missing_inputs_read_unknown():
     assert all(c["value"] == "No Data" for c in cards)
 
 
+def test_render_both_sections(monkeypatch):
+    per = [("KDFW", {}, {"Forecast Log": 10}), ("KAUS", {}, {"Forecast Log": 2})]
+    status_view.render(per, snaps={})   # must not raise; both sections drawn
+
+
 def test_render_smoke_with_and_without_snapshot():
     snap = {"current": {"temp": 93.0, "time": "2026-07-18T11:55-05:00"},
             "dropped_sources": []}
     inputs = {"last_capture": NOW - timedelta(minutes=8),
               "last_settled": date(2026, 7, 17), "betting_rows_today": 4}
-    status_view.render(snap, inputs, {"Forecast Log": 170, "Settlements": 64})
-    status_view.render(None, {}, {})
+    per = [("KDFW", inputs, {"Forecast Log": 170, "Settlements": 64})]
+    status_view.render(per, snaps={"KDFW": snap})
+    status_view.render([("KDFW", {}, {})], snaps={})
 
 
 def test_snapshot_inputs_extraction():

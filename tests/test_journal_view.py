@@ -101,6 +101,10 @@ def test_day_card_html_minimal_entry():
     assert "P&amp;L" not in html and "P&L" not in html
 
 
+def test_render_body_accepts_station():
+    journal_view.render(lambda: [], station="KAUS")   # empty journal, must not raise
+
+
 def test_render_smoke_empty_and_full():
     journal_view.render(lambda: {"summary": {}, "days": []})
     journal_view.render(lambda: {

@@ -1,5 +1,7 @@
 # Austin — Plan 3b: Analytics 3-Way "Both" + Status Both-at-Once Implementation Plan
 
+> **STATUS: SHIPPED 2026-07-27** (branch `austin-plan3b-analytics`). All tasks done except **Task 6 (History)**, which was **already implemented in Plan 3** via `bet_history.ticker_station` + `filter_by_station` wired into `bet_view.render` — re-doing it here (a redundant `city_of_ticker`) was skipped, no change needed. **Bug found & fixed during Task 8 verification:** the Both view stacks two station bodies, but each analytics view used a *fixed* `st.container(key=...)`, so the second station (Austin) hit `StreamlitDuplicateElementKey` and only Dallas rendered. Fix = station-suffix every such key (`f"metrics2_journal_{station}"` etc.). This is the same duplicate-key hazard the Global Constraints flag for `_theme_controls`, extended to the per-view containers. 787 tests pass; both-city renders verified under `docs/benchmarks/2026-07-26-austin-ui-analytics/`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the retrospective analytics pages — Journal, Lab, Edge, Accuracy, History — two-city aware with a 3-way `Dallas | Austin | Both` control (default Both), and make Status show both cities' pipeline health at once. Completes the two-city UI so every page respects the city selection.

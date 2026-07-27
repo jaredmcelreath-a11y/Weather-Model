@@ -163,6 +163,10 @@ def test_chart_panels_keeps_every_point():
         == len(recs)
 
 
+def test_render_body_accepts_station():
+    lab_view.render(lambda: ({}, {}), snap=None, station="KAUS")   # empty, no raise
+
+
 def test_render_smoke_empty_and_full():
     lab_view.render(lambda: ({}, {}))
     h2h = {("high", 24): {"n": 2, "prod_mae": 0.5, "cand_mae": 1.25,

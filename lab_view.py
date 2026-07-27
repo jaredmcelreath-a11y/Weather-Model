@@ -11,6 +11,7 @@ from datetime import date
 
 import streamlit as st
 
+import config
 import market_view
 
 
@@ -224,11 +225,10 @@ def _error_chart(recs: list[dict], series_colors=None):
             .configure_view(fill=None, strokeWidth=0))
 
 
-def render(lab_loader, snap=None) -> None:
+def render(lab_loader, snap=None, station: str = config.DEFAULT_STATION) -> None:
     import pandas as pd
 
-    market_view._theme_controls()
-    st.title("Lab")
+    # Body-only: the page function owns the title + theme controls (drawn once).
     try:
         h2h, models = lab_loader()
     except Exception:
@@ -247,7 +247,7 @@ def render(lab_loader, snap=None) -> None:
         n = sum(g["n"] for g in h2h.values())
         pw = sum(g["prod_wins"] for g in h2h.values())
         cw = sum(g["cand_wins"] for g in h2h.values())
-        with st.container(key="metrics2_lab"):
+        with st.container(key=f"metrics2_lab_{station}"):
             c = st.columns(3)
         c[0].markdown(market_view.metric_card(
             "Scored Rows", str(n),

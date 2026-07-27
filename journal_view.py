@@ -10,6 +10,7 @@ from datetime import date
 
 import streamlit as st
 
+import config
 import market_view
 import recap
 
@@ -112,9 +113,9 @@ def day_card_html(entry: dict) -> str:
             f'{pnl_line}</div>')
 
 
-def render(journal_loader) -> None:
-    market_view._theme_controls()   # sidebar Settings (theme picker) + theme CSS
-    st.title("Journal")
+def render(journal_loader, station: str = config.DEFAULT_STATION) -> None:
+    # Body-only: the page function owns the title + theme controls (drawn once,
+    # so a Both view can stack two station bodies without a duplicate-key clash).
     st.markdown(_CSS, unsafe_allow_html=True)
     try:
         data = journal_loader()
@@ -129,7 +130,7 @@ def render(journal_loader) -> None:
     def frac(pair):
         return f"{pair[0]}/{pair[1]}" if pair and pair[1] else _EM
 
-    with st.container(key="metrics2_journal"):
+    with st.container(key=f"metrics2_journal_{station}"):
         c = st.columns(4)
     c[0].markdown(market_view.metric_card(
         "High Hits (7d)", frac(s.get("high_hits7")),

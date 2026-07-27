@@ -45,9 +45,9 @@ def checks(inputs: dict, now: datetime) -> list[dict]:
                   "capture. Green under 25 min (10-min cadence); red past an "
                   "hour means the Action or its trigger is down."),
         _age_card("Obs Reading", age(inputs.get("obs_time")), 45, 90,
-                  "Age of the newest KDFW temperature reading. Red means at "
-                  "least one full METAR cycle was missed (the IEM fallback "
-                  "kicks in on NWS outages)."),
+                  "Age of the newest temperature reading for this city. Red "
+                  "means at least one full METAR cycle was missed (the IEM "
+                  "fallback kicks in on NWS outages)."),
     ]
     dropped = inputs.get("dropped_sources")
     if dropped is None:
@@ -112,29 +112,31 @@ def snapshot_inputs(snap: dict | None) -> dict:
     return out
 
 
-def render(snap: dict | None, inputs: dict, counts: dict) -> None:
+def render(per_station: list, snaps: dict) -> None:
+    """Both-at-once health: one labeled section per (station_code, inputs, counts),
+    so a stale Austin feed is never hidden behind Dallas. Body-only — the page
+    function owns the title + theme controls. `snaps` maps station -> live snapshot
+    (for obs freshness / feed health); a missing snap contributes nothing."""
+    import config
     import pandas as pd
     from zoneinfo import ZoneInfo
 
     from config import TIMEZONE
 
-    market_view._theme_controls()
-    st.title("Status")
-    st.caption("Log-derived health: every check reads the same data the "
-               "dashboard already loads — no extra credentials or probes.")
     now = datetime.now(ZoneInfo(TIMEZONE))
-    merged = dict(inputs)
-    merged.update(snapshot_inputs(snap))
-    cards = checks(merged, now)
-    with st.container(key="metrics2_status"):
-        c = st.columns(3)
-    for i, card in enumerate(cards):
-        c[i % 3].markdown(market_view.metric_card(
-            card["label"], card["value"], card["tip"], dot=card["state"]),
-            unsafe_allow_html=True)
-    if counts:
-        st.subheader("Log Sizes")
-        market_view._html_table(pd.DataFrame(
-            [{"Log": k, "Rows": str(v)} for k, v in sorted(counts.items())]))
-        st.caption("Row counts of the persisted data logs. Steady growth is "
-                   "healthy; a frozen count means the Action stopped writing.")
+    for code, inputs, counts in per_station:
+        st.subheader(config.station(code).name)
+        merged = dict(inputs)
+        merged.update(snapshot_inputs(snaps.get(code)))
+        cards = checks(merged, now)
+        with st.container(key=f"metrics2_status_{code}"):
+            c = st.columns(3)
+        for i, card in enumerate(cards):
+            c[i % 3].markdown(market_view.metric_card(
+                card["label"], card["value"], card["tip"], dot=card["state"]),
+                unsafe_allow_html=True)
+        if counts:
+            market_view._html_table(pd.DataFrame(
+                [{"Log": k, "Rows": str(v)} for k, v in sorted(counts.items())]))
+    st.caption("Row counts of the persisted data logs. Steady growth is "
+               "healthy; a frozen count means the Action stopped writing.")
