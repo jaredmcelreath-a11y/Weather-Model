@@ -173,7 +173,13 @@ def balance(fetch=None):
     fetch = fetch or kalshi_auth.signed_get
     try:
         b = fetch("/portfolio/balance", None) or {}
-    except Exception:
+    except Exception as e:
+        # Stay resilient (return None so the trader halts cleanly), but surface
+        # WHY: a None balance otherwise shows only as "reconcile_failed" with no
+        # cause. Prints the error class + message (never the key material) to the
+        # Action / app log. Common causes: missing/mangled KALSHI_PRIVATE_KEY PEM
+        # (a paste that lost its newlines fails to deserialize) or a bad key pair.
+        print(f"kalshi balance() failed: {type(e).__name__}: {e}")
         return None
     cents = b.get("balance")
     return (cents / 100.0) if cents is not None else None
