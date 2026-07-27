@@ -163,28 +163,52 @@ def test_metrics_skips_row_with_no_market_ev():
     assert m["disagreements"] == 0
 
 
-def test_metrics_market_volume_median_and_thin_flag():
-    # Two liquid-ish days: median(5, 100) = 52.5, >= floor 20 -> not thin.
+def test_metrics_market_volume_median_informational():
+    # Whole-market volume is still reported (median), but no longer drives `thin`.
     a = _hi("15:30", 96.0, 96.0, [[95, 96, 1.0]], 96.0, 95.0, 1.0)
     b = _hi("15:30", 96.0, 96.0, [[95, 96, 1.0]], 96.0, 95.0, 1.0)
     a["market_volume"], b["market_volume"] = 5.0, 100.0
     m = edge_report.metrics([a, b])[("15:30", "high", "all")]
     assert m["market_volume"] == 52.5
+
+
+def test_metrics_settled_bucket_volume_median_and_not_thin():
+    # thin now keys off the SETTLED bracket's own traded volume, not the
+    # whole-market sum. Settled bracket [95,96] carries 300 and 500 -> median
+    # 400 >= floor 200 -> not thin.
+    a = _hi("15:30", 96.0, 96.0, [[95, 96, 1.0]], 96.0, 95.0, 1.0)
+    b = _hi("15:30", 96.0, 96.0, [[95, 96, 1.0]], 96.0, 95.0, 1.0)
+    a["bucket_volume"] = [[95, 96, 300.0], [97, 98, 20.0]]
+    b["bucket_volume"] = [[95, 96, 500.0], [97, 98, 10.0]]
+    m = edge_report.metrics([a, b])[("15:30", "high", "all")]
+    assert m["settled_bucket_volume"] == 400.0
     assert m["thin"] is False
 
 
-def test_metrics_thin_when_median_below_floor():
+def test_metrics_thin_when_settled_bucket_volume_below_floor():
+    # Settled bracket traded on almost nothing (50, 100 -> median 75 < 200).
     a = _hi("16:00", 96.0, 96.0, [[95, 96, 1.0]], 96.0, 95.0, 1.0)
     b = _hi("16:00", 96.0, 96.0, [[95, 96, 1.0]], 96.0, 95.0, 1.0)
-    a["market_volume"], b["market_volume"] = 5.0, 10.0   # median 7.5 < 20
+    a["bucket_volume"] = [[95, 96, 50.0]]
+    b["bucket_volume"] = [[95, 96, 100.0]]
     m = edge_report.metrics([a, b])[("16:00", "high", "all")]
-    assert m["market_volume"] == 7.5
+    assert m["settled_bucket_volume"] == 75.0
     assert m["thin"] is True
 
 
-def test_metrics_volume_absent_is_none_not_thin():
-    # Historical rows (pre-volume) -> market_volume None, never flagged thin.
+def test_metrics_bucket_volume_absent_is_none_not_thin():
+    # Historical rows (pre-bucket_volume) -> settled_bucket_volume None, never thin.
     row = _hi("16:30", 96.0, 96.0, [[95, 96, 1.0]], 96.0, 95.0, 1.0)
     m = edge_report.metrics([row])[("16:30", "high", "all")]
-    assert m["market_volume"] is None
+    assert m["settled_bucket_volume"] is None
+    assert m["thin"] is False
+
+
+def test_metrics_settled_bucket_outside_ladder_contributes_no_volume():
+    # Settlement lands in a bracket that wasn't priced/logged -> that row's
+    # settled-bracket volume is None (skipped from the median), not zero.
+    row = _hi("16:30", 96.0, 96.0, [[95, 96, 1.0]], 96.0, 95.0, 1.0)
+    row["bucket_volume"] = [[97, 98, 400.0]]     # doesn't cover settled 96
+    m = edge_report.metrics([row])[("16:30", "high", "all")]
+    assert m["settled_bucket_volume"] is None
     assert m["thin"] is False

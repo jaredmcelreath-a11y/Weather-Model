@@ -111,24 +111,24 @@ def test_render_accepts_station():
     edge_view.render(station="KAUS")   # no settled Austin rows -> "Accumulating", no raise
 
 
-def test_edge_rows_shows_volume_and_thin_marker():
+def test_edge_rows_shows_bracket_volume_and_thin_marker():
     import edge_view
     metrics = {
         ("15:30", "high", "all"): {
             "n": 4, "model_mae": 1.0, "market_mae": 1.2, "disagreements": 2,
             "model_bin_wins": 1, "market_bin_wins": 1,
-            "market_volume": 7.5, "thin": True},
+            "settled_bucket_volume": 75.0, "thin": True},
         ("15:30", "high", "mid_bin"): {
             "n": 3, "model_mae": 1.0, "market_mae": 1.2, "disagreements": 1,
             "model_bin_wins": 1, "market_bin_wins": 0,
-            "market_volume": None, "thin": False},
+            "settled_bucket_volume": None, "thin": False},
     }
     rows = edge_view._edge_rows(metrics)
     by_type = {r["Day Type"]: r for r in rows}
     assert "⚠ all" in by_type                     # thin subset flagged
-    assert by_type["⚠ all"]["Volume"] == "7.5"
+    assert by_type["⚠ all"]["Bracket Vol"] == "75"
     assert "mid-bin" in by_type                    # not thin, no marker
-    assert by_type["mid-bin"]["Volume"] == "—"     # unknown volume
+    assert by_type["mid-bin"]["Bracket Vol"] == "—"   # unknown volume
 
 
 def test_render_imports_kalshi_auth_from_sources_package():

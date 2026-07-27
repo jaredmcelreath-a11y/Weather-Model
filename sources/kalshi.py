@@ -189,6 +189,10 @@ def implied_forecast(variable: str, day: date,
         "ev": round(sum(mid * p for _, _, mid, p, _ in priced) / tot, 2),
         "buckets": [[f, cap, round(p / tot, 4)] for f, cap, _, p, _ in priced],
         "volume": round(all_volume, 1),
+        # Per-bracket traded volume for EVERY priced contract (pre-PMF-trim), so
+        # the Edge report can later recover the settled bracket's own liquidity —
+        # the whole-market `volume` above is always in the thousands and can't.
+        "bucket_volume": [[f, cap, v] for f, cap, _, _, v in rows],
     }
 
 

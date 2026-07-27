@@ -191,6 +191,24 @@ def test_row_without_market_has_no_volume_key():
     assert "market_volume" not in rec
 
 
+def test_row_logs_per_bucket_volume():
+    cli_var = {"consensus": 97.5, "probabilities": {"97": 0.6, "98": 0.4}}
+    market_var = {"ev": 97.2, "buckets": [[97, 98, 1.0]], "volume": 842.0,
+                  "bucket_volume": [[95, 96, 500.0], [97, 98, 342.0]]}
+    rec = betting_log._row("2026-07-13", "high", "15:30", cli_var, {}, market_var,
+                           0.89, "2026-07-13T15:30:00-05:00")
+    assert rec["bucket_volume"] == [[95, 96, 500.0], [97, 98, 342.0]]
+
+
+def test_row_without_bucket_volume_has_no_key():
+    # Older market blocks (pre-field) must not add an empty key.
+    cli_var = {"consensus": 97.5, "probabilities": {"97": 0.6, "98": 0.4}}
+    market_var = {"ev": 97.2, "buckets": [[97, 98, 1.0]], "volume": 42.0}
+    rec = betting_log._row("2026-07-13", "high", "15:30", cli_var, {}, market_var,
+                           0.89, "2026-07-13T15:30:00-05:00")
+    assert "bucket_volume" not in rec
+
+
 # ---------------------------------------------------------------------------
 # GitHub dual-read (cloud deploy): load() with no explicit path must read the
 # remote data-branch file when the dashboard has one configured, mirroring
