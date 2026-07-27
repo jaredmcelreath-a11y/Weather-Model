@@ -50,10 +50,19 @@ BIN_HIGH = 115  # highest explicit integer-degree bin
 MARKET_MIN_BUCKET_PRICE = 0.03  # 3c
 
 # ⚠-marker threshold on the Edge page: a (slot, variable) subset whose median
-# traded market volume falls below this is flagged as a thin market, so a
-# "market win/loss" that rode on almost no trading is visible. Annotation only —
-# nothing is excluded from the tally. Conservative first guess; retune with data.
-MARKET_LIQUIDITY_FLOOR = 20   # contracts
+# SETTLED-BRACKET traded volume falls below this is flagged as a thin market, so
+# a "market win/loss" that rode on almost no trading is visible. Annotation only
+# — nothing is excluded from the tally.
+#
+# This compares against the settled bracket's OWN traded volume (edge_report.
+# _settled_bucket_volume), not the whole-market sum: on liquid KDFW temp markets
+# the market-wide total never dips near any useful floor (2026-07-27 probe: min
+# ~760, median ~4,200), so the old market-sum floor of 20 never once fired. The
+# settled bracket itself is where liquidity actually varies — that day's active
+# brackets ran into the thousands while the tails traded ~150–500. 200 flags a
+# bracket that settled on almost nothing without tripping on a normal one.
+# Retune once bucket_volume has accrued across a range of settlement outcomes.
+MARKET_LIQUIDITY_FLOOR = 200   # contracts traded in the settled bracket
 
 
 def bin_labels() -> list[str]:

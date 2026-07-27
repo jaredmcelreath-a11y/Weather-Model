@@ -88,13 +88,15 @@ def _edge_rows(metrics: dict) -> list[dict]:
     rows = []
     for (slot, variable, subset), m in sorted(
             metrics.items(), key=lambda kv: (kv[0][0], kv[0][1], order.get(kv[0][2], 9))):
-        vol = m.get("market_volume")
+        # The settled bracket's OWN traded volume is what `thin` keys off and the
+        # decision-relevant liquidity number; the whole-market sum is always huge.
+        vol = m.get("settled_bucket_volume")
         rows.append({
             "Slot": slot, "Variable": variable,
             "Day Type": ("⚠ " if m.get("thin") else "") + subset.replace("_", "-"),
             "Number": m["n"],
             "Model MAE": m["model_mae"], "Market MAE": m["market_mae"],
-            "Volume": "—" if vol is None else f"{vol:g}",
+            "Bracket Vol": "—" if vol is None else f"{vol:g}",
             "Disagree": m["disagreements"],
             "Model Won": m["model_bin_wins"], "Market Won": m["market_bin_wins"],
         })
@@ -142,8 +144,9 @@ def render(station: str = config.DEFAULT_STATION):
         st.caption("Lower **MAE** (mean absolute error, °F) is the sharper forecast. "
                    "When the two disagree on the bin, **Model Won / Market Won** is who "
                    "the settlement proved right. Both sides are scored by where their "
-                   "expected value lands. A ⚠ marks a thin-market subset (low traded "
-                   "volume), where the market's 'opinion' is weak.")
+                   "expected value lands. **Bracket Vol** is the median traded volume "
+                   "of the bracket that settled; a ⚠ marks a thin subset (settled "
+                   "bracket traded on almost nothing), where the market's 'opinion' is weak.")
         for line in _offset_verdict(data["metrics"]):
             st.caption("Settlement offset — " + line)
 

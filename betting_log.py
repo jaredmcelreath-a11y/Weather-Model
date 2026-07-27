@@ -220,6 +220,12 @@ def _row(day: str, variable: str, slot: str, cli_var: dict, hourly_var: dict,
         rec["market_ev"] = market_var.get("ev")
         rec["market_buckets"] = market_var.get("buckets")
         rec["market_volume"] = market_var.get("volume")
+        # Per-bracket traded volume, so the Edge page can flag a bracket that
+        # settled on almost no trading (the whole-market `volume` never can).
+        # Only when present — pre-field market blocks stay byte-identical.
+        bv = market_var.get("bucket_volume")
+        if bv:
+            rec["bucket_volume"] = bv
     return rec
 
 

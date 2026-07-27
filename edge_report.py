@@ -64,6 +64,21 @@ def _settled_ask(row: dict) -> float | None:
     return None
 
 
+def _settled_bucket_volume(row: dict) -> float | None:
+    """Traded volume of the bracket that eventually settled, at capture time.
+
+    The whole-market `market_volume` is always in the thousands on liquid KDFW
+    temp markets, so it can never answer "did the bracket I'd have traded settle
+    on almost no volume". The per-bracket `bucket_volume` ladder can. None when
+    the row predates the field or the settlement fell outside the logged ladder.
+    """
+    temp = row.get("settled_cli")
+    for lo, hi, vol in row.get("bucket_volume") or []:
+        if (lo is None or temp >= lo) and (hi is None or temp <= hi):
+            return vol
+    return None
+
+
 def _subset_metrics(rows: list[dict], variable: str) -> dict:
     """Q1 (model-vs-market) + Q2 (flat-vs-live offset, high only) stats over one
     list of rows. Q2 fields stay None for the low variable."""
@@ -96,8 +111,12 @@ def _subset_metrics(rows: list[dict], variable: str) -> dict:
     }
     vols = [r["market_volume"] for r in rows if r.get("market_volume") is not None]
     entry["market_volume"] = round(statistics.median(vols), 1) if vols else None
-    entry["thin"] = (entry["market_volume"] is not None
-                     and entry["market_volume"] < MARKET_LIQUIDITY_FLOOR)
+    # `thin` keys off the SETTLED bracket's own traded volume, not the
+    # whole-market sum (which never dips near the floor on liquid KDFW markets).
+    sb_vols = [v for v in (_settled_bucket_volume(r) for r in rows) if v is not None]
+    entry["settled_bucket_volume"] = round(statistics.median(sb_vols), 1) if sb_vols else None
+    entry["thin"] = (entry["settled_bucket_volume"] is not None
+                     and entry["settled_bucket_volume"] < MARKET_LIQUIDITY_FLOOR)
     asks = [a for a in (_settled_ask(r) for r in rows) if a is not None]
     entry["settled_bucket_ask"] = round(statistics.mean(asks), 4) if asks else None
     entry["settled_bucket_ask_min"] = round(min(asks), 4) if asks else None
@@ -165,7 +184,8 @@ def join(betting_rows: list[dict], cli_map: dict, hourly_map: dict) -> list[dict
 _COLS = ["capture_slot", "variable", "subset", "n", "model_mae", "market_mae",
          "disagreements", "model_bin_wins", "market_bin_wins", "n_boundary",
          "flat_rmse", "live_rmse", "flip_toward", "flip_away", "market_volume",
-         "settled_bucket_ask", "settled_bucket_ask_min", "n_settled_ask"]
+         "settled_bucket_volume", "settled_bucket_ask", "settled_bucket_ask_min",
+         "n_settled_ask"]
 
 # subset display order within a (slot, variable), decision-relevant first
 _SUBSET_ORDER = {"boundary": 0, "all": 1, "mid_bin": 2}
