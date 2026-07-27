@@ -30,7 +30,11 @@ from sources import kalshi
 
 STATE_PATH = os.path.join(os.path.dirname(__file__), "cli_alert_state.json")
 RESOLVED_STATE_PATH = os.path.join(os.path.dirname(__file__), "resolved_alert_state.json")
-RESOLVED_ALERT_PCT = 70
+# Fire the "Locked In" push at 80% (was 70%). Obs-replay calibration (2026-07-27)
+# showed 70% Resolved is only ~52% exact-bin (coin flip); the bracket doesn't
+# become reliable (~83%) until ~80%, where the market has usually not yet fully
+# priced it — the intended entry window.
+RESOLVED_ALERT_PCT = 80
 
 
 def _state_path(default_path: str, basename: str, station: str) -> str:
@@ -172,8 +176,9 @@ def _maybe_alert_resolved(snap: dict, now: datetime,
             if not d:
                 continue
             # Dawn low still forming: the card's 50% cap was removed 2026-07-26,
-            # so the clock-inflated current `resolved` can cross 70% before the
-            # trough physically locks. Don't push "Low Locked In" until it does.
+            # so the clock-inflated current `resolved` can cross the alert
+            # threshold before the trough physically locks. Don't push "Low
+            # Locked In" until it does.
             if d.get("low_forming"):
                 continue
             pct = model.displayed_resolved(d)

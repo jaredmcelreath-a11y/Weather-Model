@@ -1,4 +1,4 @@
-"""Per-variable 70%-resolved ntfy alert in scheduled_log."""
+"""Per-variable 80%-resolved ntfy alert in scheduled_log."""
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -27,23 +27,23 @@ def _patch(monkeypatch, tmp_path, sends):
 _NOW = datetime(2026, 7, 21, 15, 0, tzinfo=_TZ)
 
 
-def test_fires_at_70_not_69(monkeypatch, tmp_path):
+def test_fires_at_80_not_79(monkeypatch, tmp_path):
     sends = []
     _patch(monkeypatch, tmp_path, sends)
-    scheduled_log._maybe_alert_resolved(_snap(0.695, 0.60), _NOW)  # 69% / 60%
+    scheduled_log._maybe_alert_resolved(_snap(0.795, 0.60), _NOW)  # 79% / 60%
     assert sends == []
-    scheduled_log._maybe_alert_resolved(_snap(0.70, 0.60), _NOW)   # 70% / 60%
+    scheduled_log._maybe_alert_resolved(_snap(0.80, 0.60), _NOW)   # 80% / 60%
     assert len(sends) == 1
     assert sends[0][0] == "Dallas High Locked In"
-    assert "70% resolved" in sends[0][1] and "97" in sends[0][1]
+    assert "80% resolved" in sends[0][1] and "97" in sends[0][1]
 
 
 def test_high_and_low_independent(monkeypatch, tmp_path):
     sends = []
     _patch(monkeypatch, tmp_path, sends)
-    scheduled_log._maybe_alert_resolved(_snap(0.85, 0.50), _NOW)  # only high ≥70
+    scheduled_log._maybe_alert_resolved(_snap(0.85, 0.50), _NOW)  # only high ≥80
     assert [t for t, _ in sends] == ["Dallas High Locked In"]
-    scheduled_log._maybe_alert_resolved(_snap(0.90, 0.75), _NOW)  # low now ≥70
+    scheduled_log._maybe_alert_resolved(_snap(0.90, 0.85), _NOW)  # low now ≥80
     assert [t for t, _ in sends] == ["Dallas High Locked In", "Dallas Low Locked In"]
 
 
