@@ -8,15 +8,16 @@ minutes BEFORE the trough physically locked — then temps dropped 2-3°F into t
 next bracket. Real example: 2026-07-24 held ~82°F through 6:50, settled ~79.3.
 
 The guard: while today's low is not yet physically locked (`peak_locked` False),
-mark it `low_forming` so (a) the Resolved card shows only the physically ruled-out
-mass (strip the clock inflation), (b) lock_status refuses the green buy badge, and
-(c) sigma is floored so the bins hedge toward the still-possible colder readings.
+mark it `low_forming` so (a) lock_status refuses the green buy badge, and (b) sigma
+is floored so the bins hedge toward the still-possible colder readings. (The old
+Resolved-card 50% cap was removed 2026-07-26 — the card now shows the true % and
+the clock-free Hybrid drives the badge; the badge + sigma floor still hedge.)
 """
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import model
-from config import TIMEZONE, LOW_FORMING_SIGMA_MIN, LOW_FORMING_RESOLVED_CAP
+from config import TIMEZONE, LOW_FORMING_SIGMA_MIN
 from market_view import lock_status, displayed_resolved
 
 _TZ = ZoneInfo(TIMEZONE)
@@ -35,11 +36,11 @@ def _at(hour):
 
 # ---- displayed_resolved: strip clock inflation while forming --------------
 
-def test_displayed_resolved_strips_clock_inflation_while_forming():
-    # Both the clock term (0.90) and a high one-sided collapse must be capped:
-    # forming = definitionally unsettled, so the card reads "half-open".
+def test_displayed_resolved_not_capped_while_forming():
+    # Cap removed 2026-07-26: the card shows the true Resolved %, even while
+    # forming. The "still forming — wait" badge + sigma floor do the hedging now.
     d = {"resolved": 0.90, "resolved_collapse": 0.95, "low_forming": True}
-    assert displayed_resolved(d) == LOW_FORMING_RESOLVED_CAP
+    assert displayed_resolved(d) == 90
 
 
 def test_displayed_resolved_full_once_locked():
@@ -100,8 +101,6 @@ def test_predict_variable_flags_forming_and_floors_sigma():
     assert out["peak_locked"] is False
     assert out["low_forming"] is True
     assert out["sigma_used"] >= LOW_FORMING_SIGMA_MIN
-    # Card no longer over-reports: capped to the forming ceiling, not the clock.
-    assert displayed_resolved(out) <= LOW_FORMING_RESOLVED_CAP
 
 
 def test_predict_variable_locked_low_not_forming():

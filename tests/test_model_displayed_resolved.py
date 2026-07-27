@@ -29,8 +29,14 @@ def test_default_is_current_and_unchanged():
 def test_hybrid_reads_hybrid_field_and_is_capped():
     d = {"resolved_hybrid": 1.0, "convective_widened": True}
     assert model.displayed_resolved(d, "hybrid") == model.CONVECTIVE_RESOLVED_CAP
-    d2 = {"resolved_hybrid": 1.0, "low_forming": True}
-    assert model.displayed_resolved(d2, "hybrid") == model.LOW_FORMING_RESOLVED_CAP
+
+
+def test_low_forming_no_longer_caps_the_card():
+    # The dawn-low-forming 50% card cap was removed 2026-07-26; the card shows
+    # the true % (the "still forming" badge + sigma floor still hedge).
+    d = {"resolved_hybrid": 1.0, "low_forming": True}
+    assert model.displayed_resolved(d, "hybrid") == 100
+    assert model.displayed_resolved({"resolved": 0.9, "low_forming": True}) == 90
 
 
 def test_original_reads_orig_field_and_is_uncapped():

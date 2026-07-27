@@ -171,6 +171,11 @@ def _maybe_alert_resolved(snap: dict, now: datetime,
             d = (snap.get("today") or {}).get(var)
             if not d:
                 continue
+            # Dawn low still forming: the card's 50% cap was removed 2026-07-26,
+            # so the clock-inflated current `resolved` can cross 70% before the
+            # trough physically locks. Don't push "Low Locked In" until it does.
+            if d.get("low_forming"):
+                continue
             pct = model.displayed_resolved(d)
             if pct < RESOLVED_ALERT_PCT or state.get(var) == today:
                 continue
