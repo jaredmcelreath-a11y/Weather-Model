@@ -82,6 +82,25 @@ def best_side(p, yes_ask, no_ask):
     return (side, win, ask)
 
 
+def preferred_side(p, yes_ask, no_ask):
+    """Like `best_side` but WITHOUT requiring a positive edge: the side whose
+    (win_prob - ask) is largest, even when that is zero or negative. Used by the
+    shadow 'trade even without an edge' mode (params["require_edge"] == False) to
+    still pick a side to buy. None only when the model can't price the contract
+    (`p` is None) or neither side is quoted."""
+    if p is None:
+        return None
+    cands = []
+    if yes_ask is not None:
+        cands.append(("yes", p, yes_ask, p - yes_ask))
+    if no_ask is not None:
+        cands.append(("no", 1.0 - p, no_ask, (1.0 - p) - no_ask))
+    if not cands:
+        return None
+    side, win, ask, _edge = max(cands, key=lambda c: c[3])
+    return (side, win, ask)
+
+
 def optimal_size(ladder, q, bankroll, kelly_frac, side=""):
     """Recommended contract count on an ascending ask `ladder` for a binary
     contract with model win-prob `q`, sizing against `bankroll` at Kelly

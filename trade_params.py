@@ -27,7 +27,20 @@ DEFAULT_PARAMS: dict = {
     "max_price": 0.94,                    # skip asks >= this
     "min_price": 0.10,                    # skip asks < this
     "kelly_fraction": 0.25,
-    "per_market_cap": 0.50,               # dollars per bracket
+    # TEMPORARY (2026-07-27): edge requirement removed so the SHADOW run actually
+    # surfaces trades. With this False, a target bracket that clears the resolved
+    # + agreement + gate checks is bought (one contract, model-preferred side)
+    # even when there's no positive Kelly edge; when a real edge exists it still
+    # sizes by Kelly. RESTORE to True before scaling live sizing — no-edge buys
+    # are for observation, not real money. NOTE: per_market_cap still applies, so
+    # a single contract priced above the cap is still skipped.
+    "require_edge": False,
+    # Raised 0.50 -> 1.00 (2026-07-27, same shadow-visibility push as require_edge
+    # above): at $0.50 a single favorite contract (often $0.60-0.90) was clamped
+    # to 0, so the shadow run saw almost nothing. $1.00 clears one contract at any
+    # allowed price (max_price 0.94 + fee). RESTORE to a real risk budget before
+    # scaling live sizing.
+    "per_market_cap": 1.00,               # dollars per bracket
     "max_open_per_variable": 1,
     "daily_loss_cap": -5.00,              # dollars; None disables
     "stop_loss": 0.20,                    # ask drop from entry_ask that exits
@@ -36,7 +49,7 @@ DEFAULT_PARAMS: dict = {
     "market_close": "20:00",
 }
 
-_BOOL = {"kill_switch"}
+_BOOL = {"kill_switch", "require_edge"}
 _FLOAT = {"min_resolved", "agreement_tol", "max_price", "min_price",
           "kelly_fraction", "per_market_cap", "stop_loss", "slippage_cap"}
 _INT = {"max_open_per_variable"}

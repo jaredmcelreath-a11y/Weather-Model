@@ -114,10 +114,20 @@ def size_bracket(contract: dict, var_snap: dict, orderbook: dict, bankroll: floa
     if p is None:
         return {"side": "", "contracts": 0, "avg_price": None, "stake": 0.0,
                 "note": "model abstains (open tail)"}
-    pick = kelly.best_side(p, contract.get("yes_ask"), contract.get("no_ask"))
+    # `require_edge` False (shadow experiment) drops the positive-edge gate so a
+    # bracket that cleared the upstream checks still trades; when a real edge
+    # exists it's used and Kelly-sized as usual.
+    require_edge = params.get("require_edge", True)
+    yes_ask, no_ask = contract.get("yes_ask"), contract.get("no_ask")
+    pick = kelly.best_side(p, yes_ask, no_ask)
     if pick is None:
-        return {"side": "", "contracts": 0, "avg_price": None, "stake": 0.0,
-                "note": "no edge on either side"}
+        if require_edge:
+            return {"side": "", "contracts": 0, "avg_price": None, "stake": 0.0,
+                    "note": "no edge on either side"}
+        pick = kelly.preferred_side(p, yes_ask, no_ask)
+        if pick is None:
+            return {"side": "", "contracts": 0, "avg_price": None, "stake": 0.0,
+                    "note": "no priced side to buy"}
     side, win, ask = pick
     if ask >= params["max_price"] or ask < params["min_price"]:
         return {"side": side, "contracts": 0, "avg_price": None, "stake": 0.0,
@@ -128,6 +138,12 @@ def size_bracket(contract: dict, var_snap: dict, orderbook: dict, bankroll: floa
     sizing = kelly.optimal_size(ladder, win, bankroll, params["kelly_fraction"],
                                 side=side)
     n = sizing.contracts
+    # With the edge gate off, a no-edge (or sub-Kelly) bracket sizes to a single
+    # shadow contract; the per-market cap below still bounds it.
+    note = sizing.note
+    if n <= 0 and not require_edge:
+        n = 1
+        note = "no-edge shadow entry (require_edge off)"
     # Clamp to the per-market dollar cap.
     while n > 0 and (kelly.cost_to_buy(ladder, n) or 1e9) > params["per_market_cap"]:
         n -= 1
@@ -136,4 +152,4 @@ def size_bracket(contract: dict, var_snap: dict, orderbook: dict, bankroll: floa
                 "note": "cap or book leaves 0 contracts"}
     stake = kelly.cost_to_buy(ladder, n)
     return {"side": side, "contracts": n, "avg_price": stake / n, "stake": stake,
-            "note": sizing.note}
+            "note": note}

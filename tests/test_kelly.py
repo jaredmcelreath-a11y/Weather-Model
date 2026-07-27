@@ -76,6 +76,22 @@ def test_best_side_ignores_missing_ask():
     assert kelly.best_side(0.65, 0.55, None) == ("yes", 0.65, 0.55)
 
 
+def test_preferred_side_picks_least_bad_when_no_edge():
+    # No positive edge either way; preferred_side returns the side with the
+    # larger (win - ask), for the shadow 'trade without edge' mode.
+    # YES least-bad: yes 0.60-0.62=-0.02 beats no 0.40-0.50=-0.10.
+    assert kelly.preferred_side(0.60, 0.62, 0.50) == ("yes", 0.60, 0.62)
+    # NO least-bad: yes 0.60-0.90=-0.30, no 0.40-0.45=-0.05 -> no.
+    assert kelly.preferred_side(0.60, 0.90, 0.45) == ("no", 0.40, 0.45)
+
+
+def test_preferred_side_none_only_when_unpriceable():
+    assert kelly.preferred_side(None, 0.50, 0.50) is None   # model can't price
+    assert kelly.preferred_side(0.60, None, None) is None   # no asks at all
+    # one ask present -> that side is returned even with negative edge.
+    assert kelly.preferred_side(0.60, 0.95, None) == ("yes", 0.60, 0.95)
+
+
 def test_optimal_size_recommends_within_ceiling():
     # Flat deep book at 55c, q=0.65: every contract is +EV until bankroll/ceiling.
     ladder = [(0.55, 1000)]

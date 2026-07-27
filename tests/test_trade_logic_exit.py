@@ -55,3 +55,46 @@ def test_size_bracket_respects_price_ceiling():
                                   "kelly_fraction": 0.25, "per_market_cap": 0.50})
     assert out["contracts"] == 0
     assert "price" in out["note"].lower()
+
+
+# --- require_edge: no-edge shadow entry -------------------------------------
+
+# A bracket the model prices at p=0.60 with NO edge either side: yes 0.60-0.65<0,
+# no 0.40-0.42<0. The least-bad side is NO (edge -0.02 > yes -0.05); its 0.42 ask
+# (cheap enough for one contract under the $0.50 cap) comes from a resting YES bid
+# at 0.58 (no_ask = 1 - yes_bid).
+_NO_EDGE_CONTRACT = {"ticker": "B", "strike_type": "between", "floor": 90, "cap": 90,
+                     "yes_ask": 0.65, "no_ask": 0.42}
+_NO_EDGE_SNAP = {"probabilities": {"90": 0.60}}
+_NO_EDGE_BOOK = {"yes": [[0.58, 100]], "no": []}   # ask_ladder(no) -> [(0.42, 100)]
+_BASE_PARAMS = {"max_price": 0.94, "min_price": 0.10, "kelly_fraction": 0.25,
+                "per_market_cap": 0.50}
+
+
+def test_size_bracket_no_edge_skips_when_require_edge_default():
+    # Default (key absent -> require_edge True): the edge gate still blocks.
+    out = tl.size_bracket(_NO_EDGE_CONTRACT, _NO_EDGE_SNAP, _NO_EDGE_BOOK,
+                          bankroll=10.0, params=_BASE_PARAMS)
+    assert out["contracts"] == 0
+    assert "edge" in out["note"].lower()
+
+
+def test_size_bracket_no_edge_trades_one_when_require_edge_off():
+    # require_edge False: a no-edge bracket still buys a single shadow contract
+    # on the model-preferred (least-bad) side, within price bounds and the cap.
+    out = tl.size_bracket(_NO_EDGE_CONTRACT, _NO_EDGE_SNAP, _NO_EDGE_BOOK,
+                          bankroll=10.0, params={**_BASE_PARAMS, "require_edge": False})
+    assert out["side"] == "no"
+    assert out["contracts"] == 1
+    assert out["avg_price"] is not None
+
+
+def test_size_bracket_require_edge_off_still_respects_per_market_cap():
+    # A single contract priced above the $0.50 cap is still blocked even with the
+    # edge requirement off — removing the edge gate is not removing the cap.
+    dear = {"ticker": "C", "strike_type": "between", "floor": 90, "cap": 90,
+            "yes_ask": 0.60, "no_ask": 0.42}
+    book = {"yes": [], "no": [[0.40, 100]]}          # ask_ladder(yes) -> [(0.60, 100)]
+    out = tl.size_bracket(dear, _NO_EDGE_SNAP, book, bankroll=10.0,
+                          params={**_BASE_PARAMS, "require_edge": False})
+    assert out["contracts"] == 0
