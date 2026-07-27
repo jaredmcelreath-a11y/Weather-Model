@@ -26,7 +26,10 @@ DEFAULT_PARAMS: dict = {
     "agreement_tol": 1.0,                 # °F
     "max_price": 0.94,                    # skip asks >= this
     "min_price": 0.10,                    # skip asks < this
-    "kelly_fraction": 0.25,
+    # kelly_fraction retired 2026-07-27: shadow entries are uniform single
+    # contracts (see require_edge below / trade_logic.size_bracket), so there is
+    # no fraction to tune. size_bracket keeps an internal 0.25 fallback for the
+    # dormant edge-sizing path.
     # TEMPORARY (2026-07-27): edge requirement removed so the SHADOW run actually
     # surfaces trades. With this False, a target bracket that clears the resolved
     # + agreement + gate checks is bought (one contract, model-preferred side)
@@ -51,7 +54,7 @@ DEFAULT_PARAMS: dict = {
 
 _BOOL = {"kill_switch", "require_edge"}
 _FLOAT = {"min_resolved", "agreement_tol", "max_price", "min_price",
-          "kelly_fraction", "per_market_cap", "stop_loss", "slippage_cap"}
+          "per_market_cap", "stop_loss", "slippage_cap"}
 _INT = {"max_open_per_variable"}
 
 

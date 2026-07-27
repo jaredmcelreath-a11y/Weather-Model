@@ -89,6 +89,21 @@ def test_size_bracket_no_edge_trades_one_when_require_edge_off():
     assert out["avg_price"] is not None
 
 
+def test_size_bracket_require_edge_off_is_uniform_single_contract():
+    # Even with a strong edge and a deep book, relaxed mode buys exactly one
+    # contract — Kelly sizing (and its fraction) no longer applies, so the params
+    # need not even carry a kelly_fraction.
+    c = {"ticker": "D", "strike_type": "between", "floor": 90, "cap": 90,
+         "yes_ask": 0.30, "no_ask": 0.75}
+    snap = {"probabilities": {"90": 0.60}}         # yes edge +0.30, deep book
+    book = {"yes": [], "no": [[0.70, 100]]}        # ask_ladder(yes) -> [(0.30, 100)]
+    out = tl.size_bracket(c, snap, book, bankroll=10.0,
+                          params={"max_price": 0.94, "min_price": 0.10,
+                                  "per_market_cap": 1.00, "require_edge": False})
+    assert out["side"] == "yes"
+    assert out["contracts"] == 1
+
+
 def test_size_bracket_require_edge_off_still_respects_per_market_cap():
     # A single contract priced above the $0.50 cap is still blocked even with the
     # edge requirement off — removing the edge gate is not removing the cap.

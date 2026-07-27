@@ -20,6 +20,14 @@ def test_defaults_are_safe():
     assert d["require_edge"] is False
 
 
+def test_kelly_fraction_removed_from_params():
+    # Retired as a user-facing param (2026-07-27): shadow entries are uniform
+    # single contracts, so the Kelly fraction no longer applies.
+    assert "kelly_fraction" not in tp.DEFAULT_PARAMS
+    # a stored kelly_fraction is now an unknown key and dropped on merge.
+    assert "kelly_fraction" not in tp.merge_params({"kelly_fraction": 0.5})
+
+
 def test_merge_fills_defaults_and_drops_unknown():
     merged = tp.merge_params({"max_price": 0.80, "bogus": 1})
     assert merged["max_price"] == 0.80       # override kept
