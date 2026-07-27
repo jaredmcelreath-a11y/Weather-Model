@@ -1232,17 +1232,27 @@ def _storm_status(today, now, station: str = config.DEFAULT_STATION):
 CONVECTIVE_RESOLVED_CAP = 90
 
 
-def displayed_resolved(d):
+def displayed_resolved(d, which: str = "current"):
     """Resolved % for the metric card, clamped on a convective- or front-risk day.
+
+    `which` selects the formula for the live three-way comparison:
+      "current"  -> d["resolved"]        (capped)  [default; existing callers]
+      "hybrid"   -> d["resolved_hybrid"] (capped)  [the live headline number]
+      "original" -> d["resolved_orig"]   (UNCAPPED; faithful to a month ago)
 
     `resolved` measures how much of the *diurnal* uncertainty is settled and hits
     100% once the extreme's window closes. But on a storm day the low's daily min
     can still be reset lower by evening convection (convective.py), or when a forecast
     front is active, the low may be undercut by a colder post-noon reading — either way,
     a locked dawn trough is not a resolved low. Cap the display so the metric stops
-    contradicting the risk caption. Display-only — the raw `resolved` and the
-    probabilities are untouched."""
-    pct = int(d.get("resolved", 1 - d.get("locked_ratio", 0.0)) * 100)
+    contradicting the risk caption. Display-only — the raw fields and the
+    probabilities are untouched. The original formula keeps its month-ago identity
+    (uncapped) so the comparison shows each as it really behaves."""
+    key = {"current": "resolved", "hybrid": "resolved_hybrid",
+           "original": "resolved_orig"}[which]
+    pct = int(d.get(key, 1 - d.get("locked_ratio", 0.0)) * 100)
+    if which == "original":
+        return pct
     if d.get("convective_widened") or d.get("front_widened"):
         pct = min(pct, CONVECTIVE_RESOLVED_CAP)
     # Dawn low still forming: the `resolved` clock term (tprog, midnight->9am)
