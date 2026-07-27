@@ -11,6 +11,7 @@ from __future__ import annotations
 import streamlit as st
 
 import betting_log
+import config
 import edge_report
 import market_view
 import settlements
@@ -100,12 +101,10 @@ def _edge_rows(metrics: dict) -> list[dict]:
     return rows
 
 
-def render():
+def render(station: str = config.DEFAULT_STATION):
     import pandas as pd
 
-    market_view._theme_controls()  # sidebar Settings (theme picker) + injects theme
-    st.title("Edge")
-
+    # Body-only: the page function owns the title + theme controls (drawn once).
     # --- Part A: forecast edge vs. market (needs no credentials) ---
     st.subheader("Forecast Edge vs. Market")
     st.caption(
@@ -114,8 +113,9 @@ def render():
         "matter are **boundary** days — consensus near a Kalshi bin edge — where a "
         "small error flips the bet.")
     try:
-        rows = betting_log.load()
-        data = assemble(rows, settlements.as_map("cli"), settlements.as_map("hourly"))
+        rows = betting_log.load(station=station)
+        data = assemble(rows, settlements.as_map("cli", station=station),
+                        settlements.as_map("hourly", station=station))
     except Exception:
         data = {"headline": {"n": 0}, "metrics": {}}
     head = data["headline"]

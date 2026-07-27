@@ -376,7 +376,13 @@ def hourly_page():
 
 
 def edge_page():
-    edge_view.render()
+    market_view._theme_controls()
+    st.title("Edge")
+    sel, codes = city_view.city_sections("edge", arity=3)
+    for code in codes:
+        if sel == "Both":
+            st.subheader(city_view.display_name(code))
+        edge_view.render(station=code)
 
 
 def journal_page():

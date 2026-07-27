@@ -106,6 +106,11 @@ def test_edge_view_exposes_render():
     assert callable(edge_view.render)
 
 
+def test_render_accepts_station():
+    import edge_view
+    edge_view.render(station="KAUS")   # no settled Austin rows -> "Accumulating", no raise
+
+
 def test_edge_rows_shows_volume_and_thin_marker():
     import edge_view
     metrics = {
