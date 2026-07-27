@@ -1,0 +1,20 @@
+{
+  "agreement_tol": 1.0,
+  "daily_loss_cap": -5.0,
+  "enabled_variables": [
+    "high",
+    "low"
+  ],
+  "kelly_fraction": 0.25,
+  "kill_switch": false,
+  "market_close": "20:00",
+  "market_open": "06:00",
+  "max_open_per_variable": 1,
+  "max_price": 0.94,
+  "min_price": 0.1,
+  "min_resolved": 0.7,
+  "mode": "shadow",
+  "per_market_cap": 0.5,
+  "slippage_cap": 0.02,
+  "stop_loss": 0.2
+}
