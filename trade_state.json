@@ -5,7 +5,6 @@
     "high",
     "low"
   ],
-  "kelly_fraction": 0.25,
   "kill_switch": false,
   "market_close": "20:00",
   "market_open": "06:00",
