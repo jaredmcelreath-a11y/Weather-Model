@@ -28,7 +28,7 @@ from config import (BIN_HIGH, BIN_LOW, CACHE_TTL_SECONDS, CALM_WIND_MAX,
                     FRONT_SIGMA_MIN,
                     FRONT_UNDERCUT_MARGIN, HIGH_BUMPY_STD, HIGH_LOCK_DROP,
                     HIGH_LOCK_NOON_OFFSET_HOURS, HIGH_PLATEAU_MAX,
-                    LEAD_SIGMA_INFLATION, LOW_FORMING_RESOLVED_CAP,
+                    LEAD_SIGMA_INFLATION,
                     LOW_FORMING_SIGMA_MIN, LOW_LOCK_RISE, MAX_CLI_GAP,
                     PEAK_LOCK_DROP, TIMEZONE, bin_labels, lead_bucket)
 from settlement import (climate_day_of, covers_extreme, local_day_bounds,
@@ -1255,12 +1255,9 @@ def displayed_resolved(d, which: str = "current"):
         return pct
     if d.get("convective_widened") or d.get("front_widened"):
         pct = min(pct, CONVECTIVE_RESOLVED_CAP)
-    # Dawn low still forming: the `resolved` clock term (tprog, midnight->9am)
-    # inflates the card toward 90% before the trough is physically in — and the
-    # one-sided `collapse` mass is high too whenever the reading sits below the
-    # forecast mean, though neither means the min has landed. Until the trough
-    # locks the low is definitionally unsettled (it can still dip 2-3°F), so cap
-    # the card at "half-open, wait". Older snapshots lack the flag and are untouched.
-    if d.get("low_forming"):
-        pct = min(pct, LOW_FORMING_RESOLVED_CAP)
+    # NOTE: the dawn-low-forming 50% card cap was removed 2026-07-26 — the card
+    # now shows the true %, the clock-free Hybrid drives the lock badge, and the
+    # `low_forming` sigma floor + "still forming — wait" badge still hedge. The
+    # 70% ntfy alert is gated on `low_forming` in scheduled_log instead, so it no
+    # longer fires prematurely on the clock-inflated current number.
     return pct

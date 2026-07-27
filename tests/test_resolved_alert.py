@@ -8,11 +8,12 @@ import scheduled_log
 _TZ = ZoneInfo(TIMEZONE)
 
 
-def _snap(high_res, low_res, high_c=97.0, low_c=80.0):
-    def _v(res, c):
-        return {"resolved": res, "consensus": c,
+def _snap(high_res, low_res, high_c=97.0, low_c=80.0, low_forming=False):
+    def _v(res, c, forming=False):
+        return {"resolved": res, "consensus": c, "low_forming": forming,
                 "convective_widened": False, "front_widened": False}
-    return {"today": {"high": _v(high_res, high_c), "low": _v(low_res, low_c)}}
+    return {"today": {"high": _v(high_res, high_c),
+                      "low": _v(low_res, low_c, low_forming)}}
 
 
 def _patch(monkeypatch, tmp_path, sends):
@@ -55,6 +56,18 @@ def test_once_per_day_then_rearms(monkeypatch, tmp_path):
     tomorrow = datetime(2026, 7, 22, 15, 0, tzinfo=_TZ)
     scheduled_log._maybe_alert_resolved(_snap(0.80, 0.80), tomorrow)
     assert len(sends) == 4  # re-armed next day
+
+
+def test_low_alert_suppressed_while_forming(monkeypatch, tmp_path):
+    # Removing the Resolved-card 50% cap (2026-07-26) let the clock-inflated
+    # current `resolved` cross 70% on a still-forming dawn low. Keep the "Low
+    # Locked In" push from firing until the trough physically locks.
+    sends = []
+    _patch(monkeypatch, tmp_path, sends)
+    scheduled_log._maybe_alert_resolved(_snap(0.50, 0.85, low_forming=True), _NOW)
+    assert sends == []                       # low is forming -> no push
+    scheduled_log._maybe_alert_resolved(_snap(0.50, 0.85, low_forming=False), _NOW)
+    assert [t for t, _ in sends] == ["Dallas Low Locked In"]
 
 
 def test_empty_state_file_does_not_block(monkeypatch, tmp_path):

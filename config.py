@@ -195,15 +195,6 @@ FRONT_SIGMA_MIN = 1.5   # °F; sigma floor while the front guard holds a locked
                         # agrees on the undercut and the raw sample spread
                         # collapses, the projection is still hours ahead.
 
-LOW_FORMING_RESOLVED_CAP = 50   # %; hard cap on the Resolved card while today's
-                                # dawn low is still forming. The `resolved` clock
-                                # term (tprog, midnight->9am) reads ~90% by 6:30,
-                                # and the one-sided `collapse` mass is high whenever
-                                # the reading sits below the forecast mean — but
-                                # neither means the min is IN. Until the trough
-                                # locks the low is definitionally unsettled (it can
-                                # still dip 2-3°F); show "half-open, wait", not 90%.
-
 LOW_FORMING_SIGMA_MIN = 1.5   # °F; sigma floor while TODAY's dawn low is still
                               # forming (past midnight, not yet physically locked
                               # per _extreme_locked). The summer minimum lands
