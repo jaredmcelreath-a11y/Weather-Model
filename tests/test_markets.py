@@ -269,6 +269,25 @@ def test_positions_for_filters_by_station():
     assert aus == [{"variable": "high", "event_date": "2026-07-27", "station": "KAUS"}]
 
 
+def test_consensus_history_threads_station(monkeypatch):
+    # The "Consensus Through the Day" chart must load the requested station's
+    # intraday history, not always the KDFW default — otherwise the Austin page
+    # charts Dallas's consensus track.
+    import market_view
+    import consensus_log
+    import config
+    seen = {}
+
+    def fake_load(path=None, station=config.DEFAULT_STATION):
+        seen["station"] = station
+        return []
+
+    monkeypatch.setattr(consensus_log, "load", fake_load)
+    market_view._consensus_history.clear()
+    market_view._consensus_history("KAUS")
+    assert seen["station"] == "KAUS"
+
+
 def test_open_positions_tags_station(monkeypatch):
     # Each open position must carry the station derived from its ticker so the
     # per-city filter can route it to the right page.

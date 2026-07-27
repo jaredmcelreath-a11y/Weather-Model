@@ -722,11 +722,13 @@ def _kalshi_implied(day_iso, station=config.DEFAULT_STATION):
 
 
 @st.cache_data(ttl=120, show_spinner=False)
-def _consensus_history():
-    """Cached intraday consensus samples (the whole file; filtered per chart)."""
+def _consensus_history(station=config.DEFAULT_STATION):
+    """Cached intraday consensus samples for `station` (the whole file; filtered
+    per chart). Must be routed by station or the Austin page charts Dallas's
+    consensus track."""
     import consensus_log
     try:
-        return consensus_log.load()
+        return consensus_log.load(station=station)
     except Exception:
         return []
 
@@ -1282,7 +1284,7 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
         cbox = st.container(border=True)
         cbox.markdown("**Consensus Through the Day**")
         is_today = (day_iso == today_iso)
-        hist = consensus_history_df(_consensus_history(), day_iso, variable,
+        hist = consensus_history_df(_consensus_history(station), day_iso, variable,
                                     adapter.basis, include_temp=is_today,
                                     is_today=is_today)
         if hist is not None:
