@@ -55,3 +55,8 @@ def test_accuracy_view_exposes_render():
     import accuracy_view
     assert hasattr(accuracy_view, "render")
     assert callable(accuracy_view.render)
+
+
+def test_render_accepts_station():
+    import accuracy_view
+    accuracy_view.render(lambda: (None, None), history_loader=None, station="KAUS")

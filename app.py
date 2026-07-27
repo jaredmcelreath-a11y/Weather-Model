@@ -423,7 +423,14 @@ def status_page():
 
 
 def accuracy_page():
-    accuracy_view.render(load_accuracy_kalshi, load_calibration_history)
+    market_view._theme_controls()
+    st.title("Accuracy")
+    sel, codes = city_view.city_sections("accuracy", arity=3)
+    for code in codes:
+        if sel == "Both":
+            st.subheader(city_view.display_name(code))
+        accuracy_view.render(lambda code=code: load_accuracy_kalshi(code),
+                             lambda code=code: load_calibration_history(code), station=code)
 
 
 def trader_page():
