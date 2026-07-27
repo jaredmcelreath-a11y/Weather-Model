@@ -146,6 +146,21 @@ def record(snapshot: dict, path: str | None = None, basis: str = "hourly",
                 "captured_at": captured,
                 "consensus": d.get("consensus"),
             }
+            # Three-way "Resolved" comparison (temporary experiment, 2026-07-26):
+            # persist the RAW (uncapped) values of all three formulas plus the
+            # terms + flags, so the winning formula can be picked from the logged
+            # intraday tracks. Reconstruct the capped display offline via
+            # model.displayed_resolved. Fields omitted when absent (older rows
+            # and calm days stay minimal; read via .get()).
+            for k in ("resolved_hybrid", "resolved", "resolved_orig",
+                      "resolved_collapse", "locked_ratio"):
+                v = d.get(k)
+                if v is not None:
+                    rec[k] = v
+            for flag in ("peak_locked", "low_forming",
+                         "convective_widened", "front_widened"):
+                if d.get(flag):
+                    rec[flag] = True
             # The live temperature at capture time, so today's chart can show the
             # actual reading converging on the predicted peak/trough. Only
             # meaningful for today — tomorrow's curve hasn't happened yet.
