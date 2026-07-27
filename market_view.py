@@ -1013,11 +1013,12 @@ def lock_status(d, variable):
     model's own read on whether the day's extreme is still ahead of us.
     """
     lr = d.get("locked_ratio", 1.0)
-    # Use the monotonic `resolved` field (same as the metric card via
-    # displayed_resolved), NOT 1 - locked_ratio: locked_ratio is momentary
-    # ensemble agreement that spikes and crashes, which made the green "prime
-    # buy window" badge flash then retract. Fall back to 1 - lr on older snapshots.
-    resolved = int(d.get("resolved", 1 - lr) * 100)
+    # Human-facing badge/captions read the HYBRID Resolved (the live number for
+    # the three-way comparison); the convective/front/low_forming branches below
+    # still gate the green "prime buy window". Fall back to 1 - lr on older
+    # snapshots that predate the hybrid field. (The current formula, for the card
+    # comparison, is d["resolved"]; automated consumers keep reading that.)
+    resolved = int(d.get("resolved_hybrid", 1 - lr) * 100)
     obs = d.get("observed_so_far")
     consensus = d["consensus"]
     floor = getattr(model, "_SIGMA_FLOOR", 0.7)
