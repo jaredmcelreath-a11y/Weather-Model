@@ -135,15 +135,19 @@ def size_bracket(contract: dict, var_snap: dict, orderbook: dict, bankroll: floa
                          f"[{params['min_price']},{params['max_price']})")}
     from sources import kalshi as _k
     ladder = _k.ask_ladder(orderbook, side)   # `orderbook` is the normalized book
-    sizing = kelly.optimal_size(ladder, win, bankroll, params["kelly_fraction"],
-                                side=side)
-    n = sizing.contracts
-    # With the edge gate off, a no-edge (or sub-Kelly) bracket sizes to a single
-    # shadow contract; the per-market cap below still bounds it.
-    note = sizing.note
-    if n <= 0 and not require_edge:
+    if require_edge:
+        # Live-sizing path: fractional Kelly against the book. kelly_fraction was
+        # retired as a user param (shadow runs use uniform sizing), so fall back
+        # to a sane 0.25 if some stored/live config re-enables the edge path.
+        sizing = kelly.optimal_size(ladder, win, bankroll,
+                                    params.get("kelly_fraction", 0.25), side=side)
+        n = sizing.contracts
+        note = sizing.note
+    else:
+        # Shadow experiment: uniform single-contract entries, no Kelly sizing.
+        # The per-market cap below still bounds (and can zero) it.
         n = 1
-        note = "no-edge shadow entry (require_edge off)"
+        note = "shadow entry (1 contract, no Kelly)"
     # Clamp to the per-market dollar cap.
     while n > 0 and (kelly.cost_to_buy(ladder, n) or 1e9) > params["per_market_cap"]:
         n -= 1

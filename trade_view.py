@@ -97,8 +97,6 @@ def render() -> None:
             "Per-Market Cap ($)", value=float(params["per_market_cap"]), step=0.25)
         params["stop_loss"] = st.slider("Stop-Loss (Ask Drop)", 0.05, 0.5,
                                         float(params["stop_loss"]), 0.05)
-        params["kelly_fraction"] = st.slider("Kelly Fraction", 0.05, 1.0,
-                                             float(params["kelly_fraction"]), 0.05)
 
     if st.button("Save Settings", use_container_width=True):
         params["kill_switch"] = killed
