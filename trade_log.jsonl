@@ -1,2 +1,3 @@
 {"ts": "2026-07-27T20:09:53.989801+00:00", "kind": "skip", "variable": "high", "reason": "resolved 53% < 65%", "mode": "shadow"}
 {"ts": "2026-07-27T20:09:54.853260+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTDAL-26JUL27-B79.5", "reason": "price 0.01 outside [0.1,0.92)", "mode": "shadow"}
+{"ts": "2026-07-27T20:38:25.359695+00:00", "kind": "skip", "variable": "high", "reason": "resolved 61% < 65%", "mode": "shadow"}
