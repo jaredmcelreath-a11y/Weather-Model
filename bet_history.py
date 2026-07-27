@@ -212,22 +212,29 @@ def open_unrealized(rows: list[dict]) -> float:
 def equity_curve_live(rows: list[dict], today) -> list[dict]:
     """The realized `equity_curve`, extended with a final LIVE point at `today` carrying
     today's still-open positions' unrealized P&L — so the last point moves with the
-    market. Today's weather settles tomorrow, so this is always a distinct point after
-    the realized weather-day points; it only appears when there's open exposure."""
+    market — and led by an opening-balance ANCHOR dot at the starting bankroll, dated the
+    day before the first trade. The anchor gives the line a visible origin: with a single
+    trade day there'd otherwise be just one point and no slope, so you couldn't see the
+    account rise from (or fall below) where it started."""
     curve = equity_curve(rows)
     unreal = open_unrealized(rows)
-    if not unreal:
-        return curve
-    base = curve[-1]["total"] if curve else STARTING_BANKROLL
-    live = {"date": today, "total": base + unreal}
-    # Selling a contract about today's weather creates a realized point ALSO dated today
-    # (equity_curve buckets by weather day), so the "always distinct" assumption breaks:
-    # appending would emit a second point at the same date (an extra vertical step, and the
-    # open MTM appearing to lag a day until those positions settle). Fold the open MTM into
-    # that same-day point instead of duplicating it.
-    if curve and curve[-1]["date"] == today:
-        return curve[:-1] + [live]
-    return curve + [live]
+    if unreal:
+        base = curve[-1]["total"] if curve else STARTING_BANKROLL
+        live = {"date": today, "total": base + unreal}
+        # Selling a contract about today's weather creates a realized point ALSO dated
+        # today (equity_curve buckets by weather day), so the live point is not always
+        # distinct: appending would emit a second point at the same date (an extra
+        # vertical step, and the open MTM appearing to lag a day until those positions
+        # settle). Fold the open MTM into that same-day point instead of duplicating it.
+        if curve and curve[-1]["date"] == today:
+            curve = curve[:-1] + [live]
+        else:
+            curve = curve + [live]
+    if curve:
+        anchor = {"date": curve[0]["date"] - timedelta(days=1),
+                  "total": STARTING_BANKROLL}
+        curve = [anchor] + curve
+    return curve
 
 
 def period_table(rows: list[dict], period: str) -> list[dict]:

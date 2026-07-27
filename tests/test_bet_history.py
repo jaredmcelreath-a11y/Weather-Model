@@ -169,16 +169,18 @@ def test_open_unrealized_and_live_curve_point():
 
 
 def test_equity_curve_live_no_today_point_without_open_exposure():
-    # With no open positions, the live curve is just the realized weather-day points —
-    # it does not tack on a flat point at `today`.
+    # With no open positions, the live curve is just the realized weather-day points
+    # (led by the opening-balance anchor) — it does not tack on a flat point at `today`.
     fills = [_fill("t1", "KXHIGHTDAL-26JUN22-B97", "yes", "buy", 10, 0.42, 22)]
     settlements = {"KXHIGHTDAL-26JUN22-B97":
                    {"result": "yes", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc),
                     "revenue": 10.0}}
     rows = bh.build_rows(fills, settlements, META)
     curve = bh.equity_curve_live(rows, date(2026, 6, 24))
-    assert [c["date"] for c in curve] == [date(2026, 6, 22)]
-    assert round(curve[0]["total"], 2) == 15.80
+    # anchor (Jun 21, $10 start) then the realized Jun 22 point; no `today` point.
+    assert [c["date"] for c in curve] == [date(2026, 6, 21), date(2026, 6, 22)]
+    assert round(curve[0]["total"], 2) == 10.00       # anchor = starting bankroll
+    assert round(curve[-1]["total"], 2) == 15.80
 
 
 def test_live_point_merges_with_same_day_realized_sell():
@@ -196,8 +198,24 @@ def test_live_point_merges_with_same_day_realized_sell():
         if r["status"] == "open":
             r["current_value"] = 0.60                 # entry 0.40, qty 5 -> +$1.00 unreal
     curve = bh.equity_curve_live(rows, date(2026, 6, 24))
-    assert [c["date"] for c in curve] == [date(2026, 6, 24)]   # exactly one point, no dup
+    # anchor (Jun 23) then exactly one trade point at Jun 24, no dup.
+    assert [c["date"] for c in curve] == [date(2026, 6, 23), date(2026, 6, 24)]
     assert round(curve[-1]["total"], 2) == 12.00              # 10 + 1.00 realized + 1.00 MTM
+
+
+def test_live_curve_leads_with_opening_balance_anchor():
+    # A single trade day yields one trade point; the live curve prepends an anchor dot at
+    # the starting bankroll dated the day before, so the line has a visible origin to rise
+    # from (10.71 -> 11.31 in production; $10 here under the pinned bankroll).
+    fills = [_fill("t1", "KXHIGHTDAL-26JUN22-B97", "yes", "buy", 10, 0.42, 22)]  # +5.80
+    settlements = {"KXHIGHTDAL-26JUN22-B97":
+                   {"result": "yes", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc),
+                    "revenue": 10.0}}
+    rows = bh.build_rows(fills, settlements, META)
+    curve = bh.equity_curve_live(rows, date(2026, 6, 24))
+    assert [c["date"] for c in curve] == [date(2026, 6, 21), date(2026, 6, 22)]
+    assert round(curve[0]["total"], 2) == 10.00       # anchor sits on the starting bankroll
+    assert curve[1]["total"] > curve[0]["total"]      # line rises from the anchor
 
 
 def test_closed_by_early_sell_is_realized_not_open():
