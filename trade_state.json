@@ -12,7 +12,7 @@
   "max_open_per_variable": 1,
   "max_price": 0.94,
   "min_price": 0.1,
-  "min_resolved": 0.75,
+  "min_resolved": 0.7,
   "mode": "shadow",
   "per_market_cap": 0.5,
   "slippage_cap": 0.02,
