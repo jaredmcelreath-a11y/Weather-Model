@@ -380,7 +380,13 @@ def edge_page():
 
 
 def journal_page():
-    journal_view.render(load_journal)
+    market_view._theme_controls()
+    st.title("Journal")
+    sel, codes = city_view.city_sections("journal", arity=3)
+    for code in codes:
+        if sel == "Both":
+            st.subheader(city_view.display_name(code))
+        journal_view.render(lambda code=code: load_journal(code), station=code)
 
 
 def lab_page():
