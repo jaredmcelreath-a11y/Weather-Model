@@ -226,8 +226,10 @@ def render():
                         f'~{"+" if u >= 0 else "−"}${abs(u):,.2f}</span>')
         else:
             pnl_cell = _fmt_pnl(r["pnl"])
+        station = bet_history.ticker_station(r["ticker"])
         disp.append({
             "Date": r["first_ts"].strftime("%b %-d"),
+            "City": city_view.display_name(station) if station else "—",
             "Contract": r["label"], "Side": r["side"].capitalize(),
             "Entry": market_view.cents(r["entry"]),
             "Exit": market_view.cents(exit_val),
