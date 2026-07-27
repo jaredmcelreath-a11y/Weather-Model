@@ -18,3 +18,21 @@ def test_capped_on_convective_or_front():
 
 def test_partial_uncapped():
     assert model.displayed_resolved(_d(0.72)) == 72
+
+
+def test_default_is_current_and_unchanged():
+    d = {"resolved": 0.72}
+    assert model.displayed_resolved(d) == 72
+    assert model.displayed_resolved(d, "current") == 72
+
+
+def test_hybrid_reads_hybrid_field_and_is_capped():
+    d = {"resolved_hybrid": 1.0, "convective_widened": True}
+    assert model.displayed_resolved(d, "hybrid") == model.CONVECTIVE_RESOLVED_CAP
+    d2 = {"resolved_hybrid": 1.0, "low_forming": True}
+    assert model.displayed_resolved(d2, "hybrid") == model.LOW_FORMING_RESOLVED_CAP
+
+
+def test_original_reads_orig_field_and_is_uncapped():
+    d = {"resolved_orig": 1.0, "convective_widened": True, "low_forming": True}
+    assert model.displayed_resolved(d, "original") == 100

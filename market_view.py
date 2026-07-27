@@ -138,6 +138,14 @@ def _inject_theme(name):
         "[class*=\"st-key-mini_\"] .wxcard{padding:0.5rem 0.4rem 0.55rem!important;}"
         "[class*=\"st-key-mini_\"] .wxcard-v{font-size:1.1rem!important;}"
         "[class*=\"st-key-mini_\"] .wxcard-l{font-size:0.66rem!important;white-space:nowrap!important;}"
+        # Row-1 Consensus|Spread pair: keep the two side by side on phones (50/50)
+        "[class*=\"st-key-pair_\"] [data-testid=\"stHorizontalBlock\"]"
+        "{flex-wrap:nowrap!important;gap:0.35rem!important;}"
+        "[class*=\"st-key-pair_\"] [data-testid=\"stColumn\"]"
+        "{flex:1 1 50%!important;min-width:0!important;width:50%!important;}"
+        "[class*=\"st-key-pair_\"] .wxcard{padding:0.5rem 0.4rem 0.55rem!important;}"
+        "[class*=\"st-key-pair_\"] .wxcard-v{font-size:1.1rem!important;}"
+        "[class*=\"st-key-pair_\"] .wxcard-l{font-size:0.66rem!important;white-space:nowrap!important;}"
         # On phones these metrics sit in multi-column grids, where a card-relative tooltip
         # runs off the left/right screen edge. Pin it to a fixed full-width bottom sheet
         # (8px insets) so it always stays fully on-screen, whichever box you tap.
@@ -1005,11 +1013,12 @@ def lock_status(d, variable):
     model's own read on whether the day's extreme is still ahead of us.
     """
     lr = d.get("locked_ratio", 1.0)
-    # Use the monotonic `resolved` field (same as the metric card via
-    # displayed_resolved), NOT 1 - locked_ratio: locked_ratio is momentary
-    # ensemble agreement that spikes and crashes, which made the green "prime
-    # buy window" badge flash then retract. Fall back to 1 - lr on older snapshots.
-    resolved = int(d.get("resolved", 1 - lr) * 100)
+    # Human-facing badge/captions read the HYBRID Resolved (the live number for
+    # the three-way comparison); the convective/front/low_forming branches below
+    # still gate the green "prime buy window". Fall back to 1 - lr on older
+    # snapshots that predate the hybrid field. (The current formula, for the card
+    # comparison, is d["resolved"]; automated consumers keep reading that.)
+    resolved = int(d.get("resolved_hybrid", 1 - lr) * 100)
     obs = d.get("observed_so_far")
     consensus = d["consensus"]
     floor = getattr(model, "_SIGMA_FLOOR", 0.7)
@@ -1214,9 +1223,10 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
         if d is None:
             st.warning("No data.")
             return
-        # keyed so a mobile CSS rule keeps these three on one row (not stacked)
-        with st.container(key=f"mini_{variable}"):
-            c1, c2, c3 = st.columns(3)
+        # Row 1: Consensus | Spread (keyed so a mobile CSS rule keeps the pair
+        # on one row rather than stacking).
+        with st.container(key=f"pair_{variable}"):
+            c1, c2 = st.columns(2)
         c1.markdown(metric_card("Consensus", f"{d['consensus']}°F"), unsafe_allow_html=True)
         c2.markdown(metric_card("Spread", f"{d['sigma_used']}°F (±1σ)",
                     "One standard deviation of the model's forecast — its error "
@@ -1225,10 +1235,23 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
                     "what turns the consensus into contract probabilities. It gets "
                     "inflated for day-ahead forecasts until the scoring log matures."),
                     unsafe_allow_html=True)
-        locked_pct = displayed_resolved(d)
-        c3.markdown(metric_card("Resolved", f"{locked_pct}%",
-                    "How much of the day's uncertainty is already settled by "
-                    "observations. 100% ≈ the extreme has happened."),
+        # Row 2 (TEMPORARY three-way Resolved comparison, 2026-07-26): Hybrid is
+        # the live number (drives the lock badge + captions); Current + Original
+        # are shown to pick a winner over the next few days. Collapse back to a
+        # single "Resolved" once chosen. Container keyed `mini_...` so it reuses
+        # the existing trio CSS that holds three on one row on phones.
+        st.caption("Resolved — comparing three formulas (temporary). Hybrid is the live number.")
+        with st.container(key=f"mini_resolved3_{variable}"):
+            r1, r2, r3 = st.columns(3)
+        r1.markdown(metric_card("Hybrid", f"{displayed_resolved(d, 'hybrid')}%",
+                    "Convergence-driven Resolved — the live number. Rises as the "
+                    "models collapse onto the extreme; no time-of-day component."),
+                    unsafe_allow_html=True)
+        r2.markdown(metric_card("Current", f"{displayed_resolved(d, 'current')}%",
+                    "The current monotonic Resolved (part clock-driven). Comparison only."),
+                    unsafe_allow_html=True)
+        r3.markdown(metric_card("Original", f"{displayed_resolved(d, 'original')}%",
+                    "The month-ago Resolved (1 − locked_ratio), uncapped. Comparison only."),
                     unsafe_allow_html=True)
         if d["observed_so_far"] is not None:
             obs_line = f"Observed so far: {d['observed_so_far']:.1f}°F (hourly, hard bound)"
