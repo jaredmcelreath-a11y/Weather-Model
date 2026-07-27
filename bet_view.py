@@ -17,6 +17,7 @@ _log = logging.getLogger("bet_view")
 import bet_history
 import betting_log
 import calibration
+import city_view
 import consensus_log
 import market_view
 from sources import kalshi_auth, kalshi_portfolio
@@ -24,8 +25,11 @@ from sources import kalshi_auth, kalshi_portfolio
 
 @st.cache_data(ttl=60, show_spinner="Loading your Kalshi bets…")
 def _load_bets():
-    """Fetch + assemble + annotate. Returns (rows, summary, curve, balance). Cached
-    ~60s. Raises KalshiCredentialsError when creds are absent (handled by caller)."""
+    """Fetch + assemble + annotate the WHOLE account's bets. Returns (rows, balance):
+    every city's rows (marked to market) plus the account-wide portfolio value. The
+    city toggle filters `rows` in render() — the network fetch stays account-wide and
+    cached ~60s regardless of which city is shown. Raises KalshiCredentialsError when
+    creds are absent (handled by caller)."""
     fills = kalshi_portfolio.fills(bet_history.BETS_START)
     settlements = kalshi_portfolio.settlements(bet_history.BETS_START)
     meta = {t: kalshi_portfolio.market_meta(t) for t in {f["ticker"] for f in fills}}
@@ -39,11 +43,12 @@ def _load_bets():
             r["current_value"] = kalshi_portfolio.market_price(r["ticker"], r["side"])
     # Portfolio value = cash + the live market value of open positions (qty × current
     # bid), matching Kalshi's portfolio total — so it doesn't drop when you place a bet.
+    # Account-wide (cash is one shared balance, not attributable to a city), so it stays
+    # the same no matter which city the toggle shows.
     open_mv = sum(r["qty"] * r["current_value"] for r in rows
                   if r["status"] == "open" and r.get("current_value") is not None)
     portfolio = (kalshi_portfolio.balance() or 0.0) + open_mv
-    return (rows, bet_history.summary(rows),
-            bet_history.equity_curve_live(rows, date.today()), portfolio)
+    return rows, portfolio
 
 
 def equity_chart(curve, color):
@@ -120,8 +125,14 @@ def render():
     market_view._theme_controls()  # sidebar Settings (theme picker) + injects theme
     st.title("History")
 
+    # City toggle (Dallas / Austin / Both, default Both) — filters EVERYTHING below
+    # (metrics, chart, trade table, and the per-period tabs) except the account-wide
+    # Portfolio card. Cheap: the account fetch is cached; this just re-slices `rows`.
+    choice = city_view.city_control("history", arity=3)
+    codes = city_view.codes_for(choice)
+
     try:
-        rows, summ, curve, balance = _load_bets()
+        rows_all, balance = _load_bets()
     except kalshi_auth.KalshiCredentialsError:
         st.info("Add your Kalshi API key to the app secrets to enable this page — "
                 "a `[kalshi]` section with `access_key_id` and `private_key`. "
@@ -144,9 +155,15 @@ def render():
                    "The rest of the dashboard is unaffected; try again shortly.")
         return
 
+    # Slice to the selected city (or all of them for "Both") and re-run the pure
+    # aggregations, so the chart, table and period tabs all re-scope from this one filter.
+    rows = bet_history.filter_by_station(rows_all, codes)
     if not rows:
-        st.caption(f"No Dallas-temp bets found since {bet_history.BETS_START:%b %-d, %Y}.")
+        where = "" if choice == "Both" else f"{choice} "
+        st.caption(f"No {where}temp bets found since {bet_history.BETS_START:%b %-d, %Y}.")
         return
+    summ = bet_history.summary(rows)
+    curve = bet_history.equity_curve_live(rows, date.today())
 
 
     # keyed 'top_metrics' so the same mobile CSS grids these 2-per-row (like the Forecast

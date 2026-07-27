@@ -381,6 +381,35 @@ def _ticker_date(ticker):
         return None
 
 
+def _station_by_series():
+    """{series_prefix -> station_code} built from config, e.g. 'KXHIGHTDAL' -> 'KDFW',
+    'KXHIGHAUS' -> 'KAUS'. Read from config (not hardcoded) so a third city's markets
+    are attributable the moment it's added there."""
+    import config
+    out = {}
+    for code in config.STATION_CODES:
+        s = config.station(code)
+        out[s.kalshi_high_series] = code
+        out[s.kalshi_low_series] = code
+    return out
+
+
+def ticker_station(ticker: str) -> str | None:
+    """Station code (e.g. 'KDFW'/'KAUS') a Kalshi ticker belongs to, by matching its
+    series prefix (the part before the first '-'). None for an unrecognized prefix —
+    such a bet then shows only in the combined ('Both') view, never in a single city."""
+    prefix = (ticker or "").split("-")[0]
+    return _station_by_series().get(prefix)
+
+
+def filter_by_station(rows: list[dict], codes: list[str]) -> list[dict]:
+    """The subset of `rows` whose ticker belongs to one of `codes`. Order-preserving,
+    so the newest-first sort from build_rows carries through. Passing every station
+    code returns every recognized row (unrecognized-prefix rows are dropped)."""
+    keep = set(codes)
+    return [r for r in rows if ticker_station(r["ticker"]) in keep]
+
+
 def annotate_rows(rows, betting_rows, consensus_rows, calib) -> None:
     for r in rows:
         p, edge, agree = model_at_bet(

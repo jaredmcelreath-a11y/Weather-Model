@@ -454,3 +454,35 @@ def test_period_summary_single_period():
 
 def test_period_summary_empty_returns_none():
     assert bh.period_summary([], 0.0) is None
+
+
+def test_ticker_station_maps_series_prefix_to_station():
+    # Dallas and Austin high/low series -> their station codes; junk -> None.
+    assert bh.ticker_station("KXHIGHTDAL-26JUN22-B97") == "KDFW"
+    assert bh.ticker_station("KXLOWTDAL-26JUN22-B72") == "KDFW"
+    assert bh.ticker_station("KXHIGHAUS-26JUN22-B97") == "KAUS"   # Austin high dropped the 'T'
+    assert bh.ticker_station("KXLOWTAUS-26JUN22-B72") == "KAUS"
+    assert bh.ticker_station("KXSOMETHINGELSE-26JUN22-B10") is None
+    assert bh.ticker_station("") is None
+
+
+def test_filter_by_station_splits_and_reconciles_to_both():
+    fills = [
+        _fill("t1", "KXHIGHTDAL-26JUN22-B97", "yes", "buy", 10, 0.42, 22),  # Dallas +5.80
+        _fill("t2", "KXHIGHAUS-26JUN22-B97", "yes", "buy", 10, 0.50, 22),   # Austin -5.00
+    ]
+    stl = {
+        "KXHIGHTDAL-26JUN22-B97": {"result": "yes", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc), "revenue": 10.0},
+        "KXHIGHAUS-26JUN22-B97": {"result": "no", "ts": datetime(2026, 6, 23, 6, tzinfo=timezone.utc), "revenue": 0.0},
+    }
+    rows = bh.build_rows(fills, stl, META)
+    dal = bh.filter_by_station(rows, ["KDFW"])
+    aus = bh.filter_by_station(rows, ["KAUS"])
+    both = bh.filter_by_station(rows, ["KDFW", "KAUS"])
+    assert len(dal) == 1 and dal[0]["ticker"].startswith("KXHIGHTDAL")
+    assert len(aus) == 1 and aus[0]["ticker"].startswith("KXHIGHAUS")
+    assert len(both) == 2                                   # union == all rows
+    # Per-city net P&L sums back to the combined net.
+    assert round(bh.summary(dal)["net_pnl"], 2) == 5.80
+    assert round(bh.summary(aus)["net_pnl"], 2) == -5.00
+    assert round(bh.summary(both)["net_pnl"], 2) == 0.80
