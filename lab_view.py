@@ -247,7 +247,7 @@ def render(lab_loader, snap=None, station: str = config.DEFAULT_STATION) -> None
         n = sum(g["n"] for g in h2h.values())
         pw = sum(g["prod_wins"] for g in h2h.values())
         cw = sum(g["cand_wins"] for g in h2h.values())
-        with st.container(key="metrics2_lab"):
+        with st.container(key=f"metrics2_lab_{station}"):
             c = st.columns(3)
         c[0].markdown(market_view.metric_card(
             "Scored Rows", str(n),

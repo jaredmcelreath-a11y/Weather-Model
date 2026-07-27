@@ -123,7 +123,7 @@ def render(station: str = config.DEFAULT_STATION):
         st.info("Accumulating — no settled betting-time rows yet. This fills in as "
                 "days settle (one day's lead after each slot).")
     else:
-        with st.container(key="metrics2_edge_a"):
+        with st.container(key=f"metrics2_edge_a_{station}"):
             c = st.columns(4)
         c[0].markdown(market_view.metric_card("Settled Slots", str(head["n"])),
                       unsafe_allow_html=True)
@@ -168,7 +168,7 @@ def render(station: str = config.DEFAULT_STATION):
 
     attr = pnl_attribution(bet_rows)
     wm, am = attr["with_market"], attr["against_market"]
-    with st.container(key="metrics2_edge_b"):
+    with st.container(key=f"metrics2_edge_b_{station}"):
         c = st.columns(2)
     c[0].markdown(market_view.metric_card(
         "Against-Market P&L", f"${am['net_pnl']:+.2f}",

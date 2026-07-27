@@ -130,7 +130,7 @@ def render(journal_loader, station: str = config.DEFAULT_STATION) -> None:
     def frac(pair):
         return f"{pair[0]}/{pair[1]}" if pair and pair[1] else _EM
 
-    with st.container(key="metrics2_journal"):
+    with st.container(key=f"metrics2_journal_{station}"):
         c = st.columns(4)
     c[0].markdown(market_view.metric_card(
         "High Hits (7d)", frac(s.get("high_hits7")),

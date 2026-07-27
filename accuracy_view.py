@@ -49,7 +49,7 @@ def render(load_accuracy, history_loader=None, station: str = config.DEFAULT_STA
         live = None
     if live and live.get("n_settled"):
         tiles = headline_tiles(live)
-        with st.container(key="metrics2_accuracy"):
+        with st.container(key=f"metrics2_accuracy_{station}"):
             cols = st.columns(len(tiles))
         for col, t in zip(cols, tiles):
             col.markdown(market_view.metric_card(t["label"], t["value"]),
