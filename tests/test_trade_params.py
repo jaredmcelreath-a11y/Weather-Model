@@ -13,8 +13,11 @@ def test_defaults_are_safe():
     assert d["max_price"] == 0.94
     assert d["min_resolved"] == 0.70
     assert d["agreement_tol"] == 1.0
-    assert d["per_market_cap"] == 0.50
+    assert d["per_market_cap"] == 1.00
     assert d["max_open_per_variable"] == 1
+    # Shadow-visibility experiment (2026-07-27): edge gate off so no-edge trades
+    # surface in the shadow run. Restore to True before scaling live sizing.
+    assert d["require_edge"] is False
 
 
 def test_merge_fills_defaults_and_drops_unknown():
