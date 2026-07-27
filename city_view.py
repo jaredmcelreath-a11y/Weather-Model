@@ -61,3 +61,14 @@ def city_control(page_key: str, arity: int = 2) -> str:
         st.session_state[f"city_{page_key}"] = choice
         return choice
     return codes_for(choice)[0]
+
+
+def city_sections(page_key: str, arity: int = 3) -> tuple[str, list[str]]:
+    """Render the control and return `(selection, codes)` for a page that loops
+    stations. For 3-way pages `selection` is one of Dallas/Austin/Both and the
+    page draws a `display_name` subheader per code only when selection == "Both".
+    For 2-way pages `city_control` already returns a code, so codes == [sel]."""
+    sel = city_control(page_key, arity)
+    if arity == 2:
+        return sel, [sel]                 # sel is already a code for 2-way
+    return sel, codes_for(sel)
