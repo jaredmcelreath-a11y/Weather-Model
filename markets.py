@@ -34,15 +34,18 @@ class MarketAdapter:
 
 
 @st.cache_data(ttl=30, show_spinner=False)
-def _rh_fetch(variable, day_iso):
-    """Live Robinhood (ForecastEx) 'Greater/Lower than T°' ladder."""
+def _rh_fetch(variable, day_iso, station=None):
+    """Live Robinhood (ForecastEx) 'Greater/Lower than T°' ladder. Robinhood is
+    KDFW-only, so `station` is accepted (to match the Kalshi fetch signature the
+    adapter calls through) but ignored."""
     return robinhood.fetch_ladder(variable, date.fromisoformat(day_iso))
 
 
 @st.cache_data(ttl=30, show_spinner=False)
-def _kx_fetch(variable, day_iso):
-    """Live Kalshi 2°F range-bucket contracts for Dallas."""
-    return kalshi.fetch_contracts(variable, date.fromisoformat(day_iso))
+def _kx_fetch(variable, day_iso, station=None):
+    """Live Kalshi 2°F range-bucket contracts for `station` (defaults to KDFW)."""
+    st_kw = {"station": station} if station else {}
+    return kalshi.fetch_contracts(variable, date.fromisoformat(day_iso), **st_kw)
 
 
 ROBINHOOD = MarketAdapter(

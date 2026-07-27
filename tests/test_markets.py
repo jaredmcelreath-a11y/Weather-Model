@@ -221,3 +221,73 @@ def test_consensus_history_df_future_day_windowed_to_target_day():
 def test_accuracy_note_kalshi_set_robinhood_none():
     assert ROBINHOOD.accuracy_note is None
     assert KALSHI.accuracy_note and "CLI" in KALSHI.accuracy_note
+
+
+# --- per-station market data threading (Austin must not show Dallas brackets) ---
+
+def test_kx_fetch_threads_station(monkeypatch):
+    # The Kalshi adapter fetch must fetch contracts for the requested station,
+    # not always the KDFW default — otherwise Austin shows Dallas's brackets.
+    import markets
+    seen = {}
+
+    def fake_fetch(variable, day, station=None):
+        seen["station"] = station
+        return []
+
+    monkeypatch.setattr(kalshi, "fetch_contracts", fake_fetch)
+    markets._kx_fetch.clear()
+    markets._kx_fetch("high", "2026-07-27", "KAUS")
+    assert seen["station"] == "KAUS"
+
+
+def test_kalshi_implied_threads_station(monkeypatch):
+    # The top "Kalshi High"/"Kalshi Low" metrics must reflect the page's station.
+    import market_view
+    seen = {}
+
+    def fake_implied(variable, day, station=None):
+        seen.setdefault("stations", []).append(station)
+        return None
+
+    monkeypatch.setattr(kalshi, "implied_forecast", fake_implied)
+    market_view._kalshi_implied("2026-07-27", "KAUS")
+    assert seen["stations"] == ["KAUS", "KAUS"]  # once per variable
+
+
+def test_positions_for_filters_by_station():
+    # Open-contracts section must only show positions in THIS city's market.
+    import market_view
+    positions = [
+        {"variable": "high", "event_date": "2026-07-27", "station": "KDFW"},
+        {"variable": "high", "event_date": "2026-07-27", "station": "KAUS"},
+        {"variable": "low", "event_date": "2026-07-27", "station": "KAUS"},
+    ]
+    dfw = market_view._positions_for(positions, "high", "2026-07-27", "KDFW")
+    assert dfw == [{"variable": "high", "event_date": "2026-07-27", "station": "KDFW"}]
+    aus = market_view._positions_for(positions, "high", "2026-07-27", "KAUS")
+    assert aus == [{"variable": "high", "event_date": "2026-07-27", "station": "KAUS"}]
+
+
+def test_open_positions_tags_station(monkeypatch):
+    # Each open position must carry the station derived from its ticker so the
+    # per-city filter can route it to the right page.
+    import market_view
+    import bet_history
+    import config
+    from sources import kalshi_portfolio
+
+    aus_high = config.station("KAUS").kalshi_high_series
+    row = {"ticker": f"{aus_high}-26JUL27-T96", "status": "open",
+           "variable": "high", "label": "96-97°", "side": "yes",
+           "entry": 0.5, "qty": 1.0}
+
+    monkeypatch.setattr(kalshi_portfolio, "fills", lambda start: [{"ticker": row["ticker"]}])
+    monkeypatch.setattr(kalshi_portfolio, "settlements", lambda start: {})
+    monkeypatch.setattr(kalshi_portfolio, "market_meta", lambda t: {})
+    monkeypatch.setattr(kalshi_portfolio, "market_price", lambda t, s: 0.6)
+    monkeypatch.setattr(bet_history, "build_rows", lambda f, s, m: [row])
+    monkeypatch.setattr(bet_history, "_ticker_date", lambda t: "2026-07-27")
+    market_view._open_positions.clear()
+    out = market_view._open_positions()
+    assert out and out[0]["station"] == "KAUS"

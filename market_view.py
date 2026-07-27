@@ -693,10 +693,10 @@ def _reliability_chart(rdf):
 
 
 @st.cache_data(ttl=30, show_spinner=False)
-def _kalshi_implied(day_iso):
-    """Kalshi's market-implied expected high/low for `day_iso`, distilled from
-    the live contract ladder — shown next to Current temp on both pages. None per
-    variable when no priced contracts are live.
+def _kalshi_implied(day_iso, station=config.DEFAULT_STATION):
+    """Kalshi's market-implied expected high/low for `day_iso` at `station`,
+    distilled from the live contract ladder — shown next to Current temp on both
+    pages. None per variable when no priced contracts are live.
 
     `as_of` is the wall-clock time the ladder was actually fetched (frozen with the
     cache entry, so it reflects the real fetch, not the render). The page shows it
@@ -706,7 +706,7 @@ def _kalshi_implied(day_iso):
     out = {"as_of": datetime.now(_TZ).strftime("%-I:%M:%S %p")}
     for var in ("high", "low"):
         try:
-            f = kalshi.implied_forecast(var, date.fromisoformat(day_iso))
+            f = kalshi.implied_forecast(var, date.fromisoformat(day_iso), station)
         except Exception:
             f = None
         out[var] = f["ev"] if f else None
@@ -1169,7 +1169,7 @@ def _open_positions():
     error, so the section simply hides. Read-only (authenticated portfolio feed)."""
     try:
         import bet_history
-        from sources import kalshi_portfolio
+        from sources import kalshi, kalshi_portfolio
         fills = kalshi_portfolio.fills(bet_history.BETS_START)
         settlements = kalshi_portfolio.settlements(bet_history.BETS_START)
         meta = {t: kalshi_portfolio.market_meta(t) for t in {f["ticker"] for f in fills}}
@@ -1179,14 +1179,25 @@ def _open_positions():
                 continue
             out.append({**r,
                         "current_value": kalshi_portfolio.market_price(r["ticker"], r["side"]),
-                        "event_date": bet_history._ticker_date(r["ticker"])})
+                        "event_date": bet_history._ticker_date(r["ticker"]),
+                        # Tag the owning station so each city's page shows only its
+                        # own open contracts (the portfolio feed returns both cities).
+                        "station": kalshi.station_of_ticker(r["ticker"])})
         return out
     except Exception:
         return []
 
 
+def _positions_for(positions, variable, day_iso, station):
+    """Open positions in one city's market (matching variable, day, and station)."""
+    return [p for p in positions
+            if p.get("variable") == variable and p.get("event_date") == day_iso
+            and p.get("station") == station]
+
+
 def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
-                    safe_min=None, today_iso=None, bankroll=None):
+                    safe_min=None, today_iso=None, bankroll=None,
+                    station=config.DEFAULT_STATION):
     if safe_min is None:
         safe_min = adapter.safe_hold_default
     with col:
@@ -1306,7 +1317,7 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
         mbox.markdown(adapter.heading(variable))
         if adapter.basis_note:
             mbox.caption(adapter.basis_note)
-        contracts = adapter.fetch(variable, day_iso)
+        contracts = adapter.fetch(variable, day_iso, station)
         if not contracts:
             mbox.caption(adapter.no_market_msg)
             return
@@ -1378,8 +1389,7 @@ def render_variable(col, title, d, variable, day_iso, adapter, featured=False,
         # Your open positions in THIS market (variable + day), marked to the live bid,
         # with the model's current probability for each. Hidden when you hold none here
         # (or no Kalshi creds). Read-only, from the authenticated portfolio feed.
-        open_here = [p for p in _open_positions()
-                     if p.get("variable") == variable and p.get("event_date") == day_iso]
+        open_here = _positions_for(_open_positions(), variable, day_iso, station)
         if open_here:
             obox = st.container(border=True)
             obox.markdown(f"**Your Open {variable.capitalize()} Contracts**")
@@ -1854,8 +1864,9 @@ def render_page(snap, calib, adapter, load_accuracy, recap_loader=None,
 
     st.title(page_title(snap))
 
+    station = snap.get("station", config.DEFAULT_STATION)
     cur = snap.get("current")
-    ki = _kalshi_implied(snap["today"]["day"])      # Kalshi market-implied hi/lo (today)
+    ki = _kalshi_implied(snap["today"]["day"], station)  # Kalshi market-implied hi/lo (today)
     # keyed container so a mobile-only CSS rule can grid these 6 boxes 2-per-row
     # (instead of Streamlit's one-per-row stack) without touching other columns.
     with st.container(key="top_metrics"):
@@ -1979,10 +1990,10 @@ def render_page(snap, calib, adapter, load_accuracy, recap_loader=None,
         low_box = st.container(key="wx_sec_low")
     render_variable(high_box, "High", pred["high"], "high", pred["day"], adapter,
                     featured=not feature_low, safe_min=safe_min, today_iso=today_iso,
-                    bankroll=bankroll)
+                    bankroll=bankroll, station=station)
     render_variable(low_box, "Low", pred["low"], "low", pred["day"], adapter,
                     featured=feature_low, safe_min=safe_min, today_iso=today_iso,
-                    bankroll=bankroll)
+                    bankroll=bankroll, station=station)
 
     with st.expander("Per-Source Breakdown"):
         src = snap["sources"][key]
