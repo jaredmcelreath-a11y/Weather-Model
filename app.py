@@ -413,13 +413,19 @@ def lab_page():
 
 
 def status_page():
-    snap = None
-    try:
-        snap, _calib = load_snapshot_kalshi()
-    except Exception:
-        snap = None
-    inputs, counts = load_status()
-    status_view.render(snap, inputs, counts)
+    market_view._theme_controls()
+    st.title("Status")
+    st.caption("Log-derived health for both cities: every check reads the same "
+               "data the dashboard already loads — no extra credentials or probes.")
+    per, snaps = [], {}
+    for code in config.STATION_CODES:
+        try:
+            snaps[code], _ = load_snapshot_kalshi(code)
+        except Exception:
+            snaps[code] = None
+        inputs, counts = load_status(code)
+        per.append((code, inputs, counts))
+    status_view.render(per, snaps)
 
 
 def accuracy_page():
