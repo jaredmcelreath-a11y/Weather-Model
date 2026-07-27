@@ -11,6 +11,7 @@ from datetime import date
 
 import streamlit as st
 
+import config
 import market_view
 
 
@@ -224,11 +225,10 @@ def _error_chart(recs: list[dict], series_colors=None):
             .configure_view(fill=None, strokeWidth=0))
 
 
-def render(lab_loader, snap=None) -> None:
+def render(lab_loader, snap=None, station: str = config.DEFAULT_STATION) -> None:
     import pandas as pd
 
-    market_view._theme_controls()
-    st.title("Lab")
+    # Body-only: the page function owns the title + theme controls (drawn once).
     try:
         h2h, models = lab_loader()
     except Exception:
