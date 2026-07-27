@@ -2,3 +2,4 @@
 {"ts": "2026-07-27T20:10:04.952788+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26JUL27-B74.5", "reason": "price 0.01 outside [0.1,0.92)", "mode": "shadow"}
 {"ts": "2026-07-27T20:38:35.349649+00:00", "kind": "skip", "variable": "high", "reason": "model 96.7 vs market 98.34 disagree > 1.0\u00b0F", "mode": "shadow"}
 {"ts": "2026-07-27T20:38:36.581417+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26JUL27-B74.5", "reason": "price 0.01 outside [0.1,0.92)", "mode": "shadow"}
+{"ts": "2026-07-27T21:45:47.639829+00:00", "kind": "skip", "variable": "high", "reason": "model 97.2 vs market 98.68 disagree > 1.0\u00b0F", "mode": "shadow"}
