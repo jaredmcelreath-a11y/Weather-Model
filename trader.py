@@ -221,8 +221,17 @@ def _real_deps(station: str = config.DEFAULT_STATION) -> Deps:
     from sources import kalshi, kalshi_orders, kalshi_portfolio
 
     def snapshot():
+        # Model on the basis Kalshi SETTLES on — the continuous NWS CLI daily
+        # max/min — exactly as app.py's Kalshi page does. The plain hourly-basis
+        # snapshot runs ~1-2°F cooler on highs, so comparing it to the CLI-basis
+        # market ev made `agreement_tol` reject genuine agreement (2026-07-28
+        # KAUS: hourly 96.4 vs market 98.97 -> skip, while the CLI basis was 98.2,
+        # inside tolerance) and shifted every bin fed to prob_for_strike.
         calib = calibration.get(refresh=True, station=station)
-        return model.snapshot(calib, station=station) if calib else {}
+        if not calib:
+            return {}
+        return model.snapshot(calib, settle_offset=calib.get("settlement_offset"),
+                              continuous_obs=True, station=station)
 
     def positions():
         # Isolation invariant: manage only THIS city's markets, never the other's.

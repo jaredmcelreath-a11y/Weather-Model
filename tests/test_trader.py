@@ -131,3 +131,31 @@ def test_reversal_sells_stale_bracket():
     out = trader.run_once(now=NOON, deps=d)
     sells = [o for o in d.orders if o["action"] == "sell"]
     assert len(sells) == 1 and sells[0]["ticker"] == stale
+
+
+def test_real_deps_snapshot_uses_the_kalshi_settlement_basis(monkeypatch):
+    """The trader must model on the SAME basis Kalshi settles on.
+
+    Kalshi resolves on the continuous NWS CLI daily max/min; the plain snapshot is
+    the hourly basis, which runs ~1-2°F cooler on highs. Comparing an hourly-basis
+    consensus against the CLI-basis market EV made the agreement gate reject real
+    agreement: on 2026-07-28 KAUS read 96.4 (hourly) vs a 98.97 market and skipped,
+    while the CLI basis the Forecast page shows was 98.2 — inside agreement_tol. It
+    also mis-prices every bin fed to prob_for_strike. Mirrors app.py's own call.
+    """
+    import calibration
+    import model
+
+    calib = {"settlement_offset": {"high": 0.9, "low": -0.4}}
+    monkeypatch.setattr(calibration, "get", lambda **kw: calib)
+    seen = {}
+
+    def fake_snapshot(c, **kw):
+        seen.update(kw)
+        return {"today": {}}
+
+    monkeypatch.setattr(model, "snapshot", fake_snapshot)
+    trader._real_deps("KAUS").snapshot()
+    assert seen.get("settle_offset") == calib["settlement_offset"]
+    assert seen.get("continuous_obs") is True
+    assert seen.get("station") == "KAUS"
