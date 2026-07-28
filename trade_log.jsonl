@@ -48,3 +48,4 @@
 {"ts": "2026-07-28T23:15:36.120564+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-07-28T23:15:37.083321+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTDAL-26JUL28-B79.5", "reason": "market already settled (yes 0.97/0.98)", "mode": "shadow"}
 {"ts": "2026-07-28T23:18:58.925918+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
+{"ts": "2026-07-28T23:21:33.559852+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
