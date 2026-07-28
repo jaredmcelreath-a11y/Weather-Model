@@ -76,6 +76,24 @@ def select_bracket(contracts: list[dict], agreed_temp: float, variable: str,
     return cands[-1] if variable == "high" else cands[0]
 
 
+# A YES quote at or above this means the market has already resolved the bracket.
+SETTLED_YES = 0.97
+
+
+def market_settled(contract: dict) -> bool:
+    """True when the market has effectively resolved this bracket: its YES side is
+    bid at/above SETTLED_YES, or there is no YES offer below $1 left to buy.
+
+    Kept distinct from "merely too expensive" (the price bounds) because the two
+    call for different reactions: an over-max price is a pricing decision, while a
+    settled bracket means the answer is public and there was never a trade here.
+    A contract with no quotes at all is unquoted, not settled."""
+    bid, ask = contract.get("yes_bid"), contract.get("yes_ask")
+    if ask is not None and ask >= 1.0:
+        return True
+    return bid is not None and bid >= SETTLED_YES
+
+
 def stop_loss_hit(entry_ask: float, current_ask: float, stop_loss: float) -> bool:
     """Ask-referenced stop: exit when the current ask has fallen `stop_loss`
     below the entry ask. Never trips on the bid/spread at fill time. The 1e-9
@@ -107,31 +125,40 @@ def reentry_allowed(stopped_ticker: str | None, target_ticker: str) -> bool:
 def size_bracket(contract: dict, var_snap: dict, orderbook: dict, bankroll: float,
                  params: dict) -> dict:
     """Fractional-Kelly size for `contract`, clamped by per_market_cap and the
-    price bounds. Returns {"side","contracts","avg_price","stake","note"}."""
+    price bounds. Returns {"side","contracts","avg_price","stake","note"}.
+
+    YES-only by design. `contract` is the target bracket select_bracket picked as
+    the entry thesis, so buying its NO side would be a bet against our own signal —
+    and should_exit's reversal check keys off the target ticker, so a NO position
+    there would never read as reversed. (Before 2026-07-28 this took whichever side
+    scored better against its ask, which on a settled bracket meant buying NO at 1-2c
+    against the bracket the model had just called at 96%.)"""
     probs = var_snap.get("probabilities") or {}
     p = model.prob_for_strike(probs, contract["strike_type"],
                               contract.get("floor"), contract.get("cap"))
     if p is None:
         return {"side": "", "contracts": 0, "avg_price": None, "stake": 0.0,
                 "note": "model abstains (open tail)"}
+    ask = contract.get("yes_ask")
+    if ask is None:
+        return {"side": "yes", "contracts": 0, "avg_price": None, "stake": 0.0,
+                "note": "no YES offer to buy"}
+    if market_settled(contract):
+        bid = contract.get("yes_bid")
+        return {"side": "yes", "contracts": 0, "avg_price": None, "stake": 0.0,
+                "note": (f"market already settled (yes {'—' if bid is None else f'{bid:.2f}'}"
+                         f"/{ask:.2f})")}
     # `require_edge` False (shadow experiment) drops the positive-edge gate so a
     # bracket that cleared the upstream checks still trades; when a real edge
     # exists it's used and Kelly-sized as usual.
     require_edge = params.get("require_edge", True)
-    yes_ask, no_ask = contract.get("yes_ask"), contract.get("no_ask")
-    pick = kelly.best_side(p, yes_ask, no_ask)
-    if pick is None:
-        if require_edge:
-            return {"side": "", "contracts": 0, "avg_price": None, "stake": 0.0,
-                    "note": "no edge on either side"}
-        pick = kelly.preferred_side(p, yes_ask, no_ask)
-        if pick is None:
-            return {"side": "", "contracts": 0, "avg_price": None, "stake": 0.0,
-                    "note": "no priced side to buy"}
-    side, win, ask = pick
+    side, win = "yes", p
+    if require_edge and p - ask <= 0:
+        return {"side": side, "contracts": 0, "avg_price": None, "stake": 0.0,
+                "note": f"no edge on yes (model {p:.2f} vs ask {ask:.2f})"}
     if ask >= params["max_price"] or ask < params["min_price"]:
         return {"side": side, "contracts": 0, "avg_price": None, "stake": 0.0,
-                "note": (f"price {ask:.2f} outside "
+                "note": (f"yes price {ask:.2f} outside "
                          f"[{params['min_price']},{params['max_price']})")}
     from sources import kalshi as _k
     ladder = _k.ask_ladder(orderbook, side)   # `orderbook` is the normalized book

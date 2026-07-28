@@ -19,11 +19,17 @@ name: Autonomous trade loop
 #   4. Austin ships kill-switched + shadow; its state doc (trade_state.KAUS.json) is
 #      created on the first Save from the Trader page or the first shadow run.
 on:
+  # GitHub's scheduler is best-effort: the old "*/2" here was throttled to roughly
+  # ONE run per hour (measured 2026-07-28 — 12:30, 15:00, 16:43, 18:03, 19:45 UTC),
+  # so the trader sampled the market ~5x/day and missed every tradeable window.
+  # Same lesson log.yml learned. The schedule below is a fallback only; the
+  # dependable cadence comes from the `trade-tick` repository_dispatch that log.yml
+  # fires on every 10-min logging run.
   schedule:
-    - cron: "*/2 11-23 * * *"    # every 2 min, ~06:00-18:00 CDT (11:00-23:00 UTC)
+    - cron: "*/5 11-23 * * *"    # fallback, ~06:00-18:00 CDT (11:00-23:00 UTC)
   workflow_dispatch: {}
   repository_dispatch:
-    types: [trade-tick]
+    types: [trade-tick]         # fired by log.yml; the reliable cadence
 
 permissions:
   contents: read

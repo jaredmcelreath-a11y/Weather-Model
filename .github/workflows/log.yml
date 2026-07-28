@@ -123,3 +123,28 @@ jobs:
           git push -fq \
             "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" \
             data
+
+      # Piggyback a trade tick on this run's reliable 10-min cadence. trade.yml's
+      # own schedule is throttled by GitHub to roughly hourly, which is far too
+      # coarse to catch a bracket while it is still priced inside the trader's
+      # bounds. Must use the PAT: events raised with the built-in GITHUB_TOKEN
+      # deliberately do not start new workflow runs.
+      #
+      # Fire-and-forget by design — logging must never depend on, or fail because
+      # of, trading (see trade.yml's header). Missing secret or a failed POST is
+      # printed and ignored, and the trader self-gates on its market window, kill
+      # switch, and mode, so an out-of-hours tick is a no-op.
+      - name: Tick the trade loop
+        if: always()
+        continue-on-error: true
+        env:
+          TRADE_GH_TOKEN: ${{ secrets.TRADE_GH_TOKEN }}
+        run: |
+          if [ -z "$TRADE_GH_TOKEN" ]; then
+            echo "TRADE_GH_TOKEN unset — skipping trade tick"; exit 0
+          fi
+          curl -sS -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $TRADE_GH_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/dispatches" \
+            -d '{"event_type":"trade-tick"}' || echo "trade tick POST failed — ignored"
