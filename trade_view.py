@@ -107,29 +107,60 @@ def render() -> None:
         except Exception as e:
             st.error(f"Save Failed: {e}")
 
-    _render_positions(st, market_view, station)
+    # The SAVED mode (params is the loaded doc; the Save branch above updates it
+    # in place), not the radio's current value — an unsaved toggle must not change
+    # which source the panel reads.
+    _render_positions(st, market_view, station, params["mode"])
     _render_log(st, station)
 
 
-def _render_positions(st, market_view, station) -> None:
+def position_rows(mode: str, held_truth: list, runtime: dict) -> list[dict]:
+    """Display rows for Open Positions, from the same source the trader manages.
+
+    Delegates to `trader._managed_positions` so the panel can never disagree with
+    what the loop is actually holding: live reads the Kalshi account (the source
+    of truth, enriched with our recorded entry ask), shadow reads our own runtime
+    record because no real fill exists. Reading only the account printed "No Open
+    Positions" under a logged shadow entry."""
+    import trader
+
+    out = []
+    for p in trader._managed_positions(mode, held_truth, runtime):
+        ask = p.get("entry_ask")
+        out.append({"Ticker": p["ticker"],
+                    "Side": (p.get("side") or "").capitalize(),
+                    "Count": p.get("count"),
+                    "Entry Ask": "—" if ask is None else f"{ask:.2f}"})
+    return out
+
+
+def _render_positions(st, market_view, station, mode) -> None:
     import pandas as pd
     from sources import kalshi, kalshi_portfolio
 
     st.markdown("### Open Positions")
+    held, bal = [], None
     try:
-        pos = [p for p in (kalshi_portfolio.positions() or [])
-               if kalshi.station_of_ticker(p["ticker"]) == station]
         bal = kalshi_portfolio.balance()
+        if mode == "live":
+            held = [p for p in (kalshi_portfolio.positions() or [])
+                    if kalshi.station_of_ticker(p["ticker"]) == station]
     except Exception as e:
         st.info(f"Positions Unavailable: {e}")
         return
     st.caption(f"Cash Balance: ${bal:.2f}" if bal is not None else "Balance Unavailable")
-    if not pos:
+    try:
+        runtime = trade_state.load_runtime(station=station)
+    except Exception:
+        runtime = {}
+    rows = position_rows(mode, held, runtime)
+    if not rows:
         st.caption("No Open Positions.")
         return
-    df = pd.DataFrame([{"Ticker": p["ticker"], "Side": p["side"].capitalize(),
-                        "Count": p["count"]} for p in pos])
-    market_view._html_table(df)
+    if mode != "live":
+        st.caption("Shadow holdings — simulated entries, no real fills. The loop "
+                   "still manages these (stop-loss and reversal exits).")
+    market_view._html_table(pd.DataFrame(rows))
 
 
 def _render_log(st, station) -> None:
