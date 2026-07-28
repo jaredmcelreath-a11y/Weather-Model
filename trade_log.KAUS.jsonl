@@ -19,3 +19,4 @@
 {"ts": "2026-07-28T19:46:21.938175+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26JUL28-B75.5", "reason": "price 0.02 outside [0.1,0.92)", "mode": "shadow"}
 {"ts": "2026-07-28T20:49:49.548125+00:00", "kind": "skip", "variable": "high", "reason": "model 96.8 vs market 99.06 disagree > 1.0\u00b0F", "mode": "shadow"}
 {"ts": "2026-07-28T20:49:50.747890+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26JUL28-B75.5", "reason": "price 0.02 outside [0.1,0.92)", "mode": "shadow"}
+{"ts": "2026-07-28T21:02:19.624415+00:00", "kind": "skip", "variable": "high", "reason": "model 96.4 vs market 98.96 disagree > 1.0\u00b0F", "mode": "shadow"}
