@@ -148,3 +148,4 @@
 {"ts": "2026-07-29T18:11:58.789524+00:00", "kind": "skip", "variable": "high", "reason": "resolved 20% < 65%", "mode": "shadow"}
 {"ts": "2026-07-29T18:11:59.706112+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26JUL29-B75.5", "reason": "market already settled (yes 0.98/0.99)", "mode": "shadow"}
 {"ts": "2026-07-29T18:32:02.828333+00:00", "kind": "skip", "variable": "high", "reason": "resolved 26% < 65%", "mode": "shadow"}
+{"ts": "2026-07-29T18:41:59.875732+00:00", "kind": "skip", "variable": "high", "reason": "resolved 28% < 65%", "mode": "shadow"}
