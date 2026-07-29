@@ -194,3 +194,4 @@
 {"ts": "2026-07-29T22:31:46.021222+00:00", "kind": "skip", "variable": "high", "reason": "re-entry into just-stopped bracket", "mode": "shadow"}
 {"ts": "2026-07-29T22:31:47.386424+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-07-29T22:35:20.818840+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHTDAL-26JUL29-B100.5", "reason": "yes price 0.06 outside [0.1,0.92)", "mode": "shadow"}
+{"ts": "2026-07-29T22:41:40.174078+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHTDAL-26JUL29-B100.5", "reason": "yes price 0.06 outside [0.1,0.92)", "mode": "shadow"}
