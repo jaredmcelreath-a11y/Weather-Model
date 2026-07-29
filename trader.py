@@ -59,7 +59,7 @@ def _managed_positions(mode: str, held_truth: list, runtime: dict) -> list[dict]
     # `_GEO` travels with every managed position: the settlement pass scores from
     # it, and the Trader page renders from it. Kalshi's own positions() carries
     # none of it, so the live branch enriches from our recorded entry too.
-    _GEO = ("entry_ask", "day", "floor", "cap", "label")
+    _GEO = ("entry_ask", "day", "floor", "cap", "label", "ts")
     entries = runtime.get("entries") or {}
     if mode == "live":
         out = []

@@ -40,10 +40,10 @@ _RUNTIME = {"entries": {"KXHIGHAUS-26JUL28-B97.5": {
 def test_position_rows_shadow_reads_the_runtime_record():
     rows = trade_view.position_rows("shadow", [], _RUNTIME)
     assert len(rows) == 1
-    assert rows[0]["Ticker"] == "KXHIGHAUS-26JUL28-B97.5"
+    assert rows[0]["Contract"] == "B97.5"
     assert rows[0]["Side"] == "Yes"
     assert rows[0]["Count"] == 1
-    assert "0.57" in str(rows[0]["Entry Ask"])
+    assert rows[0]["Entry"] == "0.57"
 
 
 def test_position_rows_live_reads_the_account_enriched_with_entry():
@@ -51,7 +51,7 @@ def test_position_rows_live_reads_the_account_enriched_with_entry():
               "variable": "high"}]
     rows = trade_view.position_rows("live", truth, _RUNTIME)
     assert len(rows) == 1 and rows[0]["Count"] == 2      # the account is the truth
-    assert "0.57" in str(rows[0]["Entry Ask"])
+    assert rows[0]["Entry"] == "0.57"
 
 
 def test_position_rows_live_ignores_the_shadow_record():
@@ -62,4 +62,76 @@ def test_position_rows_live_ignores_the_shadow_record():
 def test_position_rows_tolerates_a_missing_entry_ask():
     rows = trade_view.position_rows("live", [{"ticker": "X", "side": "no",
                                               "count": 1, "variable": "low"}], {})
-    assert rows[0]["Entry Ask"] == "—"
+    assert rows[0]["Entry"] == "—"
+
+
+# --- Task 4: full position columns ------------------------------------------
+
+_RT2 = {"entries": {"KXHIGHAUS-26JUL28-B99.5": {
+    "entry_ask": 0.70, "side": "yes", "count": 1, "variable": "high",
+    "day": "2026-07-28", "floor": 99, "cap": 100, "label": "99° to 100°",
+    "ts": "2026-07-28T16:12:30-05:00"}}}
+_MARKS = {"KXHIGHAUS-26JUL28-B99.5": {"bid": 0.62, "ask": 0.65, "model": 0.43}}
+_PARAMS = {"stop_loss": 0.20}
+_COLS = ["Date", "Time", "Variable", "Contract", "Side", "Count", "Entry",
+         "Current", "P&L", "Stop-out", "Model %"]
+
+
+def test_position_rows_has_the_full_column_set_in_order():
+    row = trade_view.position_rows("shadow", [], _RT2, _MARKS, _PARAMS)[0]
+    assert list(row.keys()) == _COLS
+
+
+def test_position_rows_date_and_time_come_from_the_entry_ts():
+    row = trade_view.position_rows("shadow", [], _RT2, _MARKS, _PARAMS)[0]
+    assert row["Date"] == "07-28"
+    assert row["Time"] == "4:12 PM"
+
+
+def test_position_rows_current_is_the_ask_and_pnl_uses_the_bid():
+    # The stop-loss triggers on the ASK, but a sale fills into the BID. Showing
+    # one ambiguous "price" would hide which number drives the stop.
+    row = trade_view.position_rows("shadow", [], _RT2, _MARKS, _PARAMS)[0]
+    assert row["Current"] == "0.65"
+    assert row["P&L"] == "-0.08"            # (0.62 - 0.70) * 1
+
+
+def test_position_rows_pnl_scales_with_count():
+    rt = {"entries": {"T": {"entry_ask": 0.50, "side": "yes", "count": 3,
+                            "variable": "high", "label": "x"}}}
+    row = trade_view.position_rows("shadow", [], rt,
+                                   {"T": {"bid": 0.60, "ask": 0.62}}, _PARAMS)[0]
+    assert row["P&L"] == "+0.30"
+
+
+def test_position_rows_stop_out_is_entry_minus_stop_loss():
+    row = trade_view.position_rows("shadow", [], _RT2, _MARKS, _PARAMS)[0]
+    assert row["Stop-out"] == "0.50"
+
+
+def test_position_rows_model_percent_from_the_mark():
+    row = trade_view.position_rows("shadow", [], _RT2, _MARKS, _PARAMS)[0]
+    assert row["Model %"] == "43%"
+
+
+def test_position_rows_without_marks_renders_dashes():
+    row = trade_view.position_rows("shadow", [], _RT2)[0]
+    assert row["Current"] == "—" and row["P&L"] == "—" and row["Model %"] == "—"
+    assert row["Stop-out"] == "—"           # no params -> no stop to compute
+    assert row["Entry"] == "0.70"           # still known
+
+
+def test_position_rows_pre_schema_falls_back_to_the_ticker():
+    rt = {"entries": {"KXHIGHAUS-26JUL28-B99.5": {
+        "entry_ask": 0.70, "side": "yes", "count": 1, "variable": "high"}}}
+    row = trade_view.position_rows("shadow", [], rt, {}, _PARAMS)[0]
+    assert row["Date"] == "07-28"           # recovered from the ticker suffix
+    assert row["Contract"] == "B99.5"       # bracket suffix, no label available
+    assert row["Time"] == "—"
+
+
+def test_open_marks_for_curve_shape():
+    # The rows trade_pnl.unrealized consumes, built from the same marks.
+    out = trade_view.open_marks_for_curve(_RT2, _MARKS)
+    assert out == [{"ticker": "KXHIGHAUS-26JUL28-B99.5", "entry_ask": 0.70,
+                    "count": 1, "bid": 0.62}]
