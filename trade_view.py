@@ -10,6 +10,7 @@ page matches the rest of the dashboard.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 
 import trade_params
@@ -40,11 +41,6 @@ def partition_decisions(records: list[dict]) -> tuple[list[dict], list[dict]]:
     return actions, skips
 
 
-def _bracket(ticker: str) -> str:
-    parts = (ticker or "").split("-")
-    return parts[-1] if len(parts) >= 3 else (ticker or DASH)
-
-
 def _local_hm(ts: str) -> str:
     import config
     from zoneinfo import ZoneInfo
@@ -65,12 +61,12 @@ def action_rows(actions: list[dict]) -> list[dict]:
             detail = (f"{(r.get('side') or '').lower()} {r.get('count') or 1} "
                       f"@ {ask:.2f}" if ask is not None else r.get("reason", ""))
         else:
-            detail = r.get("reason", "")
+            detail = _short_reason(r.get("reason", ""))
             pnl = r.get("pnl")
             if pnl is not None:
                 detail = f"{detail} · {pnl:+.2f}" if detail else f"{pnl:+.2f}"
         out.append({"Time": _local_hm(r.get("ts", "")), "Kind": kind.capitalize(),
-                    "Contract": _bracket(r.get("ticker", "")), "Detail": detail})
+                    "Contract": _contract_label(r), "Detail": detail})
     return out
 
 
@@ -82,13 +78,14 @@ def status_strip(records: list[dict], variables: list[str]) -> dict:
     for var in variables:
         act = next((r for r in actions if r.get("variable") == var), None)
         if act and act.get("kind") == "entry":
-            out[var] = f"holding {_bracket(act.get('ticker', ''))}"
+            out[var] = f"holding {_contract_label(act)}"
             continue
         if act:
-            out[var] = f"no position ({act.get('reason', 'closed')})"
+            out[var] = f"no position ({_short_reason(act.get('reason', 'closed'))})"
             continue
         skip = next((r for r in skips if r.get("variable") == var), None)
-        out[var] = skip.get("reason", "no trade") if skip else "no activity yet"
+        out[var] = (_short_reason(skip.get("reason", "no trade")) if skip
+                    else "no activity yet")
     return out
 
 
@@ -194,12 +191,53 @@ def _money(v, signed=False) -> str:
 
 
 def _contract_label(pos: dict) -> str:
-    """The human bracket name, falling back to the ticker's bracket suffix for
-    positions recorded before the label was logged."""
-    if pos.get("label"):
-        return pos["label"]
-    parts = (pos.get("ticker") or "").split("-")
-    return parts[-1] if len(parts) >= 3 else (pos.get("ticker") or DASH)
+    """The bracket as a compact range — "99-100", matching the History page's
+    contract naming rather than Kalshi's "B99.5" ticker suffix.
+
+    Prefers the recorded floor/cap, then the Kalshi label ("99° to 100°"), then
+    the B<mid> ticker suffix, where mid sits half a degree inside each edge. The
+    T-prefixed tails are open-ended and do NOT follow that rule, so with no label
+    they keep their raw suffix instead of being widened into a wrong range."""
+    floor, cap = pos.get("floor"), pos.get("cap")
+    if floor is not None and cap is not None:
+        return f"{floor:g}-{cap:g}"
+    label = pos.get("label") or ""
+    nums = re.findall(r"-?\d+(?:\.\d+)?", label)
+    if "to" in label and len(nums) >= 2:
+        return f"{float(nums[0]):g}-{float(nums[1]):g}"
+    if label:
+        return label.replace("°", "")
+    suffix = (pos.get("ticker") or "").split("-")[-1]
+    if suffix.startswith("B"):
+        try:
+            mid = float(suffix[1:])
+            return f"{mid - 0.5:g}-{mid + 0.5:g}"
+        except ValueError:
+            pass
+    return suffix or DASH
+
+
+_TICKER_RE = re.compile(r"\b(KX[A-Z]+-\d{2}[A-Z]{3}\d{2}-\S+)")
+
+
+def _short_reason(reason: str) -> str:
+    """Compact a logged reason for display. The audit record keeps the full text
+    (a bare ticker is what you want when reconstructing a decision); the table
+    shows the part a human reads."""
+    if not reason:
+        return ""
+    m = _TICKER_RE.search(reason)
+    if m and "target moved" in reason:
+        return f"reversal → {_contract_label({'ticker': m.group(1)})}"
+    if reason.startswith("reversal: safety gate"):
+        return "reversal · gate fired"
+    if reason.startswith("stop-loss:"):
+        ask = re.search(r"ask (\d+\.\d+)", reason)
+        return f"stop-loss @ {ask.group(1)}" if ask else "stop-loss"
+    # Raw param names leak into the log as skip reasons; say what they mean.
+    return {"max_open_per_variable": "position already open",
+            "re-entry into just-stopped bracket": "just stopped out here",
+            }.get(reason, reason)
 
 
 def _entry_when(pos: dict) -> tuple[str, str]:

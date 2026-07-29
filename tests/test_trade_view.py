@@ -40,7 +40,7 @@ _RUNTIME = {"entries": {"KXHIGHAUS-26JUL28-B97.5": {
 def test_position_rows_shadow_reads_the_runtime_record():
     rows = trade_view.position_rows("shadow", [], _RUNTIME)
     assert len(rows) == 1
-    assert rows[0]["Contract"] == "B97.5"
+    assert rows[0]["Contract"] == "97-98"
     assert rows[0]["Side"] == "Yes"
     assert rows[0]["Count"] == 1
     assert rows[0]["Entry"] == "0.57"
@@ -126,7 +126,7 @@ def test_position_rows_pre_schema_falls_back_to_the_ticker():
         "entry_ask": 0.70, "side": "yes", "count": 1, "variable": "high"}}}
     row = trade_view.position_rows("shadow", [], rt, {}, _PARAMS)[0]
     assert row["Date"] == "07-28"           # recovered from the ticker suffix
-    assert row["Contract"] == "B99.5"       # bracket suffix, no label available
+    assert row["Contract"] == "99-100"      # range derived from the B<mid> suffix
     assert row["Time"] == "—"
 
 
@@ -148,7 +148,8 @@ _LOG = [
     {"ts": "2026-07-28T21:07:25+00:00", "kind": "skip", "variable": "low",
      "ticker": "KXLOWTAUS-26JUL28-B75.5", "reason": "market already settled"},
     {"ts": "2026-07-28T21:12:02+00:00", "kind": "exit", "variable": "high",
-     "ticker": "KXHIGHAUS-26JUL28-B97.5", "reason": "reversal: target moved",
+     "ticker": "KXHIGHAUS-26JUL28-B97.5",
+     "reason": "reversal: target moved to KXHIGHAUS-26JUL28-B99.5",
      "exit_price": 0.55, "pnl": -0.02},
     {"ts": "2026-07-28T21:12:05+00:00", "kind": "entry", "variable": "high",
      "ticker": "KXHIGHAUS-26JUL28-B99.5", "side": "yes", "count": 1,
@@ -183,7 +184,7 @@ def test_action_rows_render_price_and_pnl():
 def test_status_strip_reports_latest_state_per_variable():
     out = trade_view.status_strip(_LOG, ["high", "low"])
     assert out["high"].startswith("holding")
-    assert "B99.5" in out["high"]
+    assert "99-100" in out["high"]
     assert "settled" in out["low"]
 
 
@@ -216,3 +217,69 @@ def test_pnl_frame_labels_each_city_and_parses_dates():
 def test_pnl_frame_empty_is_empty():
     assert trade_view.pnl_frame({}).empty
     assert trade_view.pnl_frame({"Dallas": []}).empty
+
+
+# --- Contract naming + compact reasons --------------------------------------
+
+def test_contract_label_prefers_floor_cap_range():
+    assert trade_view._contract_label(
+        {"ticker": "KXHIGHAUS-26JUL28-B99.5", "floor": 99, "cap": 100,
+         "label": "99° to 100°"}) == "99-100"
+
+
+def test_contract_label_parses_the_kalshi_label():
+    assert trade_view._contract_label(
+        {"ticker": "KXHIGHAUS-26JUL28-B99.5", "label": "99° to 100°"}) == "99-100"
+
+
+def test_contract_label_derives_the_range_from_a_b_ticker():
+    # Pre-schema row: B<mid> encodes floor=mid-0.5, cap=mid+0.5.
+    assert trade_view._contract_label(
+        {"ticker": "KXHIGHAUS-26JUL28-B99.5"}) == "99-100"
+    assert trade_view._contract_label(
+        {"ticker": "KXLOWTAUS-26JUL28-B75.5"}) == "75-76"
+
+
+def test_contract_label_keeps_tail_contracts_readable():
+    # T-prefixed tails are open-ended and don't follow the B<mid> rule, so with no
+    # label there is nothing to widen into a range — show the label when we have it.
+    assert trade_view._contract_label(
+        {"ticker": "KXHIGHAUS-26JUL28-T97", "label": "96° or below"}) == "96 or below"
+    assert trade_view._contract_label({"ticker": "KXHIGHAUS-26JUL28-T97"}) == "T97"
+
+
+def test_short_reason_compacts_a_target_reversal():
+    assert trade_view._short_reason(
+        "reversal: target moved to KXHIGHAUS-26JUL28-B97.5") == "reversal → 97-98"
+
+
+def test_short_reason_compacts_a_stop_loss():
+    assert trade_view._short_reason(
+        "stop-loss: ask 0.30 <= entry 0.50 - 0.20") == "stop-loss @ 0.30"
+
+
+def test_short_reason_compacts_a_gate_reversal():
+    assert trade_view._short_reason(
+        "reversal: safety gate fired") == "reversal · gate fired"
+
+
+def test_short_reason_leaves_short_text_alone():
+    assert trade_view._short_reason("settled won (high 98)") == "settled won (high 98)"
+    assert trade_view._short_reason("") == ""
+
+
+def test_action_rows_use_the_short_reason_and_range_contract():
+    actions, _ = trade_view.partition_decisions(_LOG)
+    rows = trade_view.action_rows(actions)
+    assert rows[0]["Contract"] == "99-100"
+    assert rows[1]["Detail"] == "reversal → 99-100 · -0.02"
+
+
+def test_short_reason_translates_raw_param_names():
+    assert trade_view._short_reason("max_open_per_variable") == "position already open"
+
+
+def test_status_strip_translates_a_raw_skip_reason():
+    log = [{"ts": "2026-07-28T22:00:00+00:00", "kind": "skip", "variable": "high",
+            "reason": "max_open_per_variable"}]
+    assert trade_view.status_strip(log, ["high"])["high"] == "position already open"
