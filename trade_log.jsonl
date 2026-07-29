@@ -176,3 +176,4 @@
 {"ts": "2026-07-29T20:51:52.398547+00:00", "kind": "skip", "variable": "high", "reason": "resolved 64% < 65%", "mode": "shadow"}
 {"ts": "2026-07-29T20:51:53.560225+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-07-29T21:01:44.388710+00:00", "kind": "skip", "variable": "high", "reason": "model 98.0 vs market 99.6 disagree > 1.0\u00b0F", "mode": "shadow"}
+{"ts": "2026-07-29T21:11:17.347044+00:00", "kind": "skip", "variable": "high", "reason": "model 98.0 vs market 99.59 disagree > 1.0\u00b0F", "mode": "shadow"}
