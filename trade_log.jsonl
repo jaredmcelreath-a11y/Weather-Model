@@ -140,3 +140,4 @@
 {"ts": "2026-07-29T17:51:43.636002+00:00", "kind": "skip", "variable": "high", "reason": "resolved 14% < 65%", "mode": "shadow"}
 {"ts": "2026-07-29T17:51:45.110186+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-07-29T17:58:14.322422+00:00", "kind": "skip", "variable": "high", "reason": "resolved 16% < 65%", "mode": "shadow"}
+{"ts": "2026-07-29T17:58:15.574413+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
