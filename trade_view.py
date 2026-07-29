@@ -308,6 +308,32 @@ def _probs_for(station: str) -> dict:
         return {}
 
 
+def _quoted_asks(positions: list[dict], station: str) -> dict:
+    """{ticker: quoted ask} for the held side. One `fetch_contracts` call per
+    (variable, day) — cached 30s — covers every position, so this costs at most
+    two requests however many rows the table has."""
+    import trader
+    from sources import kalshi
+
+    out, seen = {}, {}
+    for p in positions:
+        var, day = p.get("variable"), trader._position_day(p)
+        if not var or day is None:
+            continue
+        key = (var, day)
+        if key not in seen:
+            try:
+                seen[key] = kalshi.fetch_contracts(var, day, station=station)
+            except Exception:
+                seen[key] = []
+        side = p.get("side") or "yes"
+        for c in seen[key]:
+            if c.get("ticker") == p["ticker"]:
+                out[p["ticker"]] = c.get(f"{side}_ask")
+                break
+    return out
+
+
 def _live_marks(mode, held_truth, runtime, station, with_model=True) -> dict:
     """{ticker: {"bid", "ask", "model"}} for every managed position — the live
     book, plus the model's current probability for that bracket when `with_model`.
@@ -323,6 +349,7 @@ def _live_marks(mode, held_truth, runtime, station, with_model=True) -> dict:
     probs = _probs_for(station) if (positions and with_model) else {}
 
     out = {}
+    quotes = _quoted_asks(positions, station)
     for p in positions:
         entry = {"bid": None, "ask": None, "model": None}
         try:
@@ -331,9 +358,12 @@ def _live_marks(mode, held_truth, runtime, station, with_model=True) -> dict:
             bids = book.get(side) or []
             entry["bid"] = max((px for px, _s in bids), default=None)
             ladder = kalshi.ask_ladder(book, side)
-            entry["ask"] = ladder[0][0] if ladder else None
+            # The book-derived ask is undefined when nothing rests on the opposite
+            # side (buying YES sells into NO bids). Fall back to the market's own
+            # quote so `Current` isn't a dash next to a live P&L.
+            entry["ask"] = ladder[0][0] if ladder else quotes.get(p["ticker"])
         except Exception:
-            pass
+            entry["ask"] = quotes.get(p["ticker"])
         pr = probs.get(p.get("variable"))
         if pr and p.get("floor") is not None and p.get("cap") is not None:
             try:
@@ -444,7 +474,10 @@ def _render_pnl(st, market_view) -> None:
     zero = alt.Chart(pd.DataFrame({"y": [0.0]})).mark_rule(
         strokeDash=[4, 4], opacity=0.5).encode(y="y:Q")
     line = alt.Chart(df).mark_line(point=True).encode(
-        x=alt.X("date:T", title=None),
+        # Day ticks explicitly: with only a couple of points Altair otherwise
+        # picks an hourly scale and prints "01 AM, 02 AM…" across a single day.
+        x=alt.X("date:T", title=None,
+                axis=alt.Axis(format="%b %-d", tickCount="day")),
         y=alt.Y("total:Q", title="Cumulative $", axis=alt.Axis(format="$.2f")),
         color=alt.Color("city:N", title=None,
                         scale=alt.Scale(range=palette[:max(1, len(curves))])),
