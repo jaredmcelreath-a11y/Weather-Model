@@ -136,17 +136,23 @@ def run_once(now: datetime | None = None, *, deps: Deps,
                                                c["gates_ok"], params)
         if not do_exit:
             continue
+        price = cur_bid if cur_bid is not None else 0.01
         deps.place_order(ticker=pos["ticker"], side=pos["side"], action="sell",
-                         count=pos["count"],
-                         price=cur_bid if cur_bid is not None else 0.01,
+                         count=pos["count"], price=price,
                          client_order_id=f"{pos['ticker']}:{today_iso}:exit:{bucket}",
                          mode=mode)
         runtime["entries"].pop(pos["ticker"], None)
         exited.add(pos["ticker"])
         if "stop" in why:
             just_stopped[var] = pos["ticker"]
-        deps.append_log(trade_log.build_record("exit", ticker=pos["ticker"],
-                        side=pos["side"], count=pos["count"], reason=why, mode=mode))
+        # exit_price/pnl make the round trip scorable — without them trade_pnl
+        # cannot tell a 20c loss from a 20c gain.
+        entry_ref = pos.get("entry_ask")
+        deps.append_log(trade_log.build_record(
+            "exit", ticker=pos["ticker"], side=pos["side"], count=pos["count"],
+            reason=why, mode=mode, variable=var, exit_price=price,
+            pnl=None if entry_ref is None
+            else round((price - entry_ref) * pos["count"], 4)))
         summary["exits"] += 1
 
     # ---- Daily-loss circuit breaker (LIVE only — shadow has no real fills to mark) ----
@@ -200,13 +206,21 @@ def run_once(now: datetime | None = None, *, deps: Deps,
                          count=sizing["contracts"], price=entry_ask,
                          client_order_id=f"{target['ticker']}:{today_iso}:entry:{bucket}",
                          mode=mode)
+        # The bracket geometry and climate day travel with the position, in BOTH
+        # the runtime record and the audit log: the settlement pass scores a
+        # position from its runtime record, and trade_pnl scores it from the log.
+        # Recovering either by parsing the ticker is brittle — the T-prefixed tail
+        # contracts don't follow the B<mid> bracket rule.
+        geo = {"variable": var, "day": today_iso, "floor": target.get("floor"),
+               "cap": target.get("cap"), "label": target.get("label")}
         runtime["entries"][target["ticker"]] = {
             "entry_ask": entry_ask, "side": sizing["side"],
-            "count": sizing["contracts"], "variable": var, "ts": now.isoformat()}
+            "count": sizing["contracts"], "ts": now.isoformat(), **geo}
         open_by_var[var] = open_by_var.get(var, 0) + 1
         deps.append_log(trade_log.build_record("entry", ticker=target["ticker"],
                         side=sizing["side"], count=sizing["contracts"],
-                        entry_ask=entry_ask, stake=sizing["stake"], mode=mode))
+                        entry_ask=entry_ask, stake=sizing["stake"], mode=mode,
+                        **geo))
         summary["entries"] += 1
 
     deps.save_runtime(runtime)

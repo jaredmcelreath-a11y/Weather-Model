@@ -159,3 +159,44 @@ def test_real_deps_snapshot_uses_the_kalshi_settlement_basis(monkeypatch):
     assert seen.get("settle_offset") == calib["settlement_offset"]
     assert seen.get("continuous_obs") is True
     assert seen.get("station") == "KAUS"
+
+
+# --- Task 1: records must carry what P&L scoring needs ----------------------
+
+def _b99_labelled():
+    c = _b99()
+    c["label"] = "98° to 99°"
+    return c
+
+
+def test_entry_record_and_runtime_carry_bracket_and_day():
+    """Scoring a position against settlement needs its bracket and climate day.
+    Parsing them back out of the ticker is brittle — the T-prefixed tails don't
+    follow the bracket rule — so both the log and the runtime record carry them."""
+    d = Deps(state=_live_params(), snap=_high_snap(),
+             contracts={"high": [_b99_labelled()]},
+             book={"KXHIGHTDAL-26JUL24-B99": _CHEAP_BOOK},
+             implied={"high": {"ev": 98.6}})
+    trader.run_once(now=NOON, deps=d)
+    entry = [r for r in d.logs if r["kind"] == "entry"][0]
+    for key, val in (("variable", "high"), ("day", "2026-07-24"),
+                     ("floor", 98), ("cap", 99), ("label", "98° to 99°")):
+        assert entry[key] == val, f"entry record missing {key}"
+    rt = d.runtime["entries"]["KXHIGHTDAL-26JUL24-B99"]
+    for key, val in (("variable", "high"), ("day", "2026-07-24"),
+                     ("floor", 98), ("cap", 99), ("label", "98° to 99°")):
+        assert rt[key] == val, f"runtime entry missing {key}"
+
+
+def test_exit_record_carries_price_and_pnl():
+    # Held at 0.60, ask has collapsed to 0.20 -> stop-loss; sells into the 0.18 bid.
+    tkr = "KXHIGHTDAL-26JUL24-B99"
+    book = {"yes": [[0.18, 50]], "no": [[0.80, 50]]}   # yes bid 0.18, yes ask 0.20
+    d = Deps(state=_live_params(), snap=_high_snap(), contracts={"high": [_b99()]},
+             book={tkr: book}, implied={"high": {"ev": 98.6}},
+             runtime={"entries": {tkr: {"entry_ask": 0.60, "side": "yes", "count": 2,
+                                        "variable": "high", "day": "2026-07-24"}}})
+    trader.run_once(now=NOON, deps=d)
+    ex = [r for r in d.logs if r["kind"] == "exit"][0]
+    assert ex["exit_price"] == 0.18
+    assert ex["pnl"] == round((0.18 - 0.60) * 2, 4)
