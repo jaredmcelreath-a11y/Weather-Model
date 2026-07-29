@@ -84,3 +84,4 @@
 {"ts": "2026-07-29T12:22:04.618579+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 65%", "mode": "shadow"}
 {"ts": "2026-07-29T12:31:56.241425+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 65%", "mode": "shadow"}
 {"ts": "2026-07-29T12:31:57.109065+00:00", "kind": "skip", "variable": "low", "reason": "low still forming", "mode": "shadow"}
+{"ts": "2026-07-29T12:42:00.531755+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 65%", "mode": "shadow"}
