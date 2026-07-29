@@ -135,3 +135,84 @@ def test_open_marks_for_curve_shape():
     out = trade_view.open_marks_for_curve(_RT2, _MARKS)
     assert out == [{"ticker": "KXHIGHAUS-26JUL28-B99.5", "entry_ask": 0.70,
                     "count": 1, "bid": 0.62}]
+
+
+# --- Task 5: split actions from the repetitive skips -------------------------
+
+_LOG = [
+    {"ts": "2026-07-28T21:02:19+00:00", "kind": "skip", "variable": "high",
+     "reason": "model 96.4 vs market 98.96 disagree > 1.0°F"},
+    {"ts": "2026-07-28T21:07:23+00:00", "kind": "entry", "variable": "high",
+     "ticker": "KXHIGHAUS-26JUL28-B97.5", "side": "yes", "count": 1,
+     "entry_ask": 0.57},
+    {"ts": "2026-07-28T21:07:25+00:00", "kind": "skip", "variable": "low",
+     "ticker": "KXLOWTAUS-26JUL28-B75.5", "reason": "market already settled"},
+    {"ts": "2026-07-28T21:12:02+00:00", "kind": "exit", "variable": "high",
+     "ticker": "KXHIGHAUS-26JUL28-B97.5", "reason": "reversal: target moved",
+     "exit_price": 0.55, "pnl": -0.02},
+    {"ts": "2026-07-28T21:12:05+00:00", "kind": "entry", "variable": "high",
+     "ticker": "KXHIGHAUS-26JUL28-B99.5", "side": "yes", "count": 1,
+     "entry_ask": 0.70},
+]
+
+
+def test_partition_decisions_splits_actions_from_skips():
+    actions, skips = trade_view.partition_decisions(_LOG)
+    assert [a["kind"] for a in actions] == ["entry", "exit", "entry"]
+    assert len(skips) == 2
+
+
+def test_partition_decisions_is_newest_first():
+    actions, skips = trade_view.partition_decisions(_LOG)
+    assert actions[0]["ticker"] == "KXHIGHAUS-26JUL28-B99.5"
+    assert skips[0]["variable"] == "low"
+
+
+def test_partition_decisions_empty():
+    assert trade_view.partition_decisions([]) == ([], [])
+
+
+def test_action_rows_render_price_and_pnl():
+    actions, _ = trade_view.partition_decisions(_LOG)
+    rows = trade_view.action_rows(actions)
+    assert list(rows[0].keys()) == ["Time", "Kind", "Contract", "Detail"]
+    assert rows[0]["Kind"] == "Entry" and "0.70" in rows[0]["Detail"]
+    assert rows[1]["Kind"] == "Exit" and "-0.02" in rows[1]["Detail"]
+
+
+def test_status_strip_reports_latest_state_per_variable():
+    out = trade_view.status_strip(_LOG, ["high", "low"])
+    assert out["high"].startswith("holding")
+    assert "B99.5" in out["high"]
+    assert "settled" in out["low"]
+
+
+def test_status_strip_after_an_exit_is_flat():
+    log = [_LOG[1], {"ts": "2026-07-28T22:00:00+00:00", "kind": "exit",
+                     "variable": "high", "ticker": "KXHIGHAUS-26JUL28-B97.5",
+                     "reason": "settled won (high 98)"}]
+    assert "no position" in trade_view.status_strip(log, ["high"])["high"]
+
+
+def test_status_strip_unknown_variable_says_so():
+    assert trade_view.status_strip([], ["high"])["high"] == "no activity yet"
+
+
+# --- Task 6: P&L chart frame -------------------------------------------------
+
+def test_pnl_frame_labels_each_city_and_parses_dates():
+    from datetime import date as _d
+    df = trade_view.pnl_frame({
+        "Dallas": [{"date": _d(2026, 7, 27), "total": 0.0},
+                   {"date": _d(2026, 7, 28), "total": -0.25}],
+        "Austin": [{"date": _d(2026, 7, 28), "total": 0.40}],
+    })
+    assert len(df) == 3
+    assert set(df["city"]) == {"Dallas", "Austin"}
+    # Bare date strings on an Altair :T axis render a day early — must be datetime.
+    assert str(df["date"].dtype).startswith("datetime64")
+
+
+def test_pnl_frame_empty_is_empty():
+    assert trade_view.pnl_frame({}).empty
+    assert trade_view.pnl_frame({"Dallas": []}).empty

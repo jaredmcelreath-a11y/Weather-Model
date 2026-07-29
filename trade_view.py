@@ -24,6 +24,74 @@ def summarize_log(records: list[dict], limit: int = 20) -> list[dict]:
             for r in rows]
 
 
+_ACTION_KINDS = ("entry", "exit", "halt")
+
+
+def partition_decisions(records: list[dict]) -> tuple[list[dict], list[dict]]:
+    """(actions, skips), each newest-first.
+
+    Every run logs one record per variable per city, so the two or three real
+    actions of a day are buried under dozens of repetitive skips. Splitting them
+    lets the page show what the trader DID and keep what it merely checked behind
+    a toggle."""
+    rows = sorted(records, key=lambda r: r.get("ts") or "", reverse=True)
+    actions = [r for r in rows if r.get("kind") in _ACTION_KINDS]
+    skips = [r for r in rows if r.get("kind") == "skip"]
+    return actions, skips
+
+
+def _bracket(ticker: str) -> str:
+    parts = (ticker or "").split("-")
+    return parts[-1] if len(parts) >= 3 else (ticker or DASH)
+
+
+def _local_hm(ts: str) -> str:
+    import config
+    from zoneinfo import ZoneInfo
+    try:
+        return (datetime.fromisoformat(ts)
+                .astimezone(ZoneInfo(config.TIMEZONE)).strftime("%-I:%M %p"))
+    except (TypeError, ValueError):
+        return ts or DASH
+
+
+def action_rows(actions: list[dict]) -> list[dict]:
+    """Compact table rows for entries and exits — the day's real decisions."""
+    out = []
+    for r in actions:
+        kind = r.get("kind", "")
+        if kind == "entry":
+            ask = r.get("entry_ask")
+            detail = (f"{(r.get('side') or '').lower()} {r.get('count') or 1} "
+                      f"@ {ask:.2f}" if ask is not None else r.get("reason", ""))
+        else:
+            detail = r.get("reason", "")
+            pnl = r.get("pnl")
+            if pnl is not None:
+                detail = f"{detail} · {pnl:+.2f}" if detail else f"{pnl:+.2f}"
+        out.append({"Time": _local_hm(r.get("ts", "")), "Kind": kind.capitalize(),
+                    "Contract": _bracket(r.get("ticker", "")), "Detail": detail})
+    return out
+
+
+def status_strip(records: list[dict], variables: list[str]) -> dict:
+    """One line per variable describing where the trader currently stands, so the
+    page answers "what is it doing right now" without reading the whole log."""
+    actions, skips = partition_decisions(records)
+    out = {}
+    for var in variables:
+        act = next((r for r in actions if r.get("variable") == var), None)
+        if act and act.get("kind") == "entry":
+            out[var] = f"holding {_bracket(act.get('ticker', ''))}"
+            continue
+        if act:
+            out[var] = f"no position ({act.get('reason', 'closed')})"
+            continue
+        skip = next((r for r in skips if r.get("variable") == var), None)
+        out[var] = skip.get("reason", "no trade") if skip else "no activity yet"
+    return out
+
+
 def _fmt_ts(ts: str) -> str:
     """ISO timestamp -> compact 'MM-DD HH:MM' for narrow screens."""
     return ts[5:16].replace("T", " ") if len(ts) >= 16 else ts
@@ -112,7 +180,8 @@ def render() -> None:
     # in place), not the radio's current value — an unsaved toggle must not change
     # which source the panel reads.
     _render_positions(st, market_view, station, params["mode"])
-    _render_log(st, station)
+    _render_log(st, market_view, station, params)
+    _render_pnl(st, market_view)
 
 
 DASH = "—"
@@ -205,28 +274,53 @@ def open_marks_for_curve(runtime: dict, marks: dict | None) -> list[dict]:
             for tkr, e in (runtime.get("entries") or {}).items()]
 
 
-def _live_marks(mode, held_truth, runtime, station) -> dict:
+_CACHED = {}
+
+
+def _probs_for(station: str) -> dict:
+    """{variable: probabilities} on the Kalshi/CLI basis, cached 60s per station.
+
+    A full `model.snapshot` is expensive, so it is wrapped in `st.cache_data` —
+    created once per process and reused, since decorating on every rerun would
+    make a fresh cache each time and defeat it. The 60s TTL matches the Forecast
+    page's; the raw HTTP underneath is disk-cached 600s, so a miss re-blends
+    rather than refetches."""
+    import streamlit as st
+
+    fn = _CACHED.get("probs")
+    if fn is None:
+        @st.cache_data(ttl=60, show_spinner=False)
+        def fn(code: str) -> dict:
+            import calibration
+            import model
+            calib = calibration.get(refresh=True, station=code)
+            if not calib:
+                return {}
+            snap = model.snapshot(calib,
+                                  settle_offset=calib.get("settlement_offset"),
+                                  continuous_obs=True, station=code)
+            return {v: ((snap.get("today") or {}).get(v) or {}).get("probabilities")
+                    for v in ("high", "low")}
+        _CACHED["probs"] = fn
+    try:
+        return fn(station) or {}
+    except Exception:
+        return {}
+
+
+def _live_marks(mode, held_truth, runtime, station, with_model=True) -> dict:
     """{ticker: {"bid", "ask", "model"}} for every managed position — the live
-    book plus the model's current probability for that bracket. Network work, so
-    it is kept out of `position_rows`; one failed ticker must not blank the table,
-    and a failed snapshot must not blank the prices."""
+    book, plus the model's current probability for that bracket when `with_model`.
+
+    Network work, so it is kept out of `position_rows`; one failed ticker must not
+    blank the table, and a failed snapshot must not blank the prices. The P&L
+    curve passes `with_model=False`: it marks positions on the bid alone, and a
+    snapshot per station would make the chart cost a full forecast fetch."""
     import trader
     from sources import kalshi
 
     positions = trader._managed_positions(mode, held_truth, runtime)
-    probs = {}
-    if positions:
-        try:
-            import calibration
-            import model
-            calib = calibration.get(station=station)
-            snap = (model.snapshot(calib, settle_offset=(calib or {}).get("settlement_offset"),
-                                   continuous_obs=True, station=station)
-                    if calib else {})
-            probs = {v: ((snap.get("today") or {}).get(v) or {}).get("probabilities")
-                     for v in ("high", "low")}
-        except Exception:
-            probs = {}
+    probs = _probs_for(station) if (positions and with_model) else {}
 
     out = {}
     for p in positions:
@@ -283,22 +377,118 @@ def _render_positions(st, market_view, station, mode) -> None:
     market_view._html_table(pd.DataFrame(rows))
 
 
-def _render_log(st, station) -> None:
+def pnl_frame(curves: dict) -> "object":
+    """Long-form frame for the P&L chart: one row per point per city.
+
+    Dates are parsed with `pd.to_datetime` — bare date strings on an Altair `:T`
+    axis render a day early (the same UTC trap already fixed in the Lab and equity
+    charts, 684f7a6)."""
+    import pandas as pd
+
+    rows = [{"date": p["date"], "total": p["total"], "city": city}
+            for city, curve in (curves or {}).items() for p in (curve or [])]
+    df = pd.DataFrame(rows, columns=["date", "total", "city"])
+    if df.empty:
+        return df
+    df["date"] = pd.to_datetime(df["date"])
+    return df
+
+
+def _station_curve(station, mode):
+    """(equity curve, error) for one station, from its own decision log."""
+    import config
+    import settlement
+    import trade_pnl
+    try:
+        records = load_log(station)
+        runtime = trade_state.load_runtime(station=station)
+    except Exception as e:
+        return [], str(e)
+    marks = (_live_marks(mode, [], runtime, station, with_model=False)
+             if runtime.get("entries") else {})
+    today = settlement.climate_day_of(datetime.now(), station)
+    return trade_pnl.equity_curve(
+        trade_pnl.closed_trades(records), today,
+        open_marks_for_curve(runtime, marks)), None
+
+
+def _render_pnl(st, market_view) -> None:
+    import altair as alt
+    import pandas as pd
+
+    import city_view
+    import config
+
+    st.markdown("### Shadow P&L")
+    _sel, codes = city_view.city_sections("trader_pnl", arity=3)
+    curves, errs = {}, []
+    for code in codes:
+        try:
+            mode = trade_state.load_state(station=code)["mode"]
+        except Exception:
+            mode = "shadow"
+        curve, err = _station_curve(code, mode)
+        if err:
+            errs.append(f"{config.station(code).name}: {err}")
+        curves[config.station(code).name] = curve
+    df = pnl_frame(curves)
+    if df.empty:
+        st.caption("The Curve Appears Once A Position Closes Or Settles. "
+                   "Records Logged Before 2026-07-28 Carry No Exit Price And Are "
+                   "Not Scored.")
+        if errs:
+            st.caption(" · ".join(errs))
+        return
+    colors = market_view._chart_colors()
+    palette = [colors.get("kalshi", "#7aa2f7"), colors.get("consensus", "#e0af68")]
+    zero = alt.Chart(pd.DataFrame({"y": [0.0]})).mark_rule(
+        strokeDash=[4, 4], opacity=0.5).encode(y="y:Q")
+    line = alt.Chart(df).mark_line(point=True).encode(
+        x=alt.X("date:T", title=None),
+        y=alt.Y("total:Q", title="Cumulative $", axis=alt.Axis(format="$.2f")),
+        color=alt.Color("city:N", title=None,
+                        scale=alt.Scale(range=palette[:max(1, len(curves))])),
+        tooltip=["city:N", alt.Tooltip("date:T"), alt.Tooltip("total:Q", format="$.2f")])
+    st.altair_chart(zero + line, use_container_width=True)
+    st.caption("Cumulative shadow P&L from $0, by weather day. The last point "
+               "marks open positions to the current bid, so it moves intraday.")
+
+
+def load_log(station) -> list[dict]:
+    """Every decision record for `station` from the trade-data branch."""
+    raw = trade_state.GitHubTransport().get(
+        trade_state._path(trade_state.LOG_PATH, station))
+    lines = raw[0].splitlines() if raw else []
+    return [json.loads(x) for x in lines if x.strip()]
+
+
+def _render_log(st, market_view, station, params) -> None:
+    import pandas as pd
+
     st.markdown("### Recent Decisions")
     try:
-        raw = trade_state.GitHubTransport().get(trade_state._path(trade_state.LOG_PATH, station))
-        lines = raw[0].splitlines() if raw else []
-        records = [json.loads(x) for x in lines if x.strip()]
+        records = load_log(station)
     except Exception as e:
         st.info(f"Log Unavailable: {e}")
         return
     if not records:
         st.caption("No Decisions Logged Yet.")
         return
-    for r in summarize_log(records):
-        parts = [f"**{r['kind'].title()}**", _fmt_ts(r["ts"])]
-        if r["ticker"]:
-            parts.append(r["ticker"])
-        if r["reason"]:
-            parts.append(r["reason"])
-        st.caption(" · ".join(parts))
+
+    strip = status_strip(records, params.get("enabled_variables") or ["high", "low"])
+    st.caption(" · ".join(f"**{v.upper()}** → {s}" for v, s in strip.items()))
+
+    actions, skips = partition_decisions(records)
+    if actions:
+        market_view._html_table(pd.DataFrame(action_rows(actions[:20])))
+    else:
+        st.caption("No Entries Or Exits Yet.")
+    if skips:
+        with st.expander(f"Show Skipped Checks ({len(skips)})", expanded=False):
+            for r in summarize_log(skips, limit=40):
+                parts = [_fmt_ts(r["ts"])]
+                if r["ticker"]:
+                    parts.append(r["ticker"])
+                if r["reason"]:
+                    parts.append(r["reason"])
+                st.caption(" · ".join(parts))
