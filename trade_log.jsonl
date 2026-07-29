@@ -185,3 +185,4 @@
 {"ts": "2026-07-29T21:41:27.613780+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-07-29T21:51:31.096118+00:00", "kind": "skip", "variable": "high", "reason": "model 98.6 vs market 99.62 disagree > 1.0\u00b0F", "mode": "shadow"}
 {"ts": "2026-07-29T21:51:32.002608+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
+{"ts": "2026-07-29T22:01:47.699332+00:00", "kind": "skip", "variable": "high", "reason": "model 98.6 vs market 99.64 disagree > 1.0\u00b0F", "mode": "shadow"}
