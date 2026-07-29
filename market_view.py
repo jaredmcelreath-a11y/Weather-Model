@@ -124,6 +124,11 @@ def _inject_theme(name):
         # readings ('Through Jul 18', '5 Rows Today') fit their 47%-wide box.
         ".st-key-metrics2_status .wxcard-v{font-size:1.02rem!important;}"
         ".st-key-metrics2_status .wxcard-l{font-size:0.68rem!important;}"
+        # Trader record/count cards: in Both mode four boxes grid 2x2 and the
+        # labels carry a city prefix ('Dallas Record (W–L)'), so shrink the label
+        # and let it wrap to two lines instead of overflowing its 47%-wide box.
+        ".st-key-metrics2_trader_record .wxcard-l"
+        "{font-size:0.66rem!important;line-height:1.25;}"
         # keep the High/Low Consensus/Spread/Resolved trio on one row on phones
         "[class*=\"st-key-mini_\"] [data-testid=\"stHorizontalBlock\"]"
         "{flex-wrap:nowrap!important;gap:0.35rem!important;}"

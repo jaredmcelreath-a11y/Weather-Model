@@ -270,12 +270,147 @@ def test_settle_closes_a_pre_schema_position_unscored():
     assert "pre-schema" in out[0]["reason"]
 
 
+def test_bracket_of_ticker_inverts_the_b_mid_suffix():
+    # The mid sits half a degree inside each edge, so the inverse is exact.
+    assert trader.bracket_of_ticker("KXHIGHTDAL-26JUL28-B100.5") == (100.0, 101.0)
+    assert trader.bracket_of_ticker("KXLOWTAUS-26JUL28-B75.5") == (75.0, 76.0)
+
+
+def test_bracket_of_ticker_refuses_open_ended_tails_and_junk():
+    # T-prefixed tails are open-ended — a guessed range would score a trade
+    # backwards, so refuse rather than invent one.
+    assert trader.bracket_of_ticker("KXHIGHTDAL-26JUL28-T100") is None
+    assert trader.bracket_of_ticker("KXHIGHTDAL-26JUL28-Bxx") is None
+    assert trader.bracket_of_ticker("") is None
+    assert trader.bracket_of_ticker(None) is None
+
+
+def test_bracket_won_is_inclusive_and_inverts_for_no():
+    assert trader.bracket_won(100, 101, "yes", 100) is True
+    assert trader.bracket_won(100, 101, "yes", 101) is True
+    assert trader.bracket_won(100, 101, "yes", 102) is False
+    assert trader.bracket_won(100, 101, "no", 100) is False
+    assert trader.bracket_won(100, 101, "no", 102) is True
+    assert trader.bracket_won(100, 101, None, 100) is True   # default side is yes
+
+
 def test_settle_leaves_an_unparseable_position_alone():
     # Retiring on a missing/odd day would drop a still-open LIVE position from
     # management (losing its stop-loss). Only a KNOWN past day retires.
     mystery = {"ticker": "WEIRD", "side": "yes", "count": 1, "variable": "high",
                "entry_ask": 0.60}
     assert trader.settle_positions([mystery], _TODAY, {_YEST: (99.0, 80.0)}) == []
+
+
+# --- crash safety: a mid-pass failure must not replay the action -------------
+# run_once appends to the audit log the moment it acts. If the runtime is only
+# persisted at the END of the pass, any exception in between is swallowed by
+# main()'s per-station isolation and the NEXT run repeats the action — a second
+# real order in live mode, and a duplicate record in the log either way. Observed
+# for real on trade-data: 2 entry records and 4 stop-loss exits for one Dallas
+# position (2026-07-29), and a phantom Austin reversal (2026-07-28).
+
+
+class _RealisticDeps(Deps):
+    """Deps whose runtime behaves like the GitHub-backed store: `load_runtime`
+    hands back a COPY, so an in-memory mutation is invisible to the next run until
+    `save_runtime` writes it back. The plain `Deps` returns the very same dict the
+    test holds, which makes every mutation look persisted and hides replay bugs
+    completely.
+
+    `crash_on_book` raises when that ticker's book is fetched (models a Kalshi
+    failure in the entry pass); `crash_on_log` raises on the first log record of
+    that kind (models the log write itself failing)."""
+
+    crash_on_book: str = ""
+    crash_on_log: str = ""
+
+    def load_runtime(self):
+        import copy
+        return copy.deepcopy(self.runtime)
+
+    def fetch_orderbook(self, ticker):
+        if ticker == self.crash_on_book:
+            raise RuntimeError(f"kalshi down for {ticker}")
+        return super().fetch_orderbook(ticker)
+
+    def append_log(self, rec):
+        if rec.get("kind") == self.crash_on_log:
+            raise RuntimeError("github down")
+        return super().append_log(rec)
+
+
+def _stale_entry(**over):
+    e = {"entry_ask": 0.55, "side": "yes", "count": 1, "variable": "high"}
+    e.update(over)
+    return e
+
+
+def test_a_crash_after_an_exit_does_not_replay_the_exit():
+    import pytest
+    stale, target = "KXHIGHTDAL-26JUL24-B97", "KXHIGHTDAL-26JUL24-B99"
+    d = _RealisticDeps(
+        state=_live_params(), snap=_high_snap(), contracts={"high": [_b99()]},
+        book={target: _CHEAP_BOOK, stale: _CHEAP_BOOK},
+        implied={"high": {"ev": 98.6}},
+        runtime={"entries": {stale: _stale_entry()}})
+    d.crash_on_book = target          # the ENTRY pass blows up, after the exit
+    with pytest.raises(RuntimeError):
+        trader.run_once(now=NOON, deps=d)
+    # The reversal sold the stale bracket and logged it, so the runtime must
+    # already say so — otherwise the next run sells it again.
+    assert [r["kind"] for r in d.logs] == ["exit"]
+    assert stale not in (d.runtime.get("entries") or {})
+
+
+def test_an_entry_is_remembered_even_when_its_log_write_fails():
+    import pytest
+    target = "KXHIGHTDAL-26JUL24-B99"
+    d = _RealisticDeps(
+        state=_live_params(), snap=_high_snap(), contracts={"high": [_b99()]},
+        book={target: _CHEAP_BOOK}, implied={"high": {"ev": 98.6}},
+        runtime={"entries": {}})
+    d.crash_on_log = "entry"          # order placed, then the log write dies
+    with pytest.raises(RuntimeError):
+        trader.run_once(now=NOON, deps=d)
+    assert [o["action"] for o in d.orders] == ["buy"]
+    # We bought. If the runtime doesn't record it, the next run buys AGAIN.
+    assert target in (d.runtime.get("entries") or {})
+
+
+def test_a_crash_after_a_settlement_does_not_replay_the_settlement(monkeypatch):
+    import pytest
+
+    import settlements
+    monkeypatch.setattr(settlements, "as_map",
+                        lambda *a, **kw: {_YEST: (99.0, 80.0)})
+    settled, target = "KXHIGHTDAL-26JUL23-B99", "KXHIGHTDAL-26JUL24-B99"
+    d = _RealisticDeps(
+        state=_live_params(), snap=_high_snap(), contracts={"high": [_b99()]},
+        book={target: _CHEAP_BOOK}, implied={"high": {"ev": 98.6}},
+        runtime={"entries": {settled: _stale_entry(
+            entry_ask=0.60, day="2026-07-23", floor=98, cap=99)}})
+    d.crash_on_book = target          # the ENTRY pass blows up, after settling
+    with pytest.raises(RuntimeError):
+        trader.run_once(now=NOON, deps=d)
+    assert settled not in (d.runtime.get("entries") or {})
+
+
+def test_the_daily_loss_anchor_survives_a_crash_later_in_the_pass():
+    """The day's starting equity is the reference the loss cap measures against.
+    Lost to a crash, the next run re-anchors at whatever equity is left — a lower
+    bar — which quietly RAISES the loss the cap will tolerate."""
+    import pytest
+    target = "KXHIGHTDAL-26JUL24-B99"
+    d = _RealisticDeps(
+        state=_live_params(mode="live", daily_loss_cap=-1.0),
+        snap=_high_snap(), contracts={"high": [_b99()]},
+        book={target: _CHEAP_BOOK}, implied={"high": {"ev": 98.6}},
+        bal=10.0, runtime={"entries": {}})
+    d.crash_on_book = target          # entry pass dies AFTER the anchor is taken
+    with pytest.raises(RuntimeError):
+        trader.run_once(now=NOON, deps=d)
+    assert d.runtime.get("day_start_equity") == {"2026-07-24": 10.0}
 
 
 def test_run_once_settles_and_frees_the_position_slot(monkeypatch):

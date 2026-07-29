@@ -219,6 +219,42 @@ def test_pnl_frame_empty_is_empty():
     assert trade_view.pnl_frame({"Dallas": []}).empty
 
 
+# --- Record + trade-count boxes ----------------------------------------------
+
+def test_record_card_shows_wins_dash_losses_and_the_rate():
+    import trade_pnl
+    s = trade_pnl.record_summary([{"pnl": 0.30}, {"pnl": 0.07}, {"pnl": -0.20}])
+    val, help_text = trade_view.record_card_text(s)
+    assert val == "2–1"
+    assert "67%" in help_text and "+0.17" in help_text
+
+
+def test_record_card_with_no_closed_trade_is_a_dash():
+    import trade_pnl
+    val, help_text = trade_view.record_card_text(trade_pnl.record_summary([]))
+    assert val == trade_view.DASH and "yet" in help_text
+
+
+def test_record_card_names_break_evens_without_counting_them():
+    import trade_pnl
+    s = trade_pnl.record_summary([{"pnl": 0.30}, {"pnl": 0.0}])
+    val, help_text = trade_view.record_card_text(s)
+    assert val == "1–0" and "break-even" in help_text
+
+
+def test_trades_card_counts_closed_and_names_the_open_ones():
+    import trade_pnl
+    s = trade_pnl.record_summary([{"pnl": 0.30}, {"pnl": -0.20}])
+    val, help_text = trade_view.trades_card_text(s, open_count=1)
+    assert val == "2" and "1 still open" in help_text
+
+
+def test_trades_card_omits_the_open_line_when_flat():
+    import trade_pnl
+    _val, help_text = trade_view.trades_card_text(trade_pnl.record_summary([]), 0)
+    assert "still open" not in help_text
+
+
 # --- Contract naming + compact reasons --------------------------------------
 
 def test_contract_label_prefers_floor_cap_range():

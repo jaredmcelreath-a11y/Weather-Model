@@ -9,9 +9,12 @@ Deliberately separate from `bet_history`'s equity curve: that one is anchored to
 a real STARTING_BANKROLL and bound to the Kalshi fill schema. This one measures a
 strategy from 0, over the trader's own entry/exit records.
 
-Records predating the 2026-07-28 schema change carry no `exit_price`, so their
-round trips are unscorable. They are SKIPPED, never counted as zero — a missing
-price is not a break-even trade.
+Records predating the 2026-07-28 schema change carry no `exit_price`. A position
+that was HELD TO SETTLEMENT is still recoverable — its bracket is embedded in the
+ticker and the CLI settlement is on file — so `closed_trades` scores those from
+the settlement map. One sold on the market (a reversal or stop-loss) recorded no
+sale price anywhere, so it stays SKIPPED, never counted as zero: a missing price
+is not a break-even trade.
 """
 from __future__ import annotations
 
@@ -27,30 +30,109 @@ def _day_of(rec: dict) -> date | None:
     return trader._position_day(rec)
 
 
-def closed_trades(records: list[dict]) -> list[dict]:
+def _settled_price(entry: dict, rec: dict, settled: dict | None) -> float | None:
+    """1.00/0.00 for a position the loop retired at settlement without a price, or
+    None when it can't be scored honestly.
+
+    Only for `settled` exits: those were never sold, so the settlement IS the exit
+    price. A market exit (reversal, stop-loss) that logged no price sold at some
+    unrecorded bid and must stay unscored. The bracket comes from the record when
+    present, else from the ticker (`trader.bracket_of_ticker`, which refuses the
+    open-ended tails).
+    """
+    if not settled or "settled" not in (rec.get("reason") or ""):
+        return None
+    day = _day_of(entry) or _day_of(rec)
+    row = settled.get(day) if day else None
+    if not row:
+        return None
+    tkr = entry.get("ticker") or rec.get("ticker")
+    var = entry.get("variable") or rec.get("variable")
+    if var not in ("high", "low"):
+        from sources import kalshi
+        var = kalshi.variable_of_ticker(tkr)
+    if var not in ("high", "low"):
+        return None
+    value = row[0] if var == "high" else row[1]
+    if value is None:
+        return None
+    floor, cap = entry.get("floor"), entry.get("cap")
+    if floor is None or cap is None:
+        found = trader.bracket_of_ticker(tkr)
+        if not found:
+            return None
+        floor, cap = found
+    side = entry.get("side") or rec.get("side")
+    return 1.0 if trader.bracket_won(floor, cap, side, value) else 0.0
+
+
+def _drop_lost_exits(records: list[dict]) -> list[dict]:
+    """Drop exit records the loop logged but never actually performed.
+
+    `run_once` appends to the audit log before persisting its runtime, so a crash
+    in between leaves an exit on record that did not take effect — the position was
+    still held on the next run. A later `settled` exit for the SAME ticker is proof
+    of exactly that: the settlement pass only retires positions still in
+    `runtime["entries"]`, so that position outlived the earlier record.
+
+    Only UNPRICED stale exits are dropped. A recorded sale price is evidence the
+    sale really happened, so a genuine stop-loss, re-entry, and later settlement
+    stays two honest round trips.
+
+    Without this, Austin's 2026-07-28 win was invisible: a phantom reversal exit
+    consumed the entry, leaving the real settlement with nothing to pair against.
+    """
+    settled_at: dict[str, str] = {}
+    for r in records:
+        if r.get("kind") == "exit" and "settled" in (r.get("reason") or ""):
+            tkr = r.get("ticker")
+            settled_at[tkr] = max(settled_at.get(tkr, ""), r.get("ts") or "")
+    if not settled_at:
+        return records
+    return [r for r in records
+            if not (r.get("kind") == "exit"
+                    and r.get("exit_price") is None
+                    and "settled" not in (r.get("reason") or "")
+                    and (r.get("ts") or "") < settled_at.get(r.get("ticker"), ""))]
+
+
+def closed_trades(records: list[dict], settled: dict | None = None) -> list[dict]:
     """Completed round trips, oldest first.
 
     Pairs each `entry` with the next `exit` on the same ticker, so a bracket that
     is entered, stopped out, and re-entered yields two trades rather than one.
-    Entries still open, and pairs whose exit predates the `exit_price` schema, are
-    skipped.
+    Entries still open are skipped, as are exits that carry no scorable price.
+
+    `settled` is {day: (high, low)} on the CLI basis; passing it recovers positions
+    the loop retired at settlement before `exit_price` was logged.
+
+    REPLAYED RECORDS: `run_once` appends to the audit log immediately but persists
+    its runtime only at the end of the pass, so an exception in between makes the
+    next run repeat the action — the log then holds two entries (or several exits)
+    for one real position. Only ONE position per ticker can be open at a time
+    (`runtime["entries"]` is keyed by ticker), so a fresh entry on a ticker already
+    open REPLACES it, keeping the latest ask exactly as the runtime overwrite did.
+    A duplicate exit finds no open entry and is dropped, and `_drop_lost_exits`
+    removes exits that were logged but never took effect. Without all three the
+    curve and the win/loss record miscount a single trade.
     """
-    open_by_ticker: dict[str, list[dict]] = {}
+    open_by_ticker: dict[str, dict] = {}
     out = []
-    for rec in sorted(records, key=lambda r: r.get("ts") or ""):
+    for rec in sorted(_drop_lost_exits(records), key=lambda r: r.get("ts") or ""):
         kind, tkr = rec.get("kind"), rec.get("ticker")
         if not tkr:
             continue
         if kind == "entry":
-            open_by_ticker.setdefault(tkr, []).append(rec)
+            open_by_ticker[tkr] = rec         # replay-safe: one open per ticker
         elif kind == "exit":
-            queue = open_by_ticker.get(tkr) or []
-            if not queue:
+            entry = open_by_ticker.pop(tkr, None)
+            if entry is None:
                 continue                      # exit with no matching entry
-            entry = queue.pop(0)
             price = rec.get("exit_price")
             if price is None:
-                continue                      # pre-schema: unscorable, not zero
+                price = _settled_price(entry, rec, settled)
+            if price is None:
+                continue                      # unscorable, not zero
             ask, count = entry.get("entry_ask"), entry.get("count") or 1
             pnl = rec.get("pnl")
             if pnl is None and ask is not None:
@@ -66,6 +148,24 @@ def closed_trades(records: list[dict]) -> list[dict]:
                 "pnl": pnl, "reason": rec.get("reason", ""),
             })
     return [t for t in out if t["day"] is not None]
+
+
+def record_summary(trades: list[dict]) -> dict:
+    """Win/loss tally over closed round trips.
+
+    A win is P&L > 0 — what the trade actually made, not whether the bracket
+    settled in the money: a position stopped out for a loss on a day the bracket
+    later won is still a losing trade. Exact break-evens are counted separately as
+    `pushes` so they don't inflate either side, and `win_rate` is over decided
+    trades only (None with nothing decided yet).
+    """
+    wins = sum(1 for t in trades if t["pnl"] > 0)
+    losses = sum(1 for t in trades if t["pnl"] < 0)
+    decided = wins + losses
+    return {"trades": len(trades), "wins": wins, "losses": losses,
+            "pushes": len(trades) - decided,
+            "win_rate": (wins / decided) if decided else None,
+            "realized": round(sum(t["pnl"] for t in trades), 4)}
 
 
 def daily_pnl(trades: list[dict]) -> list[dict]:

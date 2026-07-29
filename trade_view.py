@@ -462,22 +462,77 @@ def pnl_frame(curves: dict) -> "object":
     return df
 
 
-def _station_curve(station, mode):
-    """(equity curve, error) for one station, from its own decision log."""
-    import config
+def record_card_text(summary: dict) -> tuple[str, str]:
+    """(value, help) for the win/loss box — pure so the wording is testable."""
+    if not summary["trades"]:
+        return DASH, "No round trip has closed yet."
+    val = f"{summary['wins']}–{summary['losses']}"
+    rate = summary["win_rate"]
+    bits = ["Wins–losses over closed round trips."]
+    if rate is not None:
+        bits.append(f"Win rate {rate:.0%}.")
+    if summary["pushes"]:
+        bits.append(f"{summary['pushes']} break-even (not counted either way).")
+    bits.append(f"Realized {summary['realized']:+.2f}.")
+    return val, " ".join(bits)
+
+
+def trades_card_text(summary: dict, open_count: int) -> tuple[str, str]:
+    """(value, help) for the trade-count box. Counts CLOSED round trips — open
+    positions are named in the help rather than added in, so the number always
+    agrees with the win/loss box."""
+    bits = ["Closed round trips (an entry paired with its exit)."]
+    if open_count:
+        bits.append(f"{open_count} still open, not counted yet.")
+    bits.append("Unpriced pre-2026-07-28 market exits are excluded.")
+    return str(summary["trades"]), " ".join(bits)
+
+
+def _settled_for(station: str) -> dict:
+    """{day: (high, low)} on the CLI basis, cached 1h per station.
+
+    The settlement log is a whole-file GitHub read that changes about once a day,
+    and this page reruns on every widget touch. Wrapped the same way `_probs_for`
+    is — created once per process, because decorating on each rerun would build a
+    fresh cache every time and defeat it."""
+    import streamlit as st
+
+    fn = _CACHED.get("settled")
+    if fn is None:
+        @st.cache_data(ttl=3600, show_spinner=False)
+        def fn(code: str) -> dict:
+            import settlements
+            return settlements.as_map("cli", station=code)
+        _CACHED["settled"] = fn
+    try:
+        return fn(station) or {}
+    except Exception:
+        return {}
+
+
+def _station_pnl(station, mode) -> tuple[dict, str | None]:
+    """({curve, summary, open}, error) for one station, from its own decision log.
+
+    Passes the CLI settlement map into `closed_trades` so positions the loop
+    retired at settlement before `exit_price` was logged are still scored — that
+    history is what makes the chart span more than the current day."""
     import settlement
     import trade_pnl
+    empty = {"curve": [], "summary": trade_pnl.record_summary([]), "open": 0}
     try:
         records = load_log(station)
         runtime = trade_state.load_runtime(station=station)
     except Exception as e:
-        return [], str(e)
+        return empty, str(e)
+    settled = _settled_for(station)
     marks = (_live_marks(mode, [], runtime, station, with_model=False)
              if runtime.get("entries") else {})
     today = settlement.climate_day_of(datetime.now(), station)
-    return trade_pnl.equity_curve(
-        trade_pnl.closed_trades(records), today,
-        open_marks_for_curve(runtime, marks)), None
+    trades = trade_pnl.closed_trades(records, settled)
+    return {"curve": trade_pnl.equity_curve(
+                trades, today, open_marks_for_curve(runtime, marks)),
+            "summary": trade_pnl.record_summary(trades),
+            "open": len(runtime.get("entries") or {})}, None
 
 
 def _render_pnl(st, market_view) -> None:
@@ -489,21 +544,38 @@ def _render_pnl(st, market_view) -> None:
 
     st.markdown("### Shadow P&L")
     _sel, codes = city_view.city_sections("trader_pnl", arity=3)
-    curves, errs = {}, []
+    curves, errs, stats = {}, [], {}
     for code in codes:
         try:
             mode = trade_state.load_state(station=code)["mode"]
         except Exception:
             mode = "shadow"
-        curve, err = _station_curve(code, mode)
+        got, err = _station_pnl(code, mode)
         if err:
             errs.append(f"{config.station(code).name}: {err}")
-        curves[config.station(code).name] = curve
+        name = config.station(code).name
+        curves[name] = got["curve"]
+        stats[name] = got
+
+    # Record + trade count, one pair per selected city. The `metrics2_` container
+    # key is what grids these 2-per-row on phones (see market_view's ≤640px rules),
+    # so Both lands as a tidy 2x2 instead of four stacked boxes.
+    with st.container(key="metrics2_trader_record"):
+        cols = st.columns(2 * max(1, len(stats)))
+    for i, (name, got) in enumerate(stats.items()):
+        prefix = f"{name} " if len(stats) > 1 else ""
+        rec_v, rec_h = record_card_text(got["summary"])
+        cnt_v, cnt_h = trades_card_text(got["summary"], got["open"])
+        cols[2 * i].markdown(market_view.metric_card(
+            f"{prefix}Record (W–L)", rec_v, rec_h), unsafe_allow_html=True)
+        cols[2 * i + 1].markdown(market_view.metric_card(
+            f"{prefix}Trades", cnt_v, cnt_h), unsafe_allow_html=True)
+
     df = pnl_frame(curves)
     if df.empty:
         st.caption("The Curve Appears Once A Position Closes Or Settles. "
-                   "Records Logged Before 2026-07-28 Carry No Exit Price And Are "
-                   "Not Scored.")
+                   "Market Exits Logged Before 2026-07-28 Carry No Exit Price And "
+                   "Are Not Scored.")
         if errs:
             st.caption(" · ".join(errs))
         return
@@ -511,18 +583,29 @@ def _render_pnl(st, market_view) -> None:
     palette = [colors.get("kalshi", "#7aa2f7"), colors.get("consensus", "#e0af68")]
     zero = alt.Chart(pd.DataFrame({"y": [0.0]})).mark_rule(
         strokeDash=[4, 4], opacity=0.5).encode(y="y:Q")
+    # Day ticks explicitly while the history is short: with only a couple of points
+    # Altair otherwise picks an hourly scale and prints "01 AM, 02 AM…" across a
+    # single day. Past ~2 weeks a tick per day overlaps into mush on a phone, so
+    # hand the count back to Vega and let it thin the labels.
+    ticks = "day" if df["date"].nunique() <= 12 else 6
     line = alt.Chart(df).mark_line(point=True).encode(
-        # Day ticks explicitly: with only a couple of points Altair otherwise
-        # picks an hourly scale and prints "01 AM, 02 AM…" across a single day.
         x=alt.X("date:T", title=None,
-                axis=alt.Axis(format="%b %-d", tickCount="day")),
+                axis=alt.Axis(format="%b %-d", tickCount=ticks, labelAngle=0)),
         y=alt.Y("total:Q", title="Cumulative $", axis=alt.Axis(format="$.2f")),
         color=alt.Color("city:N", title=None,
                         scale=alt.Scale(range=palette[:max(1, len(curves))])),
-        tooltip=["city:N", alt.Tooltip("date:T"), alt.Tooltip("total:Q", format="$.2f")])
+        tooltip=["city:N", alt.Tooltip("date:T", format="%b %-d"),
+                 alt.Tooltip("total:Q", format="$.2f")])
     st.altair_chart(zero + line, use_container_width=True)
-    st.caption("Cumulative shadow P&L from $0, by weather day. The last point "
-               "marks open positions to the current bid, so it moves intraday.")
+    # Dollar signs are ESCAPED: Streamlit's markdown reads a second, unescaped `$`
+    # in the same string as closing a LaTeX span and renders the text between them
+    # as math. Two amounts in one caption is enough to trigger it.
+    st.caption(r"Cumulative shadow P&L from \$0 across every weather day traded, "
+               r"oldest first. Positions held to settlement are scored at \$1.00 "
+               r"or \$0.00 against the CLI high/low; the last point marks "
+               r"still-open positions to the current bid, so it moves intraday.")
+    if errs:
+        st.caption(" · ".join(errs))
 
 
 def load_log(station) -> list[dict]:

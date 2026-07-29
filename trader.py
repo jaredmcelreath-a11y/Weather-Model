@@ -92,6 +92,34 @@ def _position_day(pos: dict) -> date | None:
     return None
 
 
+def bracket_of_ticker(ticker: str | None) -> tuple[float, float] | None:
+    """(floor, cap) recovered from a `B<mid>` bracket suffix, else None.
+
+    `KXHIGHTDAL-26JUL28-B100.5` -> (100.0, 101.0): the mid sits half a degree
+    inside each edge, so the inverse is exact. The T-prefixed tail contracts are
+    open-ended and do NOT follow that rule, so anything else returns None rather
+    than a guessed range — a wrong bracket would score a settled trade backwards.
+    Only for records that predate `floor`/`cap` being logged; live positions carry
+    the real geometry from Kalshi.
+    """
+    suffix = (ticker or "").split("-")[-1]
+    if not suffix.startswith("B"):
+        return None
+    try:
+        mid = float(suffix[1:])
+    except ValueError:
+        return None
+    return mid - 0.5, mid + 0.5
+
+
+def bracket_won(floor: float, cap: float, side: str | None, value: float) -> bool:
+    """Did this position settle in the money? Shared by the loop's settlement pass
+    and trade_pnl's scoring of already-settled records, so the two can never
+    disagree about what a win is. Kalshi's range brackets are inclusive."""
+    yes_won = floor <= value <= cap
+    return yes_won if side != "no" else not yes_won
+
+
 def settle_positions(managed: list[dict], today: date,
                      settled: dict) -> list[dict]:
     """Close decisions for positions whose climate day has passed, scored against
@@ -128,8 +156,7 @@ def settle_positions(managed: list[dict], today: date,
         value = row[0] if pos.get("variable") == "high" else row[1]
         if value is None:
             continue
-        yes_won = pos["floor"] <= value <= pos["cap"]
-        won = yes_won if pos.get("side") != "no" else not yes_won
+        won = bracket_won(pos["floor"], pos["cap"], pos.get("side"), value)
         price = 1.0 if won else 0.0
         entry_ref = pos.get("entry_ask")
         out.append({**pos, "exit_price": price,
@@ -168,6 +195,23 @@ def run_once(now: datetime | None = None, *, deps: Deps,
     summary = {"entries": 0, "exits": 0}
     just_stopped: dict[str, str] = {}             # variable -> ticker stopped this run
 
+    def persist():
+        """Write the runtime the MOMENT it changes, before the audit-log append.
+
+        The runtime is the only record that says "this already happened", so it is
+        what makes a pass replay-safe. Persisting it once at the end of run_once
+        meant any later exception — and main() swallows them per station — left the
+        action done but unrecorded, so the next run repeated it: a second real
+        order in live mode, plus duplicate log records that made the P&L and
+        win/loss record miscount one trade as two.
+
+        Ordered BEFORE append_log deliberately. Both can fail, and the two
+        failures are not equally bad: losing a log line costs an audit record,
+        while losing the runtime write costs a duplicate trade. This shrinks the
+        exposed window from "the rest of the pass" to a single API call.
+        """
+        deps.save_runtime(runtime)
+
     # Per-variable market + model context.
     ctx = {}
     day_snap = (deps.snapshot() or {}).get("today") or {}
@@ -202,6 +246,7 @@ def run_once(now: datetime | None = None, *, deps: Deps,
     for closed in settle_positions(managed, today, settled_map):
         runtime["entries"].pop(closed["ticker"], None)
         exited.add(closed["ticker"])
+        persist()
         deps.append_log(trade_log.build_record(
             "exit", ticker=closed["ticker"], side=closed.get("side"),
             count=closed.get("count"), variable=closed.get("variable"),
@@ -235,6 +280,7 @@ def run_once(now: datetime | None = None, *, deps: Deps,
                          mode=mode)
         runtime["entries"].pop(pos["ticker"], None)
         exited.add(pos["ticker"])
+        persist()
         if "stop" in why:
             just_stopped[var] = pos["ticker"]
         # exit_price/pnl make the round trip scorable — without them trade_pnl
@@ -254,7 +300,11 @@ def run_once(now: datetime | None = None, *, deps: Deps,
         equity = bal + mark_value
         day_eq = runtime.setdefault("day_start_equity", {})
         if today_iso not in day_eq:
+            # Persist the anchor at once: it is the reference the cap measures
+            # against, and re-taking it next run after a crash would anchor to a
+            # lower equity, quietly raising the loss the cap tolerates.
             day_eq[today_iso] = equity
+            persist()
         elif equity - day_eq[today_iso] <= params["daily_loss_cap"]:
             runtime["halt_day"] = today_iso
             deps.save_runtime(runtime)
@@ -308,6 +358,7 @@ def run_once(now: datetime | None = None, *, deps: Deps,
         runtime["entries"][target["ticker"]] = {
             "entry_ask": entry_ask, "side": sizing["side"],
             "count": sizing["contracts"], "ts": now.isoformat(), **geo}
+        persist()
         open_by_var[var] = open_by_var.get(var, 0) + 1
         deps.append_log(trade_log.build_record("entry", ticker=target["ticker"],
                         side=sizing["side"], count=sizing["contracts"],
