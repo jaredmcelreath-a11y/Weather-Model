@@ -187,3 +187,4 @@
 {"ts": "2026-07-29T21:51:32.002608+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-07-29T22:01:47.699332+00:00", "kind": "skip", "variable": "high", "reason": "model 98.6 vs market 99.64 disagree > 1.0\u00b0F", "mode": "shadow"}
 {"ts": "2026-07-29T22:01:48.836387+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
+{"ts": "2026-07-29T22:11:42.880104+00:00", "kind": "exit", "ticker": "KXHIGHTDAL-26JUL29-B100.5", "side": "yes", "count": 1, "reason": "stop-loss: ask 0.09 <= entry 0.29 - 0.20", "mode": "shadow", "variable": "high", "exit_price": 0.06, "pnl": -0.23}
