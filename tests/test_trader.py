@@ -200,3 +200,101 @@ def test_exit_record_carries_price_and_pnl():
     ex = [r for r in d.logs if r["kind"] == "exit"][0]
     assert ex["exit_price"] == 0.18
     assert ex["pnl"] == round((0.18 - 0.60) * 2, 4)
+
+
+# --- Task 2: settle past-day positions from the CLI settlement --------------
+# Without this a position held to settlement lingers (occupying the
+# max_open_per_variable slot) until the reversal path dumps it at the
+# `cur_bid or 0.01` fallback — and a settled market's book is empty, so a
+# bracket that settled YES at $1.00 was booked as a 1c near-total loss.
+
+from datetime import date as _date
+
+_YEST = _date(2026, 7, 23)
+_TODAY = _date(2026, 7, 24)
+
+
+def _pos(**over):
+    p = {"ticker": "KXHIGHTDAL-26JUL23-B99", "side": "yes", "count": 1,
+         "variable": "high", "entry_ask": 0.60, "day": "2026-07-23",
+         "floor": 98, "cap": 99}
+    p.update(over)
+    return p
+
+
+def test_settle_closes_a_winning_past_day_position_at_one():
+    out = trader.settle_positions([_pos()], _TODAY, {_YEST: (99.0, 80.0)})
+    assert len(out) == 1
+    assert out[0]["exit_price"] == 1.0
+    assert out[0]["pnl"] == round((1.0 - 0.60) * 1, 4)
+    assert "won" in out[0]["reason"]
+
+
+def test_settle_closes_a_losing_past_day_position_at_zero():
+    out = trader.settle_positions([_pos()], _TODAY, {_YEST: (101.0, 80.0)})
+    assert out[0]["exit_price"] == 0.0
+    assert out[0]["pnl"] == round(-0.60, 4)
+    assert "lost" in out[0]["reason"]
+
+
+def test_settle_scores_the_low_against_the_low_settlement():
+    low = _pos(ticker="KXLOWTDAL-26JUL23-B79", variable="low", floor=79, cap=80)
+    assert trader.settle_positions([low], _TODAY, {_YEST: (99.0, 80.0)})[0]["exit_price"] == 1.0
+
+
+def test_settle_inverts_for_a_no_position():
+    no_pos = _pos(side="no")
+    # High settled 99, inside 98-99 -> YES wins, so NO loses.
+    assert trader.settle_positions([no_pos], _TODAY, {_YEST: (99.0, 80.0)})[0]["exit_price"] == 0.0
+
+
+def test_settle_defers_when_the_day_is_not_settled_yet():
+    assert trader.settle_positions([_pos()], _TODAY, {}) == []
+
+
+def test_settle_leaves_todays_position_alone():
+    assert trader.settle_positions([_pos(day="2026-07-24")], _TODAY,
+                                   {_TODAY: (99.0, 80.0)}) == []
+
+
+def test_settle_closes_a_pre_schema_position_unscored():
+    # No day/floor/cap (written before the schema change). The day still comes
+    # back off the ticker suffix, so the slot is freed — but with no bracket it
+    # can never be scored, and we never invent a number for the curve.
+    stale = {"ticker": "KXHIGHAUS-26JUL28-B99.5", "side": "yes", "count": 1,
+             "variable": "high", "entry_ask": 0.70}
+    out = trader.settle_positions([stale], _date(2026, 7, 29),
+                                  {_date(2026, 7, 28): (99.0, 80.0)})
+    assert len(out) == 1
+    assert out[0]["pnl"] is None
+    assert "pre-schema" in out[0]["reason"]
+
+
+def test_settle_leaves_an_unparseable_position_alone():
+    # Retiring on a missing/odd day would drop a still-open LIVE position from
+    # management (losing its stop-loss). Only a KNOWN past day retires.
+    mystery = {"ticker": "WEIRD", "side": "yes", "count": 1, "variable": "high",
+               "entry_ask": 0.60}
+    assert trader.settle_positions([mystery], _TODAY, {_YEST: (99.0, 80.0)}) == []
+
+
+def test_run_once_settles_and_frees_the_position_slot(monkeypatch):
+    import settlements
+    monkeypatch.setattr(settlements, "as_map",
+                        lambda *a, **kw: {_YEST: (99.0, 80.0)})
+    stale = "KXHIGHTDAL-26JUL23-B99"
+    d = Deps(state=_live_params(), snap=_high_snap(), contracts={"high": [_b99()]},
+             book={"KXHIGHTDAL-26JUL24-B99": _CHEAP_BOOK},
+             implied={"high": {"ev": 98.6}},
+             runtime={"entries": {stale: {"entry_ask": 0.60, "side": "yes",
+                                          "count": 1, "variable": "high",
+                                          "day": "2026-07-23", "floor": 98,
+                                          "cap": 99}}})
+    trader.run_once(now=NOON, deps=d)
+    settled = [r for r in d.logs if r["kind"] == "exit" and "settled" in r["reason"]]
+    assert len(settled) == 1 and settled[0]["exit_price"] == 1.0
+    assert stale not in d.runtime["entries"]
+    # No order is placed — Kalshi settles the contract itself.
+    assert all(o["ticker"] != stale for o in d.orders)
+    # The freed slot lets today's entry through in the same run.
+    assert any(r["kind"] == "entry" for r in d.logs)

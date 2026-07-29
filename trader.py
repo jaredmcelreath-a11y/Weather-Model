@@ -56,16 +56,88 @@ def _best_bid(book: dict, side: str):
 def _managed_positions(mode: str, held_truth: list, runtime: dict) -> list[dict]:
     """The positions to manage this run. Live → Kalshi truth enriched with the
     recorded entry_ask; shadow → our own runtime record (no real fills exist)."""
+    # `_GEO` travels with every managed position: the settlement pass scores from
+    # it, and the Trader page renders from it. Kalshi's own positions() carries
+    # none of it, so the live branch enriches from our recorded entry too.
+    _GEO = ("entry_ask", "day", "floor", "cap", "label")
     entries = runtime.get("entries") or {}
     if mode == "live":
         out = []
         for p in held_truth:
             e = entries.get(p["ticker"], {})
-            out.append({**p, "entry_ask": e.get("entry_ask")})
+            out.append({**p, **{k: e.get(k) for k in _GEO}})
         return out
     return [{"ticker": tkr, "side": e.get("side"), "count": e.get("count", 1),
-             "variable": e.get("variable"), "entry_ask": e.get("entry_ask")}
+             "variable": e.get("variable"), **{k: e.get(k) for k in _GEO}}
             for tkr, e in entries.items()]
+
+
+def _position_day(pos: dict) -> date | None:
+    """The position's climate day: the recorded `day`, else the event-date suffix
+    of its ticker (`KXHIGHAUS-26JUL28-B99.5` -> 2026-07-28). The suffix is the
+    inverse of `kalshi._event_suffix`, so parsing it back is safe — unlike the
+    bracket suffix, whose T-prefixed tails don't follow the B<mid> rule."""
+    raw = pos.get("day")
+    if raw:
+        try:
+            return date.fromisoformat(raw)
+        except (TypeError, ValueError):
+            pass
+    parts = (pos.get("ticker") or "").split("-")
+    if len(parts) >= 2:
+        try:
+            return datetime.strptime(parts[1], "%y%b%d").date()
+        except ValueError:
+            pass
+    return None
+
+
+def settle_positions(managed: list[dict], today: date,
+                     settled: dict) -> list[dict]:
+    """Close decisions for positions whose climate day has passed, scored against
+    the CLI settlement rather than the market.
+
+    Kalshi settles these contracts itself, so there is nothing to sell — but the
+    loop must still retire them. Left alone, a held-to-settlement position keeps
+    occupying its `max_open_per_variable` slot until the reversal path dumps it at
+    the `cur_bid or 0.01` fallback, and a settled market's book is empty, so a
+    bracket worth $1.00 was booked as a 1c near-total loss.
+
+    `settled` is {day: (high, low)} from `settlements.as_map("cli", ...)`. A day
+    with no settlement yet is skipped and retried next run. Pure — no IO — so the
+    scoring is unit-testable.
+    """
+    out = []
+    for pos in managed:
+        day = _position_day(pos)
+        # Unknown day: leave it alone. Retiring on a missing field would drop a
+        # still-open LIVE position from management (no stop-loss) the moment its
+        # runtime record looked odd.
+        if day is None or day >= today:
+            continue
+        # A pre-schema position has the day (from its ticker) but no bracket, so
+        # it can never be scored. Retire it so it stops holding the slot, but
+        # never invent a number for the curve.
+        if pos.get("floor") is None or pos.get("cap") is None:
+            out.append({**pos, "exit_price": None, "pnl": None,
+                        "reason": "settled (unscored, pre-schema)"})
+            continue
+        row = settled.get(day)
+        if not row:
+            continue                       # not settled yet — retry next run
+        value = row[0] if pos.get("variable") == "high" else row[1]
+        if value is None:
+            continue
+        yes_won = pos["floor"] <= value <= pos["cap"]
+        won = yes_won if pos.get("side") != "no" else not yes_won
+        price = 1.0 if won else 0.0
+        entry_ref = pos.get("entry_ask")
+        out.append({**pos, "exit_price": price,
+                    "pnl": None if entry_ref is None
+                    else round((price - entry_ref) * pos["count"], 4),
+                    "reason": f"settled {'won' if won else 'lost'} "
+                              f"({pos.get('variable')} {value:g})"})
+    return out
 
 
 def run_once(now: datetime | None = None, *, deps: Deps,
@@ -118,10 +190,30 @@ def run_once(now: datetime | None = None, *, deps: Deps,
 
     managed = _managed_positions(mode, held_truth, runtime)
 
-    # ---- EXIT pass (before entry) ----
+    # ---- SETTLEMENT pass (before exits) ----
+    # Must run first: once a position's day has passed, the exit pass would see a
+    # moved target, call it a reversal, and sell into an empty book at 0.01.
     exited: set[str] = set()
+    import settlements
+    try:
+        settled_map = settlements.as_map("cli", station=station)
+    except Exception:
+        settled_map = {}
+    for closed in settle_positions(managed, today, settled_map):
+        runtime["entries"].pop(closed["ticker"], None)
+        exited.add(closed["ticker"])
+        deps.append_log(trade_log.build_record(
+            "exit", ticker=closed["ticker"], side=closed.get("side"),
+            count=closed.get("count"), variable=closed.get("variable"),
+            reason=closed["reason"], exit_price=closed["exit_price"],
+            pnl=closed["pnl"], mode=mode))
+        summary["exits"] += 1
+
+    # ---- EXIT pass ----
     mark_value = 0.0
     for pos in managed:
+        if pos["ticker"] in exited:
+            continue
         var = pos["variable"]
         c = ctx.get(var)
         book = deps.fetch_orderbook(pos["ticker"])
