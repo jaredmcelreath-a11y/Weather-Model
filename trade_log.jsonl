@@ -330,3 +330,4 @@
 {"ts": "2026-07-30T20:51:21.132855+00:00", "kind": "entry", "ticker": "KXHIGHTDAL-26JUL30-B100.5", "side": "yes", "count": 1, "entry_ask": 0.44, "stake": 0.44, "mode": "shadow", "variable": "high", "day": "2026-07-30", "floor": 100, "cap": 101, "label": "100\u00b0 to 101\u00b0"}
 {"ts": "2026-07-30T20:51:22.216750+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTDAL-26JUL30-B80.5", "reason": "yes price 0.97 outside [0.1,0.92)", "mode": "shadow"}
 {"ts": "2026-07-30T20:52:17.707687+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
+{"ts": "2026-07-30T21:01:59.612212+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
