@@ -219,3 +219,4 @@
 {"ts": "2026-07-30T00:41:29.603993+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHTDAL-26JUL29-B100.5", "reason": "yes price 0.01 outside [0.1,0.92)", "mode": "shadow"}
 {"ts": "2026-07-30T00:51:35.786842+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHTDAL-26JUL29-B100.5", "reason": "yes price 0.01 outside [0.1,0.92)", "mode": "shadow"}
 {"ts": "2026-07-30T00:51:36.892503+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
+{"ts": "2026-07-30T11:11:40.293271+00:00", "kind": "exit", "ticker": "KXLOWTDAL-26JUL29-B81.5", "side": "yes", "count": 1, "reason": "reversal: safety gate fired", "mode": "shadow", "variable": "low", "exit_price": 0.01, "pnl": -0.83}
