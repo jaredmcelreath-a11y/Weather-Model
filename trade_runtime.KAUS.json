@@ -1,3 +1,15 @@
 {
-  "entries": {}
+  "entries": {
+    "KXHIGHAUS-26JUL30-B100.5": {
+      "cap": 101,
+      "count": 1,
+      "day": "2026-07-30",
+      "entry_ask": 0.86,
+      "floor": 100,
+      "label": "100\u00b0 to 101\u00b0",
+      "side": "yes",
+      "ts": "2026-07-30T15:21:15.890737-05:00",
+      "variable": "high"
+    }
+  }
 }
