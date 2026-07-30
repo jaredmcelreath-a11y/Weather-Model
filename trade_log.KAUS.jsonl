@@ -317,3 +317,4 @@
 {"ts": "2026-07-30T20:01:58.891619+00:00", "kind": "skip", "variable": "high", "reason": "resolved 53% < 65%", "mode": "shadow"}
 {"ts": "2026-07-30T20:12:01.016514+00:00", "kind": "skip", "variable": "high", "reason": "resolved 56% < 65%", "mode": "shadow"}
 {"ts": "2026-07-30T20:12:02.142972+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26JUL30-B75.5", "reason": "market already settled (yes 0.98/0.99)", "mode": "shadow"}
+{"ts": "2026-07-30T20:21:50.537094+00:00", "kind": "exit", "ticker": "KXHIGHAUS-26JUL29-B98.5", "side": "yes", "count": 1, "reason": "reversal: target moved to KXHIGHAUS-26JUL30-B100.5", "mode": "shadow", "variable": "high", "exit_price": 0.01, "pnl": -0.69}
