@@ -279,3 +279,4 @@
 {"ts": "2026-07-30T16:42:00.723038+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26JUL30-B75.5", "reason": "yes price 0.97 outside [0.1,0.92)", "mode": "shadow"}
 {"ts": "2026-07-30T16:52:09.985359+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 65%", "mode": "shadow"}
 {"ts": "2026-07-30T17:02:29.033685+00:00", "kind": "skip", "variable": "high", "reason": "resolved 1% < 65%", "mode": "shadow"}
+{"ts": "2026-07-30T17:02:30.490303+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26JUL30-B75.5", "reason": "yes price 0.96 outside [0.1,0.92)", "mode": "shadow"}
