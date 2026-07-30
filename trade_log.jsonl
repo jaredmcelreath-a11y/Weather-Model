@@ -233,3 +233,4 @@
 {"ts": "2026-07-30T12:11:23.684964+00:00", "kind": "skip", "variable": "low", "reason": "low still forming", "mode": "shadow"}
 {"ts": "2026-07-30T12:21:34.369767+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 65%", "mode": "shadow"}
 {"ts": "2026-07-30T12:29:14.694262+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 65%", "mode": "shadow"}
+{"ts": "2026-07-30T12:29:16.316059+00:00", "kind": "skip", "variable": "low", "reason": "low still forming", "mode": "shadow"}
