@@ -221,3 +221,4 @@
 {"ts": "2026-07-30T00:51:36.892503+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-07-30T11:11:40.293271+00:00", "kind": "exit", "ticker": "KXLOWTDAL-26JUL29-B81.5", "side": "yes", "count": 1, "reason": "reversal: safety gate fired", "mode": "shadow", "variable": "low", "exit_price": 0.01, "pnl": -0.83}
 {"ts": "2026-07-30T11:11:41.602401+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 65%", "mode": "shadow"}
+{"ts": "2026-07-30T11:11:42.864321+00:00", "kind": "skip", "variable": "low", "reason": "low still forming", "mode": "shadow"}
