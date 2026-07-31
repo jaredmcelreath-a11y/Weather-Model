@@ -701,9 +701,14 @@ def _render_log(st, market_view, station, params) -> None:
     strip = status_strip(records, params.get("enabled_variables") or ["high", "low"])
     st.caption(" · ".join(f"**{v.upper()}** → {s}" for v, s in strip.items()))
 
+    # Both halves collapse. The actions table runs up to 20 rows, which pushed
+    # the P&L section clean off the first screen; the status strip above already
+    # says where each variable stands, so the table is detail you open when you
+    # want it. Collapsed by default, like the skipped checks below.
     actions, skips = partition_decisions(records)
     if actions:
-        market_view._html_table(pd.DataFrame(action_rows(actions[:20])))
+        with st.expander(f"Show Entries & Exits ({len(actions)})", expanded=False):
+            market_view._html_table(pd.DataFrame(action_rows(actions[:20])))
     else:
         st.caption("No Entries Or Exits Yet.")
     if skips:
