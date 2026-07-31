@@ -48,6 +48,25 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: pip install -r requirements.txt
+
+      # The settlement pass scores held-to-settlement positions against the CLI
+      # high/low, which lives in settlements.jsonl on the data branch. That file
+      # is gitignored, so a fresh checkout has none of it, and this job sets no
+      # FORECAST_LOG_GH_* vars — so `settlements.as_map` silently returned {},
+      # every past-day position hit "not settled yet", and nothing was ever
+      # retired. Restore it the same way log.yml does. Best-effort: a missing
+      # file leaves the map empty (the old behavior) rather than failing the run.
+      - name: Restore settlements from the data branch
+        continue-on-error: true
+        run: |
+          if git ls-remote --exit-code --heads origin data >/dev/null 2>&1; then
+            git fetch --depth=1 origin data
+            git show origin/data:settlements.jsonl > settlements.jsonl || true
+            mkdir -p data/KAUS
+            git show origin/data:data/KAUS/settlements.jsonl \
+              > data/KAUS/settlements.jsonl 2>/dev/null || true
+          fi
+
       - name: Run one trade pass
         env:
           KALSHI_ACCESS_KEY_ID: ${{ secrets.KALSHI_ACCESS_KEY_ID }}

@@ -241,7 +241,10 @@ def run_once(now: datetime | None = None, *, deps: Deps,
     import settlements
     try:
         settled_map = settlements.as_map("cli", station=station)
-    except Exception:
+    except Exception as e:
+        # Never fatal — a bad read just defers every settlement to the next run.
+        # But say so: the silent version of this cost two days of stuck positions.
+        print(f"[{station}] settlement map unavailable: {e}")
         settled_map = {}
     for closed in settle_positions(managed, today, settled_map):
         runtime["entries"].pop(closed["ticker"], None)
@@ -253,6 +256,20 @@ def run_once(now: datetime | None = None, *, deps: Deps,
             reason=closed["reason"], exit_price=closed["exit_price"],
             pnl=closed["pnl"], mode=mode))
         summary["exits"] += 1
+
+    # A past-day position still held after that pass is an anomaly, not routine:
+    # the CLI settlement is recorded the same evening, so by the time the next
+    # market window opens it is on file. The only reason to still be holding one
+    # is that the loop cannot see the settlement — which is exactly the condition
+    # that went unnoticed for days, because it looks identical to "no positions
+    # to settle". Print it so the Action log names the stuck ticker.
+    overdue = [p["ticker"] for p in managed
+               if p["ticker"] not in exited
+               and (_position_day(p) or today) < today]
+    if overdue:
+        print(f"[{station}] settlement pending for {len(overdue)} past-day "
+              f"position(s): {', '.join(overdue)} "
+              f"({len(settled_map)} settled day(s) on file)")
 
     # ---- EXIT pass ----
     mark_value = 0.0
