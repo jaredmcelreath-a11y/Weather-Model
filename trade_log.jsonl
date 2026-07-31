@@ -480,3 +480,4 @@
 {"ts": "2026-07-31T19:51:34.971367+00:00", "kind": "skip", "variable": "high", "reason": "resolved 48% < 70%", "mode": "shadow"}
 {"ts": "2026-07-31T19:51:35.979299+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-07-31T20:02:01.318400+00:00", "kind": "skip", "variable": "high", "reason": "resolved 50% < 70%", "mode": "shadow"}
+{"ts": "2026-07-31T20:02:02.475100+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
