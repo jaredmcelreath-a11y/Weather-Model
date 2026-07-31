@@ -362,6 +362,56 @@ def test_scope_note_of_nothing_is_empty():
     assert trade_view.scope_note([]) == ""
 
 
+# --- Recent Decisions collapses ----------------------------------------------
+
+_DECISION_LOG = [
+    {"ts": "2026-07-31T16:11:00+00:00", "kind": "entry", "variable": "high",
+     "ticker": "KXHIGHTDAL-26JUL31-B102.5", "side": "yes", "count": 1,
+     "entry_ask": 0.89, "floor": 102, "cap": 103},
+    {"ts": "2026-07-31T13:36:00+00:00", "kind": "exit", "variable": "high",
+     "ticker": "KXHIGHTDAL-26JUL30-B100.5", "reason": "settled won (high 101)",
+     "exit_price": 1.0, "pnl": 0.56},
+    {"ts": "2026-07-31T13:30:00+00:00", "kind": "skip", "variable": "low",
+     "reason": "max_open_per_variable"},
+]
+
+
+def _render_log_expanders(records):
+    """(labels, expanded-flags) of every expander _render_log opens."""
+    from unittest.mock import MagicMock
+
+    import pytest
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(trade_view, "load_log", lambda station: records)
+    st, mv = MagicMock(), MagicMock()
+    try:
+        trade_view._render_log(st, mv, "KDFW", {"enabled_variables": ["high", "low"]})
+    finally:
+        monkeypatch.undo()
+    calls = st.expander.call_args_list
+    return ([c.args[0] for c in calls],
+            [c.kwargs.get("expanded") for c in calls])
+
+
+def test_entries_and_exits_collapse_like_the_skipped_checks_do():
+    # The actions table ran 20 rows deep and pushed the P&L chart off-screen.
+    labels, expanded = _render_log_expanders(_DECISION_LOG)
+    assert any(lab.startswith("Show Entries & Exits") for lab in labels)
+    assert set(expanded) == {False}
+
+
+def test_the_entries_and_exits_expander_counts_only_actions():
+    # 2 actions, 1 skip — the skip belongs to the other expander.
+    labels, _ = _render_log_expanders(_DECISION_LOG)
+    assert "Show Entries & Exits (2)" in labels
+    assert "Show Skipped Checks (1)" in labels
+
+
+def test_no_actions_leaves_the_expander_out_entirely():
+    labels, _ = _render_log_expanders([_DECISION_LOG[2]])
+    assert not any(lab.startswith("Show Entries & Exits") for lab in labels)
+
+
 # --- Contract naming + compact reasons --------------------------------------
 
 def test_contract_label_prefers_floor_cap_range():
