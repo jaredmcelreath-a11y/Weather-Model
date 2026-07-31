@@ -292,12 +292,15 @@ def test_equity_curve_folds_the_live_point_into_the_same_day():
     assert curve[-1]["total"] == -0.05
 
 
-def test_equity_curve_skips_an_open_position_with_no_live_price():
+def test_equity_curve_holds_an_open_position_with_no_live_price_at_cost():
+    # CHANGED behavior: an unquoted open position used to be dropped, which also
+    # dropped today's live point. It is now held at cost, so the point is drawn —
+    # at the same total, because a position marked at its entry contributes 0.
     trades = trade_pnl.closed_trades([_entry(tkr="B", day="2026-07-28"),
                                       _exit(tkr="B", pnl=-0.25)])
     marks = [{"ticker": "OPEN", "entry_ask": 0.50, "count": 1, "bid": None}]
     curve = trade_pnl.equity_curve(trades, date(2026, 7, 29), marks)
-    assert curve[-1] == {"date": date(2026, 7, 28), "total": -0.25}
+    assert curve[-1] == {"date": date(2026, 7, 29), "total": -0.25}
 
 
 def test_equity_curve_live_point_alone_still_renders():
@@ -307,3 +310,49 @@ def test_equity_curve_live_point_alone_still_renders():
     curve = trade_pnl.equity_curve([], date(2026, 7, 29), marks)
     assert curve == [{"date": date(2026, 7, 28), "total": 0.0},
                      {"date": date(2026, 7, 29), "total": 0.20}]
+
+
+# --- Open contracts all count toward the total -------------------------------
+# The boxes and the chart's live point are meant to cover EVERY open contract.
+# A position with no live bid used to be dropped, which quietly shrank the set
+# the total spoke for; it is now held at cost (contributing 0) until a bid
+# appears — no invented number, but nothing silently missing either.
+
+def test_unrealized_marks_an_open_position_to_the_bid():
+    assert trade_pnl.unrealized(
+        [{"entry_ask": 0.50, "count": 1, "bid": 0.70}]) == 0.20
+
+
+def test_unrealized_scales_with_count():
+    assert trade_pnl.unrealized(
+        [{"entry_ask": 0.50, "count": 3, "bid": 0.70}]) == 0.60
+
+
+def test_unrealized_holds_an_unquoted_position_at_cost():
+    # No bid -> flat, not dropped and not a total loss.
+    assert trade_pnl.unrealized([{"entry_ask": 0.44, "count": 1, "bid": None}]) == 0.0
+
+
+def test_unrealized_counts_quoted_and_unquoted_together():
+    out = trade_pnl.unrealized([{"entry_ask": 0.50, "count": 1, "bid": 0.70},
+                                {"entry_ask": 0.44, "count": 1, "bid": None}])
+    assert out == 0.20          # the unquoted one contributes 0, but is included
+
+
+def test_unrealized_skips_a_position_with_no_cost_basis():
+    # No entry_ask means nothing to mark AGAINST — marking at cost is undefined.
+    assert trade_pnl.unrealized([{"entry_ask": None, "count": 1, "bid": 0.70}]) is None
+
+
+def test_unrealized_of_nothing_is_none():
+    assert trade_pnl.unrealized([]) is None
+    assert trade_pnl.unrealized(None) is None
+
+
+def test_equity_curve_live_point_includes_an_unquoted_position():
+    trades = trade_pnl.closed_trades([_entry(tkr="B", day="2026-07-28"),
+                                      _exit(tkr="B", pnl=-0.25)])
+    marks = [{"ticker": "OPEN", "entry_ask": 0.50, "count": 1, "bid": 0.70},
+             {"ticker": "DARK", "entry_ask": 0.44, "count": 1, "bid": None}]
+    curve = trade_pnl.equity_curve(trades, date(2026, 7, 29), marks)
+    assert curve[-1] == {"date": date(2026, 7, 29), "total": -0.05}

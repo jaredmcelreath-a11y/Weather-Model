@@ -414,17 +414,27 @@ def _live_marks(mode, held_truth, runtime, station, with_model=True) -> dict:
     return out
 
 
+def _live_positions(station: str) -> list[dict]:
+    """This station's real Kalshi positions — the managed set in live mode.
+
+    Isolation invariant, same as the trader's: only this city's markets, never
+    the other's."""
+    from sources import kalshi, kalshi_portfolio
+
+    return [p for p in (kalshi_portfolio.positions() or [])
+            if kalshi.station_of_ticker(p["ticker"]) == station]
+
+
 def _render_positions(st, market_view, station, mode) -> None:
     import pandas as pd
-    from sources import kalshi, kalshi_portfolio
+    from sources import kalshi_portfolio
 
     st.markdown("### Open Positions")
     held, bal = [], None
     try:
         bal = kalshi_portfolio.balance()
         if mode == "live":
-            held = [p for p in (kalshi_portfolio.positions() or [])
-                    if kalshi.station_of_ticker(p["ticker"]) == station]
+            held = _live_positions(station)
     except Exception as e:
         st.info(f"Positions Unavailable: {e}")
         return
@@ -489,25 +499,41 @@ def record_card_text(summary: dict, scope: str | None = None) -> tuple[str, str]
 
 def pnl_card_text(summary: dict, unreal: float | None, open_count: int,
                   scope: str | None = None) -> tuple[str, str]:
-    """(value, help) for the realized-P&L box.
+    """(value, help) for the total-P&L box.
 
-    REALIZED only — the same closed round trips the record box counts, so the two
-    can never tell different stories. Open positions are named in the help with
-    their mark-to-market rather than folded into the value, which would make the
-    number twitch on every bid tick. (The chart's last point does include them;
-    its caption says so.)
+    TOTAL: realized round trips PLUS every open contract marked to market, so the
+    number is what the strategy is worth right now rather than only what it has
+    banked. It therefore moves intraday as bids tick — the help breaks out how
+    much is realized and how much is still riding. Matches the chart, whose last
+    point marks the same open positions.
 
-    An empty record shows a dash, not `+0.00`: nothing has closed, which is not
-    the same as having broken even.
+    Open positions with no live bid are held at cost by `trade_pnl.unrealized`,
+    so they are inside the total contributing 0. `unreal is None` means none of
+    them could be marked at all, which the help says outright rather than passing
+    off as flat.
+
+    A dash — never `+0.00` — when nothing has closed AND nothing is open: that is
+    an absence of trading, not a break-even result.
     """
-    if not summary["trades"]:
+    realized, has_open = summary["realized"], bool(open_count)
+    if not summary["trades"] and not has_open:
         return DASH, " ".join(["No round trip has closed yet."] + _scope_note(scope))
-    bits = [f"Realized over {summary['trades']} closed round trips.",
-            "Unpriced pre-2026-07-28 market exits are excluded."]
-    if open_count:
-        mark = "" if unreal is None else f", marked {unreal:+.2f}"
-        bits.append(f"{open_count} still open{mark}, not counted.")
-    return f"{summary['realized']:+.2f}", " ".join(bits + _scope_note(scope))
+
+    total = realized + (unreal or 0.0)
+    bits = []
+    if summary["trades"]:
+        bits.append(f"{realized:+.2f} realized over {summary['trades']} "
+                    "closed round trips.")
+    else:
+        bits.append("Nothing has closed yet.")
+    if has_open:
+        bits.append(f"{open_count} open" + (
+            " that could not be marked, so the total is realized only."
+            if unreal is None else
+            f" marked to market at {unreal:+.2f}, moving with the bid."))
+    if summary["trades"]:
+        bits.append("Unpriced pre-2026-07-28 market exits are excluded.")
+    return f"{total:+.2f}", " ".join(bits + _scope_note(scope))
 
 
 def scope_note(codes: list[str]) -> str:
@@ -592,7 +618,12 @@ def _station_pnl(station, mode) -> tuple[dict, str | None]:
     except Exception as e:
         return empty, str(e)
     settled = _settled_for(station)
-    marks = (_live_marks(mode, [], runtime, station, with_model=False)
+    # LIVE mode's managed set is the Kalshi account, not our runtime record, so
+    # marks must be taken against the real positions. Passing [] here left every
+    # live position unmarked — invisible while unmarked meant "no mark", but now
+    # that it means "held at cost" it would quietly read as flat.
+    held = _live_positions(station) if mode == "live" else []
+    marks = (_live_marks(mode, held, runtime, station, with_model=False)
              if runtime.get("entries") else {})
     today = settlement.climate_day_of(datetime.now(), station)
     trades = trade_pnl.closed_trades(records, settled)
@@ -637,7 +668,7 @@ def _render_pnl(st, market_view) -> None:
                                  pooled["open"], scope)
     cols[0].markdown(market_view.metric_card("Record (W–L)", rec_v, rec_h),
                      unsafe_allow_html=True)
-    cols[1].markdown(market_view.metric_card("Realized P&L", pnl_v, pnl_h),
+    cols[1].markdown(market_view.metric_card("Total P&L", pnl_v, pnl_h),
                      unsafe_allow_html=True)
 
     df = pnl_frame(curves)
@@ -671,8 +702,9 @@ def _render_pnl(st, market_view) -> None:
     # as math. Two amounts in one caption is enough to trigger it.
     st.caption(r"Cumulative shadow P&L from \$0 across every weather day traded, "
                r"oldest first. Positions held to settlement are scored at \$1.00 "
-               r"or \$0.00 against the CLI high/low; the last point marks "
-               r"still-open positions to the current bid, so it moves intraday.")
+               r"or \$0.00 against the CLI high/low; the last point marks every "
+               r"still-open position to the current bid — one with no bid is held "
+               r"at its entry price — so it moves intraday.")
     if errs:
         st.caption(" · ".join(errs))
 

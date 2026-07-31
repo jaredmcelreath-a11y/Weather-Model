@@ -179,18 +179,30 @@ def daily_pnl(trades: list[dict]) -> list[dict]:
 
 
 def unrealized(open_marks: list[dict] | None) -> float | None:
-    """Mark-to-market P&L of still-open positions, or None when none can be
-    priced. `open_marks` rows are {entry_ask, count, bid} — the bid because that
-    is the price a sale would actually fill into. A position with no live bid is
-    skipped rather than marked at zero."""
-    total, priced = 0.0, False
+    """Mark-to-market P&L across EVERY open position, or None when there is
+    nothing to mark. `open_marks` rows are {entry_ask, count, bid} — the bid
+    because that is the price a sale would actually fill into.
+
+    A position with no live bid is held AT COST (contributing 0) rather than
+    dropped. Dropping it silently shrank the set the total claimed to cover;
+    marking it at zero would book a full loss on a bracket that is merely thinly
+    quoted. Held at cost states no price the book didn't give us, and the
+    position rejoins the total the moment a bid appears.
+
+    A position with no `entry_ask` is still skipped: with no cost basis there is
+    nothing to mark against, so "at cost" is undefined.
+    """
+    total, marked = 0.0, False
     for m in open_marks or []:
-        bid, ask = m.get("bid"), m.get("entry_ask")
-        if bid is None or ask is None:
+        ask = m.get("entry_ask")
+        if ask is None:
             continue
+        bid = m.get("bid")
+        if bid is None:
+            bid = ask                       # unquoted -> held at cost
         total += (bid - ask) * (m.get("count") or 1)
-        priced = True
-    return round(total, 4) if priced else None
+        marked = True
+    return round(total, 4) if marked else None
 
 
 def equity_curve(trades: list[dict], today: date,
