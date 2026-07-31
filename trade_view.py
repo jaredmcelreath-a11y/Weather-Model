@@ -478,6 +478,75 @@ def _scope_note(scope: str | None) -> list[str]:
     return [f"{scope}."] if scope else []
 
 
+def _money_label(v: float) -> str:
+    """"-$0.35" / "$0.19" — matches how Vega's `$.2f` renders the axis, so the
+    pinned readout and the axis never disagree about where the minus sign goes."""
+    return f"-${abs(v):.2f}" if v < 0 else f"${v:.2f}"
+
+
+def pnl_chart(df, palette: list[str]):
+    """Cumulative-P&L line per city, with tap-to-pin readouts for touch.
+
+    Touch devices never fire the hover events Vega tooltips need, so on a phone
+    this chart showed its shape but not a single number. Tapping any point now
+    pins a readout; double-tap clears. Same pattern as the History page's equity
+    chart and the consensus chart.
+
+    The selection keys on DATE ALONE, so one tap pins every city at that date.
+    Keying on (date, city) would pin only the line you hit — and these two lines
+    converge to within a couple of cents late in a day, so on a phone `nearest`
+    would routinely pin the city you weren't aiming at. Pinning both also answers
+    the question you actually have in Both mode, which is how the cities compare.
+
+    Readouts stack one per city and anchor top-left, so they neither overlap each
+    other nor clip off the right edge on a narrow screen.
+    """
+    import altair as alt
+    import pandas as pd
+
+    cities = sorted(df["city"].unique())
+    colors = [palette[i % len(palette)] for i in range(len(cities))]
+    # Explicit domain: the color scale is index-matched to `cities` here and to
+    # the pinned labels below, so a readout can never take another city's color.
+    scale = alt.Scale(domain=cities, range=colors)
+    # Day ticks explicitly while the history is short: with only a couple of points
+    # Altair otherwise picks an hourly scale and prints "01 AM, 02 AM…" across a
+    # single day. Past ~2 weeks a tick per day overlaps into mush on a phone, so
+    # hand the count back to Vega and let it thin the labels.
+    ticks = "day" if df["date"].nunique() <= 12 else 6
+
+    base = alt.Chart(df).encode(
+        x=alt.X("date:T", title=None,
+                axis=alt.Axis(format="%b %-d", tickCount=ticks, labelAngle=0)),
+        y=alt.Y("total:Q", title="Cumulative $", axis=alt.Axis(format="$.2f")),
+        color=alt.Color("city:N", title=None, scale=scale))
+    line = base.mark_line()
+
+    pick = alt.selection_point(on="click", nearest=True, fields=["date"],
+                               empty=False, clear="dblclick")
+    # The dots double as the tap targets, which is why the line no longer draws
+    # its own points — two point layers would just fight over the same pixels.
+    dots = base.mark_point(filled=True, opacity=1).encode(
+        size=alt.condition(pick, alt.value(150), alt.value(60)),
+        tooltip=["city:N", alt.Tooltip("date:T", format="%b %-d"),
+                 alt.Tooltip("total:Q", format="$.2f")]).add_params(pick)
+
+    zero = alt.Chart(pd.DataFrame({"y": [0.0]})).mark_rule(
+        strokeDash=[4, 4], opacity=0.5).encode(y="y:Q")
+
+    labels = df.assign(label=df.apply(
+        lambda r: f"{r['city']} · {pd.to_datetime(r['date']).strftime('%b %-d')} · "
+                  f"{_money_label(r['total'])}", axis=1))
+    pinned = [
+        alt.Chart(labels[labels["city"] == city]).mark_text(
+            align="left", baseline="top", x=6, y=4 + 17 * i, fontSize=13,
+            fontWeight="bold", color=colors[i],
+        ).encode(text="label:N").transform_filter(pick)
+        for i, city in enumerate(cities)]
+
+    return alt.layer(zero, line, dots, *pinned)
+
+
 def record_card_text(summary: dict, scope: str | None = None) -> tuple[str, str]:
     """(value, help) for the win/loss box — pure so the wording is testable.
 
@@ -681,22 +750,7 @@ def _render_pnl(st, market_view) -> None:
         return
     colors = market_view._chart_colors()
     palette = [colors.get("kalshi", "#7aa2f7"), colors.get("consensus", "#e0af68")]
-    zero = alt.Chart(pd.DataFrame({"y": [0.0]})).mark_rule(
-        strokeDash=[4, 4], opacity=0.5).encode(y="y:Q")
-    # Day ticks explicitly while the history is short: with only a couple of points
-    # Altair otherwise picks an hourly scale and prints "01 AM, 02 AM…" across a
-    # single day. Past ~2 weeks a tick per day overlaps into mush on a phone, so
-    # hand the count back to Vega and let it thin the labels.
-    ticks = "day" if df["date"].nunique() <= 12 else 6
-    line = alt.Chart(df).mark_line(point=True).encode(
-        x=alt.X("date:T", title=None,
-                axis=alt.Axis(format="%b %-d", tickCount=ticks, labelAngle=0)),
-        y=alt.Y("total:Q", title="Cumulative $", axis=alt.Axis(format="$.2f")),
-        color=alt.Color("city:N", title=None,
-                        scale=alt.Scale(range=palette[:max(1, len(curves))])),
-        tooltip=["city:N", alt.Tooltip("date:T", format="%b %-d"),
-                 alt.Tooltip("total:Q", format="$.2f")])
-    st.altair_chart(zero + line, use_container_width=True)
+    st.altair_chart(pnl_chart(df, palette), use_container_width=True)
     # Dollar signs are ESCAPED: Streamlit's markdown reads a second, unescaped `$`
     # in the same string as closing a LaTeX span and renders the text between them
     # as math. Two amounts in one caption is enough to trigger it.

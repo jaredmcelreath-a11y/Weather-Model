@@ -534,3 +534,80 @@ def test_station_pnl_shadow_does_not_hit_the_account(monkeypatch):
                             AssertionError("shadow must not fetch positions")))
     trade_view._station_pnl("KDFW", "shadow")
     assert seen["held"] == []
+
+
+# --- Tap-to-pin on the P&L chart (mobile) -------------------------------------
+# Touch devices never fire the hover events Vega tooltips need, so on a phone the
+# chart showed its shape and not one number.
+
+def _pnl_spec(cities=("Dallas", "Austin")):
+    import json
+    curves = {c: [{"date": "2026-07-30", "total": -0.4 - i},
+                  {"date": "2026-07-31", "total": -0.2 - i}]
+              for i, c in enumerate(cities)}
+    df = trade_view.pnl_frame(curves)
+    spec = trade_view.pnl_chart(df, ["#7aa2f7", "#e0af68"]).to_dict()
+    return spec, json.dumps(spec)
+
+
+def test_pnl_chart_pins_on_click_not_hover():
+    _spec, blob = _pnl_spec()
+    assert '"on": "click"' in blob
+    assert '"clear": "dblclick"' in blob
+
+
+def test_pnl_chart_selection_keys_on_date_so_one_tap_pins_every_city():
+    # Keying on (date, city) would pin only the line you hit, and these two lines
+    # converge to within a couple of cents — on a phone `nearest` would routinely
+    # pin the city you weren't aiming at.
+    spec, _blob = _pnl_spec()
+    # Altair hoists a layered chart's params to the top of the spec, not onto the
+    # layer that declared them — read both so this doesn't hinge on that detail.
+    params = list(spec.get("params") or [])
+    params += [p for L in spec["layer"] for p in L.get("params", [])]
+    fields = [p["select"].get("fields") for p in params
+              if isinstance(p.get("select"), dict)]
+    assert ["date"] in fields
+
+
+def test_pnl_chart_has_a_pinned_readout_per_city():
+    spec, _blob = _pnl_spec()
+    texts = [L for L in spec["layer"] if L.get("mark", {}).get("type") == "text"]
+    assert len(texts) == 2
+    # Stacked, so two cities' readouts never land on top of each other.
+    assert sorted(L["mark"]["y"] for L in texts) == [4, 21]
+
+
+def test_pnl_chart_readouts_match_the_line_colors():
+    spec, _blob = _pnl_spec()
+    texts = sorted((L for L in spec["layer"]
+                    if L.get("mark", {}).get("type") == "text"),
+                   key=lambda L: L["mark"]["y"])
+    # Cities sort alphabetically (Austin, Dallas) and the color scale domain is
+    # explicit, so readout i must carry palette colour i.
+    assert [L["mark"]["color"] for L in texts] == ["#7aa2f7", "#e0af68"]
+    scale = next(L["encoding"]["color"]["scale"] for L in spec["layer"]
+                 if "color" in L.get("encoding", {}))
+    assert scale["domain"] == ["Austin", "Dallas"]
+    assert scale["range"] == ["#7aa2f7", "#e0af68"]
+
+
+def test_pnl_chart_tap_target_grows_when_pinned():
+    spec, _blob = _pnl_spec()
+    dots = next(L for L in spec["layer"]
+                if L.get("mark", {}).get("type") == "point")
+    cond = dots["encoding"]["size"]["condition"]
+    assert cond["value"] == 150 and dots["encoding"]["size"]["value"] == 60
+
+
+def test_pnl_chart_one_city_gets_one_readout():
+    spec, _blob = _pnl_spec(cities=("Dallas",))
+    texts = [L for L in spec["layer"] if L.get("mark", {}).get("type") == "text"]
+    assert len(texts) == 1
+
+
+def test_money_label_puts_the_minus_outside_the_dollar_sign():
+    # Matches how Vega's "$.2f" renders the axis, so readout and axis agree.
+    assert trade_view._money_label(-0.35) == "-$0.35"
+    assert trade_view._money_label(0.19) == "$0.19"
+    assert trade_view._money_label(0.0) == "$0.00"
