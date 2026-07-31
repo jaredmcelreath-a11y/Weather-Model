@@ -493,3 +493,4 @@
 {"ts": "2026-07-31T20:41:37.501771+00:00", "kind": "skip", "variable": "high", "reason": "resolved 63% < 70%", "mode": "shadow"}
 {"ts": "2026-07-31T20:51:36.819680+00:00", "kind": "skip", "variable": "high", "reason": "resolved 65% < 70%", "mode": "shadow"}
 {"ts": "2026-07-31T21:02:04.275778+00:00", "kind": "skip", "variable": "high", "reason": "resolved 68% < 70%", "mode": "shadow"}
+{"ts": "2026-07-31T21:11:46.709091+00:00", "kind": "entry", "ticker": "KXHIGHTDAL-26JUL31-B102.5", "side": "yes", "count": 1, "entry_ask": 0.89, "stake": 0.89, "mode": "shadow", "variable": "high", "day": "2026-07-31", "floor": 102, "cap": 103, "label": "102\u00b0 to 103\u00b0"}
