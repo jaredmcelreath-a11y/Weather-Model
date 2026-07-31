@@ -263,7 +263,7 @@ def test_record_card_can_be_scoped_to_a_city():
     assert "Dallas" in trade_view.record_card_text(s, scope="Dallas")[1]
 
 
-def test_pnl_card_shows_signed_realized_dollars():
+def test_pnl_card_shows_signed_total_dollars():
     import trade_pnl
     s = trade_pnl.record_summary([{"pnl": 0.56}, {"pnl": 0.14}, {"pnl": -0.20}])
     val, help_text = trade_view.pnl_card_text(s, unreal=None, open_count=0)
@@ -277,27 +277,39 @@ def test_pnl_card_shows_a_loss_with_its_minus_sign():
     assert trade_view.pnl_card_text(s, None, 0)[0] == "-0.69"
 
 
-def test_pnl_card_with_no_closed_trade_is_a_dash_not_zero():
+def test_pnl_card_adds_open_positions_into_the_total():
+    # The headline is realized + open marked to market, so it moves intraday.
+    import trade_pnl
+    s = trade_pnl.record_summary([{"pnl": -0.68}])
+    val, help_text = trade_view.pnl_card_text(s, unreal=0.18, open_count=3)
+    assert val == "-0.50"
+    assert "-0.68 realized" in help_text
+    assert "+0.18" in help_text and "3 open" in help_text
+
+
+def test_pnl_card_total_of_an_open_only_account_is_the_mark():
+    # Nothing closed yet but positions are held: the mark IS the whole story,
+    # so a dash here would hide a real number.
+    import trade_pnl
+    val, help_text = trade_view.pnl_card_text(
+        trade_pnl.record_summary([]), unreal=0.18, open_count=2)
+    assert val == "+0.18"
+    assert "2 open" in help_text
+
+
+def test_pnl_card_with_nothing_at_all_is_a_dash_not_zero():
     # "+0.00" would claim a break-even result that never happened.
     import trade_pnl
     val, help_text = trade_view.pnl_card_text(trade_pnl.record_summary([]), None, 0)
     assert val == trade_view.DASH and "yet" in help_text
 
 
-def test_pnl_card_names_open_positions_without_counting_them():
+def test_pnl_card_unmarkable_open_positions_leave_the_total_realized():
     import trade_pnl
     s = trade_pnl.record_summary([{"pnl": 0.30}])
-    _val, help_text = trade_view.pnl_card_text(s, unreal=0.10, open_count=1)
-    assert "1 still open" in help_text and "+0.10" in help_text
-    # The value itself stays realized-only, so a moving bid never shifts it.
-    assert trade_view.pnl_card_text(s, 0.10, 1)[0] == "+0.30"
-
-
-def test_pnl_card_names_unpriced_open_positions():
-    import trade_pnl
-    s = trade_pnl.record_summary([{"pnl": 0.30}])
-    _val, help_text = trade_view.pnl_card_text(s, unreal=None, open_count=1)
-    assert "1 still open" in help_text
+    val, help_text = trade_view.pnl_card_text(s, unreal=None, open_count=1)
+    assert val == "+0.30"
+    assert "1 open" in help_text and "could not be marked" in help_text
 
 
 # --- Pooling the cities for "Both" -------------------------------------------
@@ -476,3 +488,49 @@ def test_status_strip_translates_a_raw_skip_reason():
     log = [{"ts": "2026-07-28T22:00:00+00:00", "kind": "skip", "variable": "high",
             "reason": "max_open_per_variable"}]
     assert trade_view.status_strip(log, ["high"])["high"] == "position already open"
+
+
+# --- Live mode must mark against the account ---------------------------------
+
+_OPEN_RT = {"entries": {"KXHIGHTDAL-26JUL31-B102.5": {
+    "entry_ask": 0.89, "side": "yes", "count": 1, "variable": "high",
+    "day": "2026-07-31", "floor": 102, "cap": 103}}}
+
+
+def _stub_station_pnl(monkeypatch, seen):
+    import trade_state
+    monkeypatch.setattr(trade_view, "load_log", lambda station: [])
+    monkeypatch.setattr(trade_state, "load_runtime",
+                        lambda station=None: _OPEN_RT)
+    monkeypatch.setattr(trade_view, "_settled_for", lambda station: {})
+    monkeypatch.setattr(trade_view, "_live_positions",
+                        lambda station: [{"ticker": "KXHIGHTDAL-26JUL31-B102.5",
+                                          "side": "yes", "count": 1,
+                                          "variable": "high"}])
+
+    def fake_marks(mode, held, runtime, station, with_model=True):
+        seen["mode"], seen["held"] = mode, held
+        return {}
+    monkeypatch.setattr(trade_view, "_live_marks", fake_marks)
+
+
+def test_station_pnl_marks_live_positions_against_the_account(monkeypatch):
+    """In live mode `_managed_positions` reads the Kalshi account, so handing it
+    an empty held list yields no marks at all. That used to surface as "no mark";
+    now that an unmarked position is held at cost, it would read as flat instead
+    — a silent wrong number rather than a visible gap."""
+    seen = {}
+    _stub_station_pnl(monkeypatch, seen)
+    trade_view._station_pnl("KDFW", "live")
+    assert seen["held"], "live mode must pass the account's positions"
+
+
+def test_station_pnl_shadow_does_not_hit_the_account(monkeypatch):
+    # Shadow has no real fills; the runtime record IS the managed set.
+    seen = {}
+    _stub_station_pnl(monkeypatch, seen)
+    monkeypatch.setattr(trade_view, "_live_positions",
+                        lambda station: (_ for _ in ()).throw(
+                            AssertionError("shadow must not fetch positions")))
+    trade_view._station_pnl("KDFW", "shadow")
+    assert seen["held"] == []
