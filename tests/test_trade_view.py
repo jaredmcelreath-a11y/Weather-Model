@@ -219,14 +219,29 @@ def test_pnl_frame_empty_is_empty():
     assert trade_view.pnl_frame({"Dallas": []}).empty
 
 
-# --- Record + trade-count boxes ----------------------------------------------
+# --- Record + realized-P&L boxes ---------------------------------------------
 
 def test_record_card_shows_wins_dash_losses_and_the_rate():
     import trade_pnl
     s = trade_pnl.record_summary([{"pnl": 0.30}, {"pnl": 0.07}, {"pnl": -0.20}])
     val, help_text = trade_view.record_card_text(s)
     assert val == "2–1"
-    assert "67%" in help_text and "+0.17" in help_text
+    assert "67%" in help_text
+
+
+def test_record_card_names_the_trade_count():
+    import trade_pnl
+    s = trade_pnl.record_summary([{"pnl": 0.30}, {"pnl": -0.20}])
+    _val, help_text = trade_view.record_card_text(s)
+    assert "2 closed round trips" in help_text
+
+
+def test_record_card_leaves_the_dollars_to_the_pnl_box():
+    # The two boxes must never state the same number twice; realized lives in
+    # its own card now.
+    import trade_pnl
+    s = trade_pnl.record_summary([{"pnl": 0.30}, {"pnl": 0.07}, {"pnl": -0.20}])
+    assert "+0.17" not in trade_view.record_card_text(s)[1]
 
 
 def test_record_card_with_no_closed_trade_is_a_dash():
@@ -242,17 +257,109 @@ def test_record_card_names_break_evens_without_counting_them():
     assert val == "1–0" and "break-even" in help_text
 
 
-def test_trades_card_counts_closed_and_names_the_open_ones():
+def test_record_card_can_be_scoped_to_a_city():
     import trade_pnl
-    s = trade_pnl.record_summary([{"pnl": 0.30}, {"pnl": -0.20}])
-    val, help_text = trade_view.trades_card_text(s, open_count=1)
-    assert val == "2" and "1 still open" in help_text
+    s = trade_pnl.record_summary([{"pnl": 0.30}])
+    assert "Dallas" in trade_view.record_card_text(s, scope="Dallas")[1]
 
 
-def test_trades_card_omits_the_open_line_when_flat():
+def test_pnl_card_shows_signed_realized_dollars():
     import trade_pnl
-    _val, help_text = trade_view.trades_card_text(trade_pnl.record_summary([]), 0)
-    assert "still open" not in help_text
+    s = trade_pnl.record_summary([{"pnl": 0.56}, {"pnl": 0.14}, {"pnl": -0.20}])
+    val, help_text = trade_view.pnl_card_text(s, unreal=None, open_count=0)
+    assert val == "+0.50"
+    assert "3 closed round trips" in help_text
+
+
+def test_pnl_card_shows_a_loss_with_its_minus_sign():
+    import trade_pnl
+    s = trade_pnl.record_summary([{"pnl": -0.69}])
+    assert trade_view.pnl_card_text(s, None, 0)[0] == "-0.69"
+
+
+def test_pnl_card_with_no_closed_trade_is_a_dash_not_zero():
+    # "+0.00" would claim a break-even result that never happened.
+    import trade_pnl
+    val, help_text = trade_view.pnl_card_text(trade_pnl.record_summary([]), None, 0)
+    assert val == trade_view.DASH and "yet" in help_text
+
+
+def test_pnl_card_names_open_positions_without_counting_them():
+    import trade_pnl
+    s = trade_pnl.record_summary([{"pnl": 0.30}])
+    _val, help_text = trade_view.pnl_card_text(s, unreal=0.10, open_count=1)
+    assert "1 still open" in help_text and "+0.10" in help_text
+    # The value itself stays realized-only, so a moving bid never shifts it.
+    assert trade_view.pnl_card_text(s, 0.10, 1)[0] == "+0.30"
+
+
+def test_pnl_card_names_unpriced_open_positions():
+    import trade_pnl
+    s = trade_pnl.record_summary([{"pnl": 0.30}])
+    _val, help_text = trade_view.pnl_card_text(s, unreal=None, open_count=1)
+    assert "1 still open" in help_text
+
+
+# --- Pooling the cities for "Both" -------------------------------------------
+
+def test_combine_stats_pools_trades_rather_than_averaging_rates():
+    """Dallas 1-1 (50%) and Austin 2-0 (100%) pool to 3-1 = 75%, NOT the 75%
+    you'd get by luck here from averaging — use lopsided counts to prove it."""
+    dal = [{"pnl": 0.30}, {"pnl": -0.20}]
+    aus = [{"pnl": 0.10}, {"pnl": 0.10}, {"pnl": 0.10}, {"pnl": 0.10}]
+    got = trade_view.combine_stats([
+        {"trades": dal, "unreal": None, "open": 0},
+        {"trades": aus, "unreal": None, "open": 0}])
+    assert got["summary"]["wins"] == 5 and got["summary"]["losses"] == 1
+    assert got["summary"]["win_rate"] == 5 / 6      # not (0.5 + 1.0) / 2
+    assert got["summary"]["realized"] == 0.50
+
+
+def test_combine_stats_sums_open_positions_and_their_marks():
+    got = trade_view.combine_stats([
+        {"trades": [], "unreal": 0.10, "open": 1},
+        {"trades": [], "unreal": 0.04, "open": 2}])
+    assert got["unreal"] == 0.14 and got["open"] == 3
+
+
+def test_combine_stats_keeps_unrealized_none_when_nothing_is_priced():
+    got = trade_view.combine_stats([
+        {"trades": [], "unreal": None, "open": 1},
+        {"trades": [], "unreal": None, "open": 1}])
+    assert got["unreal"] is None and got["open"] == 2
+
+
+def test_combine_stats_ignores_unpriced_cities_when_one_is_priced():
+    got = trade_view.combine_stats([
+        {"trades": [], "unreal": None, "open": 1},
+        {"trades": [], "unreal": 0.25, "open": 1}])
+    assert got["unreal"] == 0.25
+
+
+def test_combine_stats_of_one_city_is_that_city():
+    trades = [{"pnl": 0.56}]
+    got = trade_view.combine_stats([{"trades": trades, "unreal": None, "open": 0}])
+    assert got["summary"]["realized"] == 0.56 and got["summary"]["wins"] == 1
+
+
+def test_combine_stats_of_nothing_is_an_empty_summary():
+    got = trade_view.combine_stats([])
+    assert got["summary"]["trades"] == 0 and got["unreal"] is None
+    assert got["open"] == 0
+
+
+def test_scope_note_names_one_city_plainly():
+    assert trade_view.scope_note(["KDFW"]) == "Dallas"
+    assert trade_view.scope_note(["KAUS"]) == "Austin"
+
+
+def test_scope_note_says_combined_for_both():
+    # Without this a pooled Both reads as a single city's numbers.
+    assert trade_view.scope_note(["KDFW", "KAUS"]) == "Dallas and Austin combined"
+
+
+def test_scope_note_of_nothing_is_empty():
+    assert trade_view.scope_note([]) == ""
 
 
 # --- Contract naming + compact reasons --------------------------------------

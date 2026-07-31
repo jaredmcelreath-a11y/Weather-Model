@@ -462,30 +462,92 @@ def pnl_frame(curves: dict) -> "object":
     return df
 
 
-def record_card_text(summary: dict) -> tuple[str, str]:
-    """(value, help) for the win/loss box — pure so the wording is testable."""
+def _scope_note(scope: str | None) -> list[str]:
+    """The trailing "which cities is this" sentence, shared by both boxes so they
+    can never claim different coverage."""
+    return [f"{scope}."] if scope else []
+
+
+def record_card_text(summary: dict, scope: str | None = None) -> tuple[str, str]:
+    """(value, help) for the win/loss box — pure so the wording is testable.
+
+    The dollars deliberately live in `pnl_card_text` instead: two boxes stating
+    the same number invites them to drift apart.
+    """
     if not summary["trades"]:
-        return DASH, "No round trip has closed yet."
+        return DASH, " ".join(["No round trip has closed yet."] + _scope_note(scope))
     val = f"{summary['wins']}–{summary['losses']}"
     rate = summary["win_rate"]
-    bits = ["Wins–losses over closed round trips."]
+    bits = [f"Wins–losses over {summary['trades']} closed round trips "
+            "(an entry paired with its exit)."]
     if rate is not None:
         bits.append(f"Win rate {rate:.0%}.")
     if summary["pushes"]:
         bits.append(f"{summary['pushes']} break-even (not counted either way).")
-    bits.append(f"Realized {summary['realized']:+.2f}.")
-    return val, " ".join(bits)
+    return val, " ".join(bits + _scope_note(scope))
 
 
-def trades_card_text(summary: dict, open_count: int) -> tuple[str, str]:
-    """(value, help) for the trade-count box. Counts CLOSED round trips — open
-    positions are named in the help rather than added in, so the number always
-    agrees with the win/loss box."""
-    bits = ["Closed round trips (an entry paired with its exit)."]
+def pnl_card_text(summary: dict, unreal: float | None, open_count: int,
+                  scope: str | None = None) -> tuple[str, str]:
+    """(value, help) for the realized-P&L box.
+
+    REALIZED only — the same closed round trips the record box counts, so the two
+    can never tell different stories. Open positions are named in the help with
+    their mark-to-market rather than folded into the value, which would make the
+    number twitch on every bid tick. (The chart's last point does include them;
+    its caption says so.)
+
+    An empty record shows a dash, not `+0.00`: nothing has closed, which is not
+    the same as having broken even.
+    """
+    if not summary["trades"]:
+        return DASH, " ".join(["No round trip has closed yet."] + _scope_note(scope))
+    bits = [f"Realized over {summary['trades']} closed round trips.",
+            "Unpriced pre-2026-07-28 market exits are excluded."]
     if open_count:
-        bits.append(f"{open_count} still open, not counted yet.")
-    bits.append("Unpriced pre-2026-07-28 market exits are excluded.")
-    return str(summary["trades"]), " ".join(bits)
+        mark = "" if unreal is None else f", marked {unreal:+.2f}"
+        bits.append(f"{open_count} still open{mark}, not counted.")
+    return f"{summary['realized']:+.2f}", " ".join(bits + _scope_note(scope))
+
+
+def scope_note(codes: list[str]) -> str:
+    """"Dallas." / "Austin." / "Dallas and Austin combined." — the sentence that
+    tells you which cities the two boxes are speaking for.
+
+    With one selected the boxes look identical to the single-city page they
+    replaced, so without this a pooled Both reads as one city's numbers."""
+    import city_view
+
+    names = [city_view.display_name(c) for c in codes]
+    if not names:
+        return ""
+    if len(names) == 1:
+        return names[0]
+    return f"{' and '.join(names)} combined"
+
+
+def combine_stats(per_city: list[dict]) -> dict:
+    """Pool per-city stats into one {summary, unreal, open} for the boxes.
+
+    Rows are `{"trades", "unreal", "open"}` as `_station_pnl` returns them.
+
+    The trades are POOLED and re-summarized rather than the summaries being added
+    together, because `win_rate` does not add: averaging Dallas's 50% with
+    Austin's 100% is only right when both traded the same number of times.
+    Re-running `record_summary` over the combined list gets every field right by
+    construction.
+
+    `unreal` sums only the cities that could be priced, staying None when none
+    could — mirroring `trade_pnl.unrealized`, where None means "no mark", not
+    "flat".
+    """
+    import trade_pnl
+
+    trades = [t for row in per_city for t in (row.get("trades") or [])]
+    marks = [row["unreal"] for row in per_city if row.get("unreal") is not None]
+    return {"summary": trade_pnl.record_summary(trades),
+            "unreal": round(sum(marks), 4) if marks else None,
+            "open": sum(row.get("open") or 0 for row in per_city)}
 
 
 def _settled_for(station: str) -> dict:
@@ -511,14 +573,19 @@ def _settled_for(station: str) -> dict:
 
 
 def _station_pnl(station, mode) -> tuple[dict, str | None]:
-    """({curve, summary, open}, error) for one station, from its own decision log.
+    """({curve, trades, unreal, open}, error) for one station, from its own
+    decision log.
+
+    Returns the raw `trades` list, not a summary: the boxes above the chart pool
+    the selected cities and summarize once (see `combine_stats`), which is the
+    only way "Both" gets a correct win rate.
 
     Passes the CLI settlement map into `closed_trades` so positions the loop
     retired at settlement before `exit_price` was logged are still scored — that
     history is what makes the chart span more than the current day."""
     import settlement
     import trade_pnl
-    empty = {"curve": [], "summary": trade_pnl.record_summary([]), "open": 0}
+    empty = {"curve": [], "trades": [], "unreal": None, "open": 0}
     try:
         records = load_log(station)
         runtime = trade_state.load_runtime(station=station)
@@ -529,9 +596,10 @@ def _station_pnl(station, mode) -> tuple[dict, str | None]:
              if runtime.get("entries") else {})
     today = settlement.climate_day_of(datetime.now(), station)
     trades = trade_pnl.closed_trades(records, settled)
-    return {"curve": trade_pnl.equity_curve(
-                trades, today, open_marks_for_curve(runtime, marks)),
-            "summary": trade_pnl.record_summary(trades),
+    open_marks = open_marks_for_curve(runtime, marks)
+    return {"curve": trade_pnl.equity_curve(trades, today, open_marks),
+            "trades": trades,
+            "unreal": trade_pnl.unrealized(open_marks),
             "open": len(runtime.get("entries") or {})}, None
 
 
@@ -544,7 +612,7 @@ def _render_pnl(st, market_view) -> None:
 
     st.markdown("### Shadow P&L")
     _sel, codes = city_view.city_sections("trader_pnl", arity=3)
-    curves, errs, stats = {}, [], {}
+    curves, errs, rows = {}, [], []
     for code in codes:
         try:
             mode = trade_state.load_state(station=code)["mode"]
@@ -553,23 +621,24 @@ def _render_pnl(st, market_view) -> None:
         got, err = _station_pnl(code, mode)
         if err:
             errs.append(f"{config.station(code).name}: {err}")
-        name = config.station(code).name
-        curves[name] = got["curve"]
-        stats[name] = got
+        curves[config.station(code).name] = got["curve"]
+        rows.append(got)
 
-    # Record + trade count, one pair per selected city. The `metrics2_` container
-    # key is what grids these 2-per-row on phones (see market_view's ≤640px rules),
-    # so Both lands as a tidy 2x2 instead of four stacked boxes.
+    # Exactly TWO boxes whatever is selected — the numbers follow the city
+    # control above, with Both pooling the cities into one record and one dollar
+    # figure. The `metrics2_` container key grids them 2-per-row on phones (see
+    # market_view's ≤640px rules) rather than stacking them.
+    pooled = combine_stats(rows)
+    scope = scope_note(codes)
     with st.container(key="metrics2_trader_record"):
-        cols = st.columns(2 * max(1, len(stats)))
-    for i, (name, got) in enumerate(stats.items()):
-        prefix = f"{name} " if len(stats) > 1 else ""
-        rec_v, rec_h = record_card_text(got["summary"])
-        cnt_v, cnt_h = trades_card_text(got["summary"], got["open"])
-        cols[2 * i].markdown(market_view.metric_card(
-            f"{prefix}Record (W–L)", rec_v, rec_h), unsafe_allow_html=True)
-        cols[2 * i + 1].markdown(market_view.metric_card(
-            f"{prefix}Trades", cnt_v, cnt_h), unsafe_allow_html=True)
+        cols = st.columns(2)
+    rec_v, rec_h = record_card_text(pooled["summary"], scope)
+    pnl_v, pnl_h = pnl_card_text(pooled["summary"], pooled["unreal"],
+                                 pooled["open"], scope)
+    cols[0].markdown(market_view.metric_card("Record (W–L)", rec_v, rec_h),
+                     unsafe_allow_html=True)
+    cols[1].markdown(market_view.metric_card("Realized P&L", pnl_v, pnl_h),
+                     unsafe_allow_html=True)
 
     df = pnl_frame(curves)
     if df.empty:
