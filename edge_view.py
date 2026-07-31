@@ -103,6 +103,27 @@ def _edge_rows(metrics: dict) -> list[dict]:
     return rows
 
 
+def realized_rows(station: str, load=None) -> list[dict]:
+    """This station's bet rows, for the realized-edge attribution.
+
+    Owns the unpack of `bet_view._load_bets`, which returns `(rows, portfolio)`.
+    Doing it here rather than inline in `render` gives the contract one home and
+    something to test: `render` had unpacked four values ever since 50091dd
+    (2026-07-26) narrowed the return to two for the History page's city toggle,
+    and the resulting ValueError was swallowed as a "try again shortly" warning.
+
+    Rows arrive account-wide — one Kalshi account covers every city — so they are
+    filtered to `station` here. The Edge page renders once per selected city, so
+    unfiltered rows would print the same account-wide numbers under both
+    headings.
+    """
+    import bet_history
+    import bet_view
+
+    rows, _portfolio = (load or bet_view._load_bets)()
+    return bet_history.filter_by_station(rows, [station])
+
+
 def render(station: str = config.DEFAULT_STATION):
     import pandas as pd
 
@@ -156,17 +177,27 @@ def render(station: str = config.DEFAULT_STATION):
     st.caption("Your settled bets split by the price you paid: **with-market** means "
                "you bought the favorite (entry ≥ 50¢); **against-market** means you "
                "bought the underdog. Against-market profit is edge the market didn't see.")
-    import bet_view
     from sources import kalshi_auth
     try:
-        bet_rows, _summ, _curve, _bal = bet_view._load_bets()
+        bet_rows = realized_rows(station)
     except kalshi_auth.KalshiCredentialsError:
         st.info("Add your Kalshi API key to the app secrets (`[kalshi]`) to see "
                 "realized-edge attribution.")
         return
-    except Exception:
-        st.warning("Couldn't load your Kalshi bets right now; the forecast-edge "
-                   "section above is unaffected.")
+    except Exception as e:
+        # NAME the failure. The old bare message read like a transient blip and
+        # hid a permanent unpack bug here for five days. Mirrors the History
+        # page's handler: exception type inline, plus the HTTP status/endpoint
+        # and Kalshi's error body when the exception carries a response.
+        detail = ""
+        resp = getattr(e, "response", None)
+        if resp is not None:
+            path = resp.url.split("/trade-api/v2", 1)[-1].split("?", 1)[0]
+            body = (resp.text or "").strip().replace("\n", " ")[:200]
+            detail = f" — {resp.status_code} on {path}: {body}"
+        st.warning(f"Couldn't load your Kalshi bets right now "
+                   f"({type(e).__name__}{detail}). The forecast-edge section "
+                   "above is unaffected.")
         return
 
     attr = pnl_attribution(bet_rows)

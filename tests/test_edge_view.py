@@ -141,3 +141,86 @@ def test_render_imports_kalshi_auth_from_sources_package():
     src = inspect.getsource(edge_view.render)
     assert "from sources import kalshi_auth" in src
     assert "\n    import kalshi_auth" not in src  # never the bare top-level form
+
+
+# --- "My Realized Edge" was broken for five days ------------------------------
+# render() unpacked FOUR values from bet_view._load_bets, which has returned TWO
+# since 2026-07-26 (50091dd narrowed it to (rows, portfolio) for the History
+# page's city toggle). The ValueError was caught by a bare `except Exception`
+# that printed "Couldn't load your Kalshi bets right now" — wording that reads
+# like a transient network blip, so a permanent code bug looked like bad luck.
+
+def test_load_bets_returns_exactly_two_values():
+    """The producer contract every consumer unpacks. If _load_bets ever changes
+    shape again, this fails instead of the page silently degrading."""
+    import ast
+    import inspect
+
+    import bet_view
+    src = inspect.getsource(bet_view._load_bets.__wrapped__)
+    tree = ast.parse(src.lstrip())
+    sizes = [len(n.value.elts) for n in ast.walk(tree)
+             if isinstance(n, ast.Return) and isinstance(n.value, ast.Tuple)]
+    assert sizes == [2]
+
+
+def test_render_unpacks_load_bets_with_the_matching_arity():
+    import inspect
+
+    import edge_view
+    src = inspect.getsource(edge_view.render)
+    assert "_summ, _curve, _bal" not in src      # the four-value unpack
+
+
+def _bet_rows():
+    return [
+        {"ticker": "KXHIGHTDAL-26JUL30-B100.5", "status": "settled", "pnl": 0.5},
+        {"ticker": "KXHIGHAUS-26JUL30-B100.5", "status": "settled", "pnl": -0.2},
+        {"ticker": "KXLOWTDAL-26JUL30-B82.5", "status": "settled", "pnl": 0.1},
+    ]
+
+
+def test_realized_rows_unpacks_the_two_value_contract():
+    import edge_view
+    out = edge_view.realized_rows("KDFW", load=lambda: (_bet_rows(), 12.34))
+    assert [r["ticker"] for r in out] == ["KXHIGHTDAL-26JUL30-B100.5",
+                                          "KXLOWTDAL-26JUL30-B82.5"]
+
+
+def test_realized_rows_scopes_to_the_station_like_the_rest_of_the_page():
+    # Part A is per-station and the page renders once per city, so account-wide
+    # rows here would print Dallas's numbers under Austin's heading.
+    import edge_view
+    out = edge_view.realized_rows("KAUS", load=lambda: (_bet_rows(), 0.0))
+    assert [r["ticker"] for r in out] == ["KXHIGHAUS-26JUL30-B100.5"]
+
+
+def test_realized_rows_propagates_the_credentials_error():
+    import edge_view
+    from sources import kalshi_auth
+
+    def boom():
+        raise kalshi_auth.KalshiCredentialsError("no key")
+    try:
+        edge_view.realized_rows("KDFW", load=boom)
+    except kalshi_auth.KalshiCredentialsError:
+        return
+    raise AssertionError("credentials error must reach render's own handler")
+
+
+def test_realized_edge_failure_names_the_exception(monkeypatch):
+    """A generic 'try again later' is what hid this bug. The message must say
+    what actually broke, like the History page's handler does."""
+    from unittest.mock import MagicMock
+
+    import edge_view
+
+    def boom(station, load=None):
+        raise ValueError("not enough values to unpack (expected 4, got 2)")
+    monkeypatch.setattr(edge_view, "realized_rows", boom)
+    monkeypatch.setattr(edge_view, "betting_log", MagicMock())
+    fake_st = MagicMock()
+    monkeypatch.setattr(edge_view, "st", fake_st)
+    edge_view.render(station="KDFW")
+    warned = " ".join(str(c.args[0]) for c in fake_st.warning.call_args_list)
+    assert "ValueError" in warned
