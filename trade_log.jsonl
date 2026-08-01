@@ -641,3 +641,4 @@
 {"ts": "2026-08-01T20:31:35.244037+00:00", "kind": "entry", "ticker": "KXHIGHTDAL-26AUG01-B97.5", "side": "yes", "count": 1, "entry_ask": 0.81, "stake": 0.81, "mode": "shadow", "variable": "high", "day": "2026-08-01", "floor": 97, "cap": 98, "label": "97\u00b0 to 98\u00b0"}
 {"ts": "2026-08-01T20:36:28.269402+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-08-01T20:41:23.302784+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
+{"ts": "2026-08-01T20:41:24.086807+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow"}
