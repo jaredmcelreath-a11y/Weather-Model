@@ -10,6 +10,17 @@
       "side": "yes",
       "ts": "2026-08-01T14:41:23.347255-05:00",
       "variable": "high"
+    },
+    "KXLOWTAUS-26AUG01-B75.5": {
+      "cap": 76,
+      "count": 1,
+      "day": "2026-08-01",
+      "entry_ask": 0.9,
+      "floor": 75,
+      "label": "75\u00b0 to 76\u00b0",
+      "side": "yes",
+      "ts": "2026-08-01T16:21:17.142912-05:00",
+      "variable": "low"
     }
   }
 }
