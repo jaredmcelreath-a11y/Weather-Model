@@ -631,3 +631,4 @@
 {"ts": "2026-08-01T19:41:41.176557+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow"}
 {"ts": "2026-08-01T19:46:25.075279+00:00", "kind": "skip", "variable": "high", "reason": "resolved 51% < 70%", "mode": "shadow"}
 {"ts": "2026-08-01T19:46:26.478645+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow"}
+{"ts": "2026-08-01T19:51:35.559623+00:00", "kind": "skip", "variable": "high", "reason": "resolved 53% < 70%", "mode": "shadow"}
