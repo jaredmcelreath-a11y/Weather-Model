@@ -650,3 +650,4 @@
 {"ts": "2026-08-01T21:22:02.513079+00:00", "kind": "entry", "ticker": "KXLOWTAUS-26AUG01-B75.5", "side": "yes", "count": 1, "entry_ask": 0.9, "stake": 0.9, "mode": "shadow", "variable": "low", "day": "2026-08-01", "floor": 75, "cap": 76, "label": "75\u00b0 to 76\u00b0"}
 {"ts": "2026-08-01T21:32:26.583919+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-08-01T21:32:27.520280+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
+{"ts": "2026-08-01T21:33:36.881387+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
