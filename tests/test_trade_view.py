@@ -611,3 +611,128 @@ def test_money_label_puts_the_minus_outside_the_dollar_sign():
     assert trade_view._money_label(-0.35) == "-$0.35"
     assert trade_view._money_label(0.19) == "$0.19"
     assert trade_view._money_label(0.0) == "$0.00"
+
+
+# --- The safety strip must degrade, never crash or reassure --------------------
+# A GitHub hiccup in trade_state.load_state propagated straight out of render()
+# and replaced the whole Trader page with a raw traceback (seen locally on a 403
+# rate-limit). Every other section on the page already handles its own failure.
+
+def _fail_one(bad="KAUS", exc=RuntimeError("403 rate limit exceeded")):
+    import config
+
+    def fake(station=config.DEFAULT_STATION, **kw):
+        if station == bad:
+            raise exc
+        return {"kill_switch": False, "mode": "live"}
+    return fake
+
+
+def test_safety_rows_survives_one_station_failing(monkeypatch):
+    import trade_state
+    monkeypatch.setattr(trade_state, "load_state", _fail_one())
+    rows = {r["station"]: r for r in trade_view.safety_rows()}
+    assert set(rows) == {"KDFW", "KAUS"}
+    assert rows["KDFW"]["armed"] is True          # the healthy city still reports
+    assert rows["KAUS"]["error"]
+
+
+def test_safety_rows_never_claims_safe_on_a_failed_read(monkeypatch):
+    """merge_params defaults to kill_switch False / mode shadow, so falling back
+    to defaults would print a confident "Shadow" for a trader that might be live
+    and armed. Unknown must stay unknown."""
+    import trade_state
+    monkeypatch.setattr(trade_state, "load_state", _fail_one())
+    bad = next(r for r in trade_view.safety_rows() if r["station"] == "KAUS")
+    assert bad["armed"] is None                   # not False
+    assert bad["kill_switch"] is None
+    assert bad["mode"] is None
+
+
+def test_safety_card_flags_live_and_armed():
+    val, dot, _help = trade_view.safety_card(
+        {"name": "Dallas", "kill_switch": False, "mode": "live", "armed": True})
+    assert val == "Live & Armed" and dot == "red"
+
+
+def test_safety_card_kill_switch_reads_green():
+    val, dot, _help = trade_view.safety_card(
+        {"name": "Dallas", "kill_switch": True, "mode": "shadow", "armed": False})
+    assert val == "Kill Switch On" and dot == "green"
+
+
+def test_safety_card_shadow_reads_amber():
+    val, dot, _help = trade_view.safety_card(
+        {"name": "Dallas", "kill_switch": False, "mode": "shadow", "armed": False})
+    assert val == "Shadow" and dot == "amber"
+
+
+def test_safety_card_unknown_says_so_and_does_not_reassure():
+    val, dot, help_text = trade_view.safety_card(
+        {"name": "Austin", "kill_switch": None, "mode": None, "armed": None,
+         "error": "403 rate limit exceeded"})
+    assert val == "Unknown" and dot == "unknown"
+    assert "403" in help_text                      # name the actual failure
+    for reassuring in ("Shadow", "Kill Switch On"):
+        assert reassuring not in val
+
+
+def test_render_survives_a_state_read_failure(monkeypatch):
+    """The whole point: a failing load_state must not blank the page.
+
+    Every collaborator render() imports INSIDE the function is stubbed, so this
+    test stands alone rather than depending on another test having already
+    imported streamlit's submodules (which is what made an earlier version of it
+    pass in a full run and fail on its own).
+    """
+    import sys
+    from unittest.mock import MagicMock
+
+    import trade_state
+
+    def always_fail(station=None, **kw):
+        raise RuntimeError("403 rate limit exceeded")
+    monkeypatch.setattr(trade_state, "load_state", always_fail)
+
+    fake_st = MagicMock()
+    fake_city = MagicMock()
+    fake_city.city_control.return_value = "KDFW"
+    for name, mod in (("streamlit", fake_st), ("market_view", MagicMock()),
+                      ("city_view", fake_city)):
+        monkeypatch.setitem(sys.modules, name, mod)
+    monkeypatch.setattr(trade_view, "_render_positions", MagicMock())
+    monkeypatch.setattr(trade_view, "_render_log", MagicMock())
+    monkeypatch.setattr(trade_view, "_render_pnl", MagicMock())
+
+    trade_view.render()          # must not raise
+
+    shown = " ".join(str(c.args[0]) for c in fake_st.error.call_args_list)
+    assert "403" in shown
+    # The safety strip is drawn BEFORE the failure, so the page still reports.
+    assert fake_st.markdown.called
+
+
+def test_render_hides_the_controls_when_settings_cannot_be_read(monkeypatch):
+    """Defaults on screen are one Save away from overwriting the real config —
+    which could disengage the kill switch without the user touching a control."""
+    import sys
+    from unittest.mock import MagicMock
+
+    import trade_state
+    monkeypatch.setattr(trade_state, "load_state",
+                        MagicMock(side_effect=RuntimeError("boom")))
+    fake_st = MagicMock()
+    fake_city = MagicMock()
+    fake_city.city_control.return_value = "KDFW"
+    for name, mod in (("streamlit", fake_st), ("market_view", MagicMock()),
+                      ("city_view", fake_city)):
+        monkeypatch.setitem(sys.modules, name, mod)
+    monkeypatch.setattr(trade_view, "_render_positions", MagicMock())
+    monkeypatch.setattr(trade_view, "_render_log", MagicMock())
+    monkeypatch.setattr(trade_view, "_render_pnl", MagicMock())
+
+    trade_view.render()
+
+    assert not fake_st.toggle.called      # no kill-switch control
+    assert not fake_st.radio.called       # no mode control
+    assert not fake_st.button.called      # and no Save to press

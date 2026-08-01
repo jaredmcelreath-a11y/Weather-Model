@@ -96,16 +96,58 @@ def _fmt_ts(ts: str) -> str:
 
 def safety_rows() -> list[dict]:
     """One safety row per station for the both-at-once summary:
-    {station, name, kill_switch, mode, armed}. `armed` = live AND kill switch off
-    (the only state that can place real orders)."""
+    {station, name, kill_switch, mode, armed, error}. `armed` = live AND kill
+    switch off (the only state that can place real orders).
+
+    Each station is read independently: a GitHub outage on one city must not hide
+    the other city's armed state, and must not take the page down with it (an
+    unguarded read here replaced the whole Trader page with a traceback).
+
+    A station whose state cannot be read yields kill_switch/mode/armed = None and
+    `error` set — never a default-shaped row. See `safety_card` for why that
+    distinction matters.
+    """
     import config
     out = []
     for code in config.STATION_CODES:
-        p = trade_state.load_state(station=code)
-        out.append({"station": code, "name": config.station(code).name,
-                    "kill_switch": p["kill_switch"], "mode": p["mode"],
-                    "armed": (not p["kill_switch"]) and p["mode"] == "live"})
+        base = {"station": code, "name": config.station(code).name}
+        try:
+            p = trade_state.load_state(station=code)
+        except Exception as e:
+            out.append({**base, "kill_switch": None, "mode": None,
+                        "armed": None, "error": str(e)})
+            continue
+        out.append({**base, "kill_switch": p["kill_switch"], "mode": p["mode"],
+                    "armed": (not p["kill_switch"]) and p["mode"] == "live",
+                    "error": None})
     return out
+
+
+def safety_card(row: dict) -> tuple[str, str, str]:
+    """(value, dot, help) for one city's safety box — pure, so the wording of a
+    real-money indicator is testable.
+
+    UNKNOWN is a first-class state here rather than a fall back to the defaults.
+    `load_state` merges a MISSING document into DEFAULT_PARAMS (kill switch off,
+    shadow), which is the right answer for "no document yet" and the wrong one
+    for "could not read the document": it would print a confident "Shadow" for a
+    trader that might be live and armed. A safety indicator that guesses is worse
+    than one that says it does not know.
+    """
+    name = row.get("name") or row.get("station") or "this city"
+    err = row.get("error")
+    if err:
+        return ("Unknown", "unknown",
+                f"Could not read {name}'s trader state ({err}). Its mode and kill "
+                "switch are UNKNOWN — assume it may be armed until this clears.")
+    if row["armed"]:
+        val, dot = "Live & Armed", "red"
+    elif row["kill_switch"]:
+        val, dot = "Kill Switch On", "green"
+    else:
+        val, dot = "Shadow", "amber"
+    return val, dot, (f"Mode: {row['mode'].capitalize()} · Kill switch "
+                      f"{'engaged' if row['kill_switch'] else 'off'}.")
 
 
 def render() -> None:
@@ -122,23 +164,27 @@ def render() -> None:
     with st.container(key="metrics2_trader_safety"):
         scols = st.columns(len(config.STATION_CODES))
     for i, row in enumerate(safety_rows()):
-        if row["armed"]:
-            state, val = "red", "Live & Armed"
-        elif row["kill_switch"]:
-            state, val = "green", "Kill Switch On"
-        else:
-            state, val = "amber", "Shadow"
-        scols[i].markdown(market_view.metric_card(
-            row["name"], val,
-            f"Mode: {row['mode'].capitalize()} · Kill switch "
-            f"{'engaged' if row['kill_switch'] else 'off'}.", dot=state),
-            unsafe_allow_html=True)
+        val, state, help_text = safety_card(row)
+        scols[i].markdown(market_view.metric_card(row["name"], val, help_text,
+                                                  dot=state),
+                          unsafe_allow_html=True)
 
     # --- Per-city editor ---
     station = city_view.city_control("trader", arity=2)
     st.caption(f"Editing **{config.station(station).name}** — changes apply to this "
                "city's trader only.")
-    params = trade_state.load_state(station=station)
+    try:
+        params = trade_state.load_state(station=station)
+    except Exception as e:
+        # Deliberately hide the controls rather than render them from defaults.
+        # The editor is backed by a Save button that writes the whole document, so
+        # defaults on screen are one tap away from overwriting the real config —
+        # which could disengage the kill switch or flip mode without the user ever
+        # touching a control. The safety strip above still reports (as Unknown).
+        st.error(f"Could not load {config.station(station).name}'s trader settings "
+                 f"({e}). Controls are hidden rather than shown with default "
+                 "values, so a Save can't overwrite your real configuration.")
+        return
 
     # --- Master switches ---
     killed = st.toggle("Kill Switch (Engaged = No Trading)",
