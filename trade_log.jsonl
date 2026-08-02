@@ -792,3 +792,4 @@
 {"ts": "2026-08-02T20:39:46.870025+00:00", "kind": "skip", "variable": "high", "reason": "resolved 67% < 70%", "mode": "shadow"}
 {"ts": "2026-08-02T20:41:34.525704+00:00", "kind": "skip", "variable": "high", "reason": "resolved 67% < 70%", "mode": "shadow"}
 {"ts": "2026-08-02T20:51:44.638437+00:00", "kind": "skip", "variable": "high", "reason": "resolved 69% < 70%", "mode": "shadow"}
+{"ts": "2026-08-02T21:11:25.100830+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHTDAL-26AUG02-B95.5", "reason": "yes price 0.92 outside [0.1,0.92)", "mode": "shadow"}
