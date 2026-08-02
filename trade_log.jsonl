@@ -688,3 +688,4 @@
 {"ts": "2026-08-02T00:41:28.715832+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow"}
 {"ts": "2026-08-02T00:51:36.280692+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-08-02T11:01:44.727096+00:00", "kind": "exit", "ticker": "KXHIGHTDAL-26AUG01-B97.5", "side": "yes", "count": 1, "variable": "high", "reason": "settled won (high 98)", "exit_price": 1.0, "pnl": 0.19, "mode": "shadow"}
+{"ts": "2026-08-02T11:11:29.572002+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow"}
