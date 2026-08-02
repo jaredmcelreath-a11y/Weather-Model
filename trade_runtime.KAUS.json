@@ -1,16 +1,5 @@
 {
   "entries": {
-    "KXHIGHAUS-26AUG01-B96.5": {
-      "cap": 97,
-      "count": 1,
-      "day": "2026-08-01",
-      "entry_ask": 0.8200000000000001,
-      "floor": 96,
-      "label": "96\u00b0 to 97\u00b0",
-      "side": "yes",
-      "ts": "2026-08-01T14:41:23.347255-05:00",
-      "variable": "high"
-    },
     "KXLOWTAUS-26AUG01-B75.5": {
       "cap": 76,
       "count": 1,
