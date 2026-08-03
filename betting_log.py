@@ -63,6 +63,14 @@ SLOT_VARS = {**{lbl: ("low",) for lbl, _off in LOW_SLOT_OFFSETS},
              # Both variables: an evening capture is day-ahead for both, and at
              # the close both of the ending day's markets are still open.
              **{s: ("high", "low") for s in EVENING_SLOTS + CLOSE_SLOTS}}
+# Slots that also capture the RAW ask ladder beside the normalized PMF. Close
+# slots need it for the last-hour "was the settled bracket still buyable" question.
+# The morning low slots need it because that is where the model beats the market:
+# measured 2026-08-02, at sr+30 our error halves (0.80→0.30°F) as the dawn lock is
+# detected while the market's *worsens* (0.69→0.73). A PMF can show the market is
+# wrong but not what its bracket COST, so without the ladder there is no way to
+# tell a real edge from a merely wide dawn book.
+ASK_SLOTS = CLOSE_SLOTS + [lbl for lbl, _off in LOW_SLOT_OFFSETS]
 # The scheduler fires on a ~10-min cadence (GitHub cron at :03/:13/../:53 + the
 # external 10-min trigger). A 10-min cadence puts a run within 5 min of ANY
 # clock minute, so a ±8-min window catches every slot regardless of the cron's
@@ -100,7 +108,8 @@ def current_slot(now: datetime, tol_min=SLOT_TOLERANCE_MIN) -> str | None:
     return None
 
 
-def slot_target_day(slot: str, now: datetime) -> date:
+def slot_target_day(slot: str, now: datetime,
+                    station: str = config.DEFAULT_STATION) -> date:
     """The date whose market `slot` captures.
 
     Existing same-day slots target the clock day (unchanged). Evening slots
@@ -111,7 +120,7 @@ def slot_target_day(slot: str, now: datetime) -> date:
     if slot in EVENING_SLOTS:
         return local.date() + timedelta(days=1)
     if slot in CLOSE_SLOTS:
-        return settlement.climate_day_of(local)
+        return settlement.climate_day_of(local, station)
     return local.date()
 
 
@@ -276,7 +285,7 @@ def record(cli_snapshot: dict, hourly_snapshot: dict, slot: str, calib: dict,
     captured = cli_snapshot.get("updated") or datetime.now(TZ).isoformat(timespec="seconds")
     market_block = (cli_snapshot.get("market") or {}).get(block_name, {})
     hourly_block = (hourly_snapshot or {}).get(block_name, {})
-    asks = (cli_snapshot.get("market_asks") or {}) if slot in CLOSE_SLOTS else {}
+    asks = (cli_snapshot.get("market_asks") or {}) if slot in ASK_SLOTS else {}
 
     new_recs = []
     for variable in SLOT_VARS.get(slot, ("high", "low")):

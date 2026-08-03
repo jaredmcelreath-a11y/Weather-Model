@@ -86,12 +86,13 @@ def _attach_market(cli_snap: dict, now: datetime,
         if block:
             cli_snap["market"]["yesterday"] = block
 
-    if betting_log.current_slot(now) in betting_log.CLOSE_SLOTS:
-        closing = settlement.climate_day_of(now, station)
+    slot = betting_log.current_slot(now)
+    if slot in betting_log.ASK_SLOTS:
+        target = betting_log.slot_target_day(slot, now, station)
         asks = {}
-        for var in ("high", "low"):
+        for var in betting_log.SLOT_VARS.get(slot, ("high", "low")):
             try:
-                rows = kalshi.ask_rows(var, closing, station=station)
+                rows = kalshi.ask_rows(var, target, station=station)
             except Exception:
                 rows = None
             if rows:

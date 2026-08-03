@@ -59,6 +59,27 @@ def test_asks_attached_only_on_close_slots(monkeypatch):
     assert "market_asks" not in midday
 
 
+def test_asks_attached_on_morning_low_slots_for_today(monkeypatch):
+    # sr+30 on 2026-07-20 (sunrise 06:33 CDT). The ladder must be fetched for the
+    # day the slot targets — today — not the closing climate day.
+    asked = []
+    monkeypatch.setattr(scheduled_log.kalshi, "implied_block",
+                        lambda t, m: {"today": {}, "tomorrow": {}})
+    monkeypatch.setattr(scheduled_log.kalshi, "implied_forecast",
+                        lambda v, d, station=None: {"ev": 79.8, "buckets": []})
+
+    def _ask(var, day, station=None):
+        asked.append((var, day))
+        return [[79, 80, 0.90, 0.94]]
+
+    monkeypatch.setattr(scheduled_log.kalshi, "ask_rows", _ask)
+
+    snap = _snap()
+    scheduled_log._attach_market(snap, datetime(2026, 7, 20, 7, 3, tzinfo=_TZ))
+    assert snap["market_asks"]["low"] == [[79, 80, 0.90, 0.94]]
+    assert asked == [("low", date(2026, 7, 20))]    # low only, today's market
+
+
 def test_market_failure_never_breaks_the_snapshot(monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("kalshi down")

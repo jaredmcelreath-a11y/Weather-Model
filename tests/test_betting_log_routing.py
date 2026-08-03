@@ -59,6 +59,22 @@ def test_close_slot_logs_raw_asks(tmp_path):
     assert hi["market_asks"] == [[None, 98, 0.02, 0.05], [99, 100, 0.93, 0.97]]
 
 
+def test_morning_low_slot_logs_raw_asks(tmp_path):
+    # The dawn low is where the model's lock detection beats the market, so the
+    # low slots need the raw ladder too — a PMF edge is untradeable without the
+    # price that bracket was actually offered at.
+    snap = dict(_SNAP)
+    snap["market"] = dict(_SNAP["market"])
+    snap["market"]["today"] = {"low": {"ev": 79.8, "buckets": [[79, 80, 1.0]],
+                                       "volume": 12.0}}
+    p = str(tmp_path / "b.jsonl")
+    betting_log.record(snap, _HOURLY, "sr+30", _CALIB, path=p,
+                       now=datetime(2026, 7, 20, 7, 3, tzinfo=_TZ))
+    rows = betting_log.load(p)
+    assert {r["variable"] for r in rows} == {"low"}
+    assert rows[0]["market_asks"] == [[79, 80, 0.90, 0.94]]
+
+
 def test_evening_slot_writes_tomorrow(tmp_path):
     p = str(tmp_path / "b.jsonl")
     betting_log.record(_SNAP, _HOURLY, "eve-22:00", _CALIB, path=p,
