@@ -226,3 +226,76 @@ def ask_rows(variable: str, day: date,
     """
     return [[c.get("floor"), c.get("cap"), c.get("yes_bid"), c.get("yes_ask")]
             for c in fetch_contracts(variable, day, station)]
+
+
+# ---- Multi-city scanner support -------------------------------------------
+# Read-only discovery for the price scanner. Kept here (not in a station config)
+# because the scanner deliberately has no per-city setup: city identity IS the
+# series ticker.
+
+WEATHER_CATEGORY = "Climate and Weather"
+
+# Not daily city high/low markets: national aggregate, and an hourly directional
+# NYC series that shares the KXHIGH prefix.
+EXCLUDED_SERIES = {"KXHIGHUS", "KXHIGHNYD"}
+
+
+def parse_kalshi_ts(value):
+    """Kalshi's ISO-8601 timestamps ('2026-08-04T06:00:00Z') as aware UTC
+    datetimes. None (not an exception) for missing or unparseable input, so a
+    single malformed market never kills a scan pass."""
+    from datetime import datetime as _dt
+    if not value:
+        return None
+    try:
+        return _dt.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def list_weather_series(fetch=None) -> list:
+    """Daily city high/low temperature series, as [{"ticker", "title"}, ...].
+
+    Discovered from the live category rather than hardcoded: the real list is
+    full of legacy duplicates (KXHIGHDEN beside KXHIGHTEMPDEN, three Houston
+    variants) and the naming is inconsistent even within a city (KXHIGHAUS but
+    KXLOWTAUS). A hardcoded table would encode today's mess and rot. Callers
+    filter to live ones with `is_series_active`."""
+    fetch = fetch or (lambda: get_json(f"{BASE}/series",
+                                       {"category": WEATHER_CATEGORY}, ttl=3600))
+    out = []
+    for s in (fetch() or {}).get("series") or []:
+        ticker = (s.get("ticker") or "").upper()
+        if ticker in EXCLUDED_SERIES:
+            continue
+        if not (ticker.startswith("KXHIGH") or ticker.startswith("KXLOW")):
+            continue
+        out.append({"ticker": ticker, "title": s.get("title") or ""})
+    return sorted(out, key=lambda s: s["ticker"])
+
+
+def list_series_markets(series_ticker: str, status=None, fetch=None) -> list:
+    """Every market under `series_ticker`, optionally filtered by status.
+
+    One call returns the whole bracket ladder, which is why the scanner needs no
+    per-bracket requests. `fetch` takes the params dict, for tests."""
+    params = {"series_ticker": series_ticker, "limit": 200}
+    if status:
+        params["status"] = status
+    fetch = fetch or (lambda p: get_json(f"{BASE}/markets", p, ttl=60))
+    return (fetch(params) or {}).get("markets") or []
+
+
+def is_series_active(markets: list, now, window_days: int = 7) -> bool:
+    """True when the series has a live market or one that closed recently.
+
+    Drops the dead legacy series without hardcoding which ones they are."""
+    from datetime import timedelta as _td
+    cutoff = now - _td(days=window_days)
+    for m in markets:
+        if (m.get("status") or "").lower() in ("open", "active"):
+            return True
+        closed = parse_kalshi_ts(m.get("close_time"))
+        if closed is not None and closed >= cutoff:
+            return True
+    return False
