@@ -27,6 +27,7 @@ class Deps:
     list_series: Callable
     list_markets: Callable
     append_rows: Callable
+    load_rows: Callable = lambda path: []
 
 
 def _real_deps() -> Deps:
@@ -34,6 +35,7 @@ def _real_deps() -> Deps:
         list_series=kalshi.list_weather_series,
         list_markets=kalshi.list_series_markets,
         append_rows=lambda path, rows: scan_log.append_many(path, rows),
+        load_rows=lambda path: scan_log.load(path),
     )
 
 
@@ -61,3 +63,32 @@ def snapshot_pass(now: datetime, deps: Deps) -> dict:
     written = deps.append_rows(scan_log.SNAPSHOT_PATH, rows)
     return {"series": len({r["series"] for r in rows}),
             "rows": written or 0, "skipped": skipped, "errors": errors}
+
+
+def settlement_pass(now: datetime, deps: Deps) -> dict:
+    """Record Kalshi's own outcome for every newly finalized bracket.
+
+    Kalshi self-reports settlement (`result` + `status: finalized`), which is why
+    the scanner needs no NWS CLI access and no per-city settlement basis. Tickers
+    already on file are skipped, so the pass is safe to re-run."""
+    known = {r.get("ticker") for r in deps.load_rows(scan_log.SETTLED_PATH)}
+    rows, already, errors = [], 0, 0
+    for s in deps.list_series():
+        ticker = s["ticker"]
+        try:
+            markets = deps.list_markets(ticker, status="settled")
+        except Exception as e:            # noqa: BLE001 - one city must not
+            print(f"[scan] {ticker}: settled markets unavailable ({e})")
+            errors += 1                   # cost the others their settlement
+            continue
+        for m in markets:
+            row = scan_log.build_settlement_row(m, now)
+            if row is None:
+                continue
+            if row["ticker"] in known:
+                already += 1
+                continue
+            known.add(row["ticker"])
+            rows.append(row)
+    written = deps.append_rows(scan_log.SETTLED_PATH, rows)
+    return {"settled": written or 0, "already": already, "errors": errors}
