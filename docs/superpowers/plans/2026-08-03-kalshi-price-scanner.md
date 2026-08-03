@@ -1299,6 +1299,24 @@ git commit -m "feat(scanner): CLI entry point and thrice-daily scan workflow"
 
 ---
 
+## Corrections found during execution (2026-08-03)
+
+Live verification exposed three things this plan got wrong. All fixed in
+`3fc9ff1`; recorded here so the plan is not left misleading.
+
+1. **Rate limiting was not planned for.** A 51-series pass fired back-to-back
+   loses ~80% of series to HTTP 429. `Deps` gained a `sleep` and
+   `REQUEST_SPACING_S = 0.5`; a full pass takes ~31s.
+2. **The market payload shape in every fixture was invented, not observed.**
+   Real fields are `yes_bid_dollars` / `yes_ask_dollars` (dollar *strings*) and
+   `volume_fp`; `yes_bid`/`yes_ask`/`volume` do not exist. `strike_type` was
+   also omitted from `build_snapshot_row` despite the spec listing it.
+3. **`status="open"` is required on the snapshot fetch**, or the endpoint also
+   returns every past day's settled markets.
+
+**Corrected volume:** ~480 rows and ~135 KB per firing → ~1,440 rows/day,
+~12 MB/month. The spec's ~6 MB estimate was 2x low.
+
 ## Deviations from the spec
 
 Two, both deliberate — flag them if you disagree rather than silently
