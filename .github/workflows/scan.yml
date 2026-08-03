@@ -1,0 +1,73 @@
+name: Kalshi multi-city price scan
+
+# Read-only measurement, entirely separate from log.yml and trade.yml. Snapshots
+# every Kalshi city temperature bracket's price three times a day and records
+# Kalshi's own settlement result once a day. Places no orders and touches no
+# trade state.
+#
+# ONE-TIME SETUP (before first run):
+#   1. Create the data branch:
+#        git switch --orphan scan-data && git commit --allow-empty -m init \
+#          && git push origin scan-data && git switch -
+#      (the contents API needs the branch to exist before the first write).
+#   2. Secret: SCAN_GH_TOKEN — repo-scoped PAT with contents:write.
+#      Kalshi's series/markets endpoints are public, so no Kalshi key is needed.
+#
+# Firings land ~18h, ~12h and ~6h before the ~06:00Z close of US city markets.
+# `hours_to_close` is recorded per row from each market's own close_time, so a
+# throttled or late run is harmless — it is not assumed from the schedule.
+on:
+  schedule:
+    - cron: "0 12 * * *"
+    - cron: "0 18 * * *"
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "snapshot | settle | report"
+        required: true
+        default: "snapshot"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kalshi-scan
+  cancel-in-progress: false      # never drop a snapshot; they are not idempotent
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: Snapshot prices
+        if: github.event_name == 'schedule'
+        env:
+          SCAN_GH_REPO: ${{ github.repository }}
+          SCAN_GH_BRANCH: scan-data
+          SCAN_GH_TOKEN: ${{ secrets.SCAN_GH_TOKEN }}
+        run: python scanner.py snapshot
+
+      # Settlement runs only on the 12:00Z firing: US city markets close ~06:00Z,
+      # so by noon the prior climate day has finalized.
+      - name: Record settlements
+        if: github.event_name == 'schedule' && github.event.schedule == '0 12 * * *'
+        env:
+          SCAN_GH_REPO: ${{ github.repository }}
+          SCAN_GH_BRANCH: scan-data
+          SCAN_GH_TOKEN: ${{ secrets.SCAN_GH_TOKEN }}
+        run: python scanner.py settle
+
+      - name: Manual run
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SCAN_GH_REPO: ${{ github.repository }}
+          SCAN_GH_BRANCH: scan-data
+          SCAN_GH_TOKEN: ${{ secrets.SCAN_GH_TOKEN }}
+        run: python scanner.py ${{ inputs.command }}

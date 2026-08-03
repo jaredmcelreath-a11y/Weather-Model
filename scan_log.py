@@ -89,12 +89,30 @@ def hours_to_close(close_time, now):
     return round((closed - now).total_seconds() / 3600.0, 2)
 
 
+def _dollars(value):
+    """Kalshi returns prices and sizes as dollar STRINGS ("0.3300"); cast to
+    float. None for absent or unparseable values — mirrors sources.kalshi._f."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def build_snapshot_row(market: dict, series: str, now):
     """One priced bracket at one moment, or None when the market has no quotes.
 
-    An unquoted market must be dropped, not stored: recording a missing bid as
-    0 would look like a free option in the reliability curve."""
-    bid, ask = market.get("yes_bid"), market.get("yes_ask")
+    Prices come from the *_dollars fields and volume from volume_fp — the bare
+    yes_bid/yes_ask/volume keys do not exist on this endpoint. Reading the wrong
+    names is silent: every field is None, every row is dropped as unquoted, and
+    a live pass returns 0 rows from 40 active series (measured 2026-08-03).
+
+    An unquoted market is dropped, not stored: recording a missing bid as 0 would
+    look like a free option in the reliability curve. A genuine 0.00 bid on a
+    dead tail still records — the report's price bands exclude it."""
+    bid = _dollars(market.get("yes_bid_dollars"))
+    ask = _dollars(market.get("yes_ask_dollars"))
     if bid is None and ask is None:
         return None
     return {
@@ -102,11 +120,12 @@ def build_snapshot_row(market: dict, series: str, now):
         "series": series,
         "variable": variable_of_series(series),
         "ticker": market.get("ticker"),
+        "strike_type": market.get("strike_type"),
         "floor": market.get("floor_strike"),
         "cap": market.get("cap_strike"),
         "yes_bid": bid,
         "yes_ask": ask,
-        "volume": market.get("volume"),
+        "volume": _dollars(market.get("volume_fp")),
         "close_time": market.get("close_time"),
         "hours_to_close": hours_to_close(market.get("close_time"), now),
     }

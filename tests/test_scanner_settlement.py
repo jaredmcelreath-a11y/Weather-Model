@@ -74,3 +74,17 @@ def test_one_broken_series_does_not_kill_the_settlement_pass():
     out = scanner.settlement_pass(_NOW, d)
     assert out["settled"] == 1
     assert out["errors"] == 1
+
+
+def test_settlement_paces_requests_between_series():
+    sleeps = []
+    d = scanner.Deps(
+        list_series=lambda: [{"ticker": "KXHIGHDEN", "title": "Denver"},
+                             {"ticker": "KXLOWTDEN", "title": "Denver low"}],
+        list_markets=lambda s, status=None: [_settled(f"{s}-26AUG03-B72.5")],
+        append_rows=lambda path, rows: len(rows),
+        load_rows=lambda path: [],
+        sleep=sleeps.append,
+    )
+    scanner.settlement_pass(_NOW, d)
+    assert sleeps == [scanner.REQUEST_SPACING_S] * 2

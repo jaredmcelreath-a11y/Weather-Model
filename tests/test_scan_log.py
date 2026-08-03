@@ -4,10 +4,15 @@ import scan_log
 
 _NOW = datetime(2026, 8, 3, 19, 0, tzinfo=timezone.utc)
 
+# The REAL Kalshi markets payload: prices arrive as dollar STRINGS under the
+# *_dollars names, volume under volume_fp. The bare yes_bid/yes_ask/volume keys
+# this fixture used to carry do not exist on the live endpoint — a live pass
+# against them produced 0 rows from 40 active series (2026-08-03).
 _MARKET = {
     "ticker": "KXHIGHDEN-26AUG03-B72.5", "status": "active",
-    "floor_strike": 72, "cap_strike": 73,
-    "yes_bid": 0.33, "yes_ask": 0.37, "volume": 120,
+    "strike_type": "between", "floor_strike": 72, "cap_strike": 73,
+    "yes_bid_dollars": "0.3300", "yes_ask_dollars": "0.3700",
+    "volume_fp": "120.00",
     "close_time": "2026-08-04T06:00:00Z",
 }
 
@@ -45,12 +50,24 @@ def test_snapshot_row_carries_price_strike_and_hours_to_close():
     assert row["series"] == "KXHIGHDEN"
     assert row["variable"] == "high"
     assert row["floor"] == 72 and row["cap"] == 73
+    assert row["strike_type"] == "between"
     assert row["yes_bid"] == 0.33 and row["yes_ask"] == 0.37
+    assert row["volume"] == 120.0
     assert row["hours_to_close"] == 11.0
 
 
+def test_open_ended_tail_strikes_survive_a_missing_side():
+    # 'greater'/'less' tails carry only one strike; both must still record.
+    tail = dict(_MARKET, ticker="KXHIGHDEN-26AUG03-T107",
+                strike_type="greater", floor_strike=107, cap_strike=None)
+    row = scan_log.build_snapshot_row(tail, "KXHIGHDEN", _NOW)
+    assert row["strike_type"] == "greater"
+    assert row["floor"] == 107 and row["cap"] is None
+
+
 def test_an_unquoted_market_is_skipped_not_recorded_as_zero():
-    unquoted = dict(_MARKET, yes_bid=None, yes_ask=None)
+    unquoted = {k: v for k, v in _MARKET.items()
+                if k not in ("yes_bid_dollars", "yes_ask_dollars")}
     assert scan_log.build_snapshot_row(unquoted, "KXHIGHDEN", _NOW) is None
 
 
