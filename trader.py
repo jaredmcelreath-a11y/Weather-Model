@@ -221,14 +221,22 @@ def run_once(now: datetime | None = None, *, deps: Deps,
             continue
         contracts = deps.fetch_contracts(var, today)
         implied = deps.implied_forecast(var, today)
-        target = None
         ok_entry, reason = trade_logic.entry_allowed(vs, implied, params, var)
-        if ok_entry:
-            mkt = trade_logic.market_center(implied)
-            target = trade_logic.select_bracket(contracts, mkt, var)
+        mkt = trade_logic.market_center(implied)
+        # The bracket this pass POINTS AT, computed even when the entry is gated.
+        # Observability only. `target` below stays gated exactly as before, because
+        # it also drives should_exit's reversal check — an ungated target would make
+        # reversals fire on passes that previously held. (entry_allowed already
+        # returns False when mkt is None, so target is unchanged by construction.)
+        # Without this the log carries no target at all on a gated pass, which made
+        # every entry-gate counterfactual unmeasurable.
+        intent = (trade_logic.select_bracket(contracts, mkt, var)
+                  if mkt is not None else None)
+        target = intent if ok_entry else None
         gates_ok, _ = trade_logic.gates_clear(vs)
         ctx[var] = {"vs": vs, "contracts": contracts, "implied": implied,
-                    "target": target, "ok_entry": ok_entry, "reason": reason,
+                    "target": target, "intent": intent,
+                    "ok_entry": ok_entry, "reason": reason,
                     "gates_ok": gates_ok,
                     "by_ticker": {c["ticker"]: c for c in contracts}}
 
@@ -289,6 +297,17 @@ def run_once(now: datetime | None = None, *, deps: Deps,
         do_exit, why = trade_logic.should_exit(pos, cur_ask, target_tkr,
                                                c["gates_ok"], params)
         if not do_exit:
+            # The prices the stop-loss was evaluated against on a pass that did
+            # NOT exit. Entry/exit records alone leave the held interval blind, so
+            # a stop that never fires is indistinguishable from one that was never
+            # correctly evaluated — the exact question the 2026-08-02 KAUS review
+            # could not answer.
+            deps.append_log(trade_log.build_record(
+                "hold", ticker=pos["ticker"], variable=var, side=pos["side"],
+                count=pos["count"], entry_ask=pos["entry_ask"],
+                current_ask=cur_ask, current_bid=cur_bid,
+                stop_at=round(pos["entry_ask"] - params["stop_loss"], 4),
+                target_ticker=target_tkr, mode=mode))
             continue
         price = cur_bid if cur_bid is not None else 0.01
         deps.place_order(ticker=pos["ticker"], side=pos["side"], action="sell",
@@ -342,8 +361,9 @@ def run_once(now: datetime | None = None, *, deps: Deps,
         c = ctx.get(var)
         if not c or not c["ok_entry"] or not c["target"]:
             if c and not c["ok_entry"]:
-                deps.append_log(trade_log.build_record("skip", variable=var,
-                                reason=c["reason"], mode=mode))
+                deps.append_log(trade_log.build_record(
+                    "skip", variable=var, reason=c["reason"], mode=mode,
+                    intent_ticker=(c["intent"] or {}).get("ticker")))
             continue
         if open_by_var.get(var, 0) >= params["max_open_per_variable"]:
             deps.append_log(trade_log.build_record("skip", variable=var,

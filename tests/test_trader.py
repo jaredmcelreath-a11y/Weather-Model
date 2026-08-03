@@ -133,6 +133,37 @@ def test_reversal_sells_stale_bracket():
     assert len(sells) == 1 and sells[0]["ticker"] == stale
 
 
+def test_gated_pass_still_logs_the_bracket_it_would_have_bought():
+    # Without this the log has no target at all on a gated pass, so no entry-gate
+    # counterfactual (target stability, chase detection) can ever be measured.
+    tkr = "KXHIGHTDAL-26JUL24-B99"
+    snap = _high_snap()
+    snap["today"]["high"]["resolved"] = 0.5      # below min_resolved -> entry gated
+    d = Deps(state=_live_params(), snap=snap, contracts={"high": [_b99()]},
+             book={tkr: _CHEAP_BOOK}, implied={"high": {"ev": 98.6}})
+    trader.run_once(now=NOON, deps=d)
+    assert d.orders == []                        # still gated, behavior unchanged
+    skip = next(r for r in d.logs if r["kind"] == "skip")
+    assert skip["intent_ticker"] == tkr
+
+
+def test_hold_pass_logs_the_price_the_stop_loss_saw():
+    # The stop-loss is evaluated once per pass against the current ask; without
+    # that ask on the record there is no way to audit whether it was evaluated
+    # correctly on the passes that did NOT exit.
+    tkr = "KXHIGHTDAL-26JUL24-B99"
+    d = Deps(state=_live_params(), snap=_high_snap(), contracts={"high": [_b99()]},
+             book={tkr: _CHEAP_BOOK}, implied={"high": {"ev": 98.6}},
+             runtime={"entries": {tkr: {"entry_ask": 0.45, "side": "yes",
+                                        "count": 1, "variable": "high"}}})
+    trader.run_once(now=NOON, deps=d)
+    hold = next(r for r in d.logs if r["kind"] == "hold")
+    assert hold["ticker"] == tkr
+    assert hold["current_ask"] == 0.45           # 1 - best no bid (0.55)
+    assert hold["entry_ask"] == 0.45
+    assert hold["stop_at"] == 0.25               # entry 0.45 - stop_loss 0.20
+
+
 def test_real_deps_snapshot_uses_the_kalshi_settlement_basis(monkeypatch):
     """The trader must model on the SAME basis Kalshi settles on.
 
