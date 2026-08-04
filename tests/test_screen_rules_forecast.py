@@ -10,24 +10,44 @@ def _row(floor, cap, ask=0.35, bid=0.33, strike="between"):
             "hours_to_close": 11.0}
 
 
+def test_winning_range_of_a_between_bracket_is_inclusive():
+    # Kalshi labels floor=89 cap=90 as "89 to 90".
+    assert sr.winning_range(_row(89, 90)) == (89, 90)
+
+
+def test_a_greater_tail_starts_one_degree_above_its_strike():
+    # Kalshi labels floor=90 greater as "91 or above" -- NOT 90.
+    assert sr.winning_range(_row(90, None, strike="greater")) == (91, None)
+
+
+def test_a_less_tail_ends_one_degree_below_its_strike():
+    # Kalshi labels cap=83 less as "82 or below" -- NOT 83.
+    assert sr.winning_range(_row(None, 83, strike="less")) == (None, 82)
+
+
 def test_gap_is_zero_when_the_bracket_contains_the_forecast():
-    assert sr.bracket_gap(65, 66, 65.4) == 0.0
+    assert sr.bracket_gap(_row(65, 66), 65.4) == 0.0
 
 
 def test_gap_measures_to_the_nearest_edge():
-    assert sr.bracket_gap(72, 73, 66.0) == 6.0
-    assert sr.bracket_gap(60, 61, 66.0) == 5.0
+    assert sr.bracket_gap(_row(72, 73), 66.0) == 6.0
+    assert sr.bracket_gap(_row(60, 61), 66.0) == 5.0
 
 
-def test_gap_handles_open_ended_tails():
-    # 'greater than 107' with a forecast of 96 is 11 degrees away.
-    assert sr.bracket_gap(107, None, 96.0) == 11.0
-    # 'less than 97' with a forecast of 96 contains it.
-    assert sr.bracket_gap(None, 97, 96.0) == 0.0
+def test_gap_uses_the_tails_real_winning_edge_not_its_strike():
+    # ">90" wins at 91, so a forecast of 85 is 6 away, not 5.
+    assert sr.bracket_gap(_row(90, None, strike="greater"), 85.0) == 6.0
+    # "<83" wins at 82, so a forecast of 85 is 3 away, not 2.
+    assert sr.bracket_gap(_row(None, 83, strike="less"), 85.0) == 3.0
+
+
+def test_a_forecast_inside_a_tail_still_has_no_gap():
+    assert sr.bracket_gap(_row(90, None, strike="greater"), 95.0) == 0.0
+    assert sr.bracket_gap(_row(None, 83, strike="less"), 70.0) == 0.0
 
 
 def test_gap_is_none_without_any_strike():
-    assert sr.bracket_gap(None, None, 96.0) is None
+    assert sr.bracket_gap(_row(None, None), 96.0) is None
 
 
 def test_price_prefers_the_ask_because_that_is_what_you_pay():

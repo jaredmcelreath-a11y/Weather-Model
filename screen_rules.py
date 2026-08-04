@@ -39,17 +39,37 @@ def price_of(row: dict):
     return ask if ask is not None else bid
 
 
-def bracket_gap(floor, cap, value: float):
-    """Degrees from `value` to the nearest edge of [floor, cap]; 0 inside it.
+def winning_range(row: dict):
+    """The INCLUSIVE (lo, hi) temperatures at which this contract settles YES.
 
-    Open-ended tails carry one strike: 'greater' has no cap, 'less' no floor,
-    and each is unbounded on its missing side."""
-    if value is None or (floor is None and cap is None):
+    Not the raw strikes. A tail's strike sits one degree outside the range it
+    actually pays on, which Kalshi's own labels spell out: `greater` with
+    floor_strike 90 is titled "91° or above", and `less` with cap_strike 83 is
+    "82° or below". Only `between` is inclusive of both strikes ("89° to 90°").
+
+    Using the raw strikes understates every tail's distance by a degree and lets
+    a tail survive the dead screen at the exact boundary where it is already
+    lost. None on a side means unbounded there."""
+    floor, cap = row.get("floor"), row.get("cap")
+    kind = row.get("strike_type")
+    if kind == "greater":
+        return (None if floor is None else float(floor) + 1, None)
+    if kind == "less":
+        return (None, None if cap is None else float(cap) - 1)
+    return (None if floor is None else float(floor),
+            None if cap is None else float(cap))
+
+
+def bracket_gap(row: dict, value: float):
+    """Degrees from `value` to the nearest temperature this bracket pays on;
+    0 when `value` already falls inside it."""
+    lo, hi = winning_range(row)
+    if value is None or (lo is None and hi is None):
         return None
-    if floor is not None and value < floor:
-        return round(float(floor) - float(value), 2)
-    if cap is not None and value > cap:
-        return round(float(value) - float(cap), 2)
+    if lo is not None and value < lo:
+        return round(lo - float(value), 2)
+    if hi is not None and value > hi:
+        return round(float(value) - hi, 2)
     return 0.0
 
 
@@ -62,6 +82,8 @@ def _candidate(row: dict, kind: str, reference: float, gap: float,
         "ticker": row.get("ticker"),
         "floor": row.get("floor"),
         "cap": row.get("cap"),
+        "strike_type": row.get("strike_type"),
+        "label": row.get("label"),
         "price": price,
         "forecast": reference,
         "gap": gap,
@@ -77,7 +99,7 @@ def forecast_candidate(row: dict, forecast, now_iso: str):
     price = _tradeable_price(row)
     if price is None:
         return None
-    gap = bracket_gap(row.get("floor"), row.get("cap"), forecast)
+    gap = bracket_gap(row, forecast)
     if gap is None or gap < MIN_CANDIDATE_GAP_F:
         return None
     return _candidate(row, "forecast", float(forecast), gap, price, now_iso)
@@ -128,15 +150,18 @@ def dead_candidate(row: dict, bound, now_iso: str):
     if price is None:
         return None
     variable = row.get("variable")
-    floor, cap = row.get("floor"), row.get("cap")
+    lo, hi = winning_range(row)
     if variable == "low":
-        if floor is None or floor <= bound:
+        # The settled low can only fall further, so a bracket whose LOWEST
+        # winning temperature already sits above the realized minimum is lost.
+        # An unbounded-below tail ("76 or below") never is.
+        if lo is None or lo <= bound:
             return None
-        gap = round(float(floor) - float(bound), 2)
+        gap = round(lo - float(bound), 2)
     elif variable == "high":
-        if cap is None or cap >= bound:
+        if hi is None or hi >= bound:
             return None
-        gap = round(float(bound) - float(cap), 2)
+        gap = round(float(bound) - hi, 2)
     else:
         return None
     return _candidate(row, "dead", float(bound), gap, price, now_iso)

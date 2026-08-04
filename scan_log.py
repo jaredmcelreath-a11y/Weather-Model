@@ -122,6 +122,10 @@ def build_snapshot_row(market: dict, series: str, now):
         "variable": variable_of_series(series),
         "ticker": market.get("ticker"),
         "strike_type": market.get("strike_type"),
+        # Kalshi's OWN wording ("91° or above"), not one we invent. A tail's
+        # strike sits a degree outside the range it pays on, so any label built
+        # from floor/cap alone disagrees with what the user sees on Kalshi.
+        "label": market.get("yes_sub_title") or market.get("subtitle"),
         "floor": market.get("floor_strike"),
         "cap": market.get("cap_strike"),
         "yes_bid": bid,

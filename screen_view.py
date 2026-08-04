@@ -86,6 +86,14 @@ def display_rows(rows: list) -> list:
 
 
 def _bracket_label(row: dict) -> str:
+    """Kalshi's own label when the row carries one; otherwise reconstructed.
+
+    Rows logged before the label was captured fall back to floor/cap, which
+    reads ">90" where Kalshi says "91° or above" -- correct as a strict
+    inequality, but not what you see on their site."""
+    label = row.get("label")
+    if label:
+        return str(label)
     floor, cap = row.get("floor"), row.get("cap")
     if floor is not None and cap is not None:
         return f"{floor}-{cap}"

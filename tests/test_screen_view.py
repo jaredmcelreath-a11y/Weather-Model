@@ -82,3 +82,16 @@ def test_a_dead_row_is_settled_regardless_of_the_clock():
     # 'dead' means realized temperature already ruled it out -- hard evidence
     # beats the diurnal heuristic.
     assert screen_view.settled_of(_row_hrs(23.0, "low", kind="dead")) == "Yes"
+
+
+def test_bracket_label_prefers_kalshis_wording():
+    row = _c("t", "x", 0.4, 5.0)
+    row.update(strike_type="greater", floor=90, cap=None,
+               label="91° or above")
+    assert screen_view._bracket_label(row) == "91° or above"
+
+
+def test_bracket_label_falls_back_for_rows_logged_before_labels():
+    row = _c("t", "x", 0.4, 5.0)
+    row.update(strike_type="greater", floor=90, cap=None, label=None)
+    assert screen_view._bracket_label(row) == ">90"

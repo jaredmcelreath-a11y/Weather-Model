@@ -3,9 +3,9 @@ import screen_rules as sr
 _TS = "2026-08-03T18:00:00Z"
 
 
-def _row(floor, cap, variable="low", ask=0.35):
+def _row(floor, cap, variable="low", ask=0.35, strike="between"):
     return {"series": "KXLOWTDEN", "variable": variable,
-            "ticker": "KXLOWTDEN-26AUG03-B72.5", "strike_type": "between",
+            "ticker": "KXLOWTDEN-26AUG03-B72.5", "strike_type": strike,
             "floor": floor, "cap": cap, "yes_bid": 0.33, "yes_ask": ask,
             "hours_to_close": 11.0}
 
@@ -64,3 +64,25 @@ def test_a_bracket_containing_the_bound_is_not_dead():
 def test_a_worthless_dead_bracket_is_not_reported():
     # Nothing to harvest below the price floor.
     assert sr.dead_candidate(_row(72, 73, "low", ask=0.01), 66.0, _TS) is None
+
+
+def test_a_greater_tail_is_dead_at_the_boundary_the_strike_hides():
+    # ">66" wins at 67+, so a realized low of 66 already kills it even though
+    # its floor_strike equals the bound.
+    got = sr.dead_candidate(_row(66, None, "low", strike="greater"), 66.0, _TS)
+    assert got is not None and got["gap"] == 1.0
+
+
+def test_a_less_tail_is_dead_at_the_boundary_the_strike_hides():
+    # "<96" wins at 95 or below, so a realized high of 96 kills it.
+    got = sr.dead_candidate(_row(None, 96, "high", strike="less"), 96.0, _TS)
+    assert got is not None and got["gap"] == 1.0
+
+
+def test_a_less_tail_can_never_be_dead_for_a_low():
+    # "below 76" stays winnable however low the day goes.
+    assert sr.dead_candidate(_row(None, 76, "low", strike="less"), 66.0, _TS) is None
+
+
+def test_a_greater_tail_can_never_be_dead_for_a_high():
+    assert sr.dead_candidate(_row(90, None, "high", strike="greater"), 96.0, _TS) is None

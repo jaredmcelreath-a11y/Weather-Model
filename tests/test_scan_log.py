@@ -105,3 +105,12 @@ def test_append_many_with_no_rows_writes_nothing():
 
 def test_load_of_a_missing_file_is_empty():
     assert scan_log.load(scan_log.SNAPSHOT_PATH, transport=FakeTransport()) == []
+
+
+def test_snapshot_row_keeps_kalshis_own_bracket_label():
+    # A tail's strike sits a degree outside what it pays on, so Kalshi's wording
+    # is the only label that matches their site.
+    tail = dict(_MARKET, strike_type="greater", floor_strike=90,
+                cap_strike=None, yes_sub_title="91° or above")
+    row = scan_log.build_snapshot_row(tail, "KXHIGHPHIL", _NOW)
+    assert row["label"] == "91° or above"
