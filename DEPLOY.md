@@ -68,7 +68,10 @@ worse, not better — high-frequency schedules are the first GitHub drops.
 one reliable clock in this repo (measured 2026-08-04: 100 runs, median gap
 **10.0 min**, max 10.1), so its last step POSTs a `screen-run`
 `repository_dispatch` whenever `minute % 30 < 10` — exactly one heartbeat per
-half hour at any phase. It reuses the `SCAN_GH_TOKEN` secret, because a PAT is
+half hour at any phase. The step runs only on that workflow's own
+`repository_dispatch` runs: its in-repo schedule fallback fires on a *different*
+10-minute phase, and on 2026-08-04 both landed inside one slot and ran the
+screen twice 90 seconds apart. It reuses the `SCAN_GH_TOKEN` secret, because a PAT is
 required here: events raised with the built-in `GITHUB_TOKEN` deliberately do
 not start new workflow runs.
 

@@ -161,13 +161,21 @@ jobs:
       # %-M (no leading zero) matters -- "08" is an invalid octal literal in
       # shell arithmetic and would abort the step.
       #
+      # Restricted to repository_dispatch runs because this workflow has TWO
+      # trigger sources, and the slot test alone cannot tell them apart. Live on
+      # 2026-08-04: the external cron fired at 23:00:11 (minute 0) and the
+      # in-repo schedule fallback at 23:01:50 (minute 1), so BOTH passed
+      # `minute % 30 < 10` and the screen ran twice, 90 seconds apart. Only the
+      # external cron is the clock this is pacing off; if it dies, scan.yml's own
+      # hourly schedule is the fallback, which is the arrangement anyway.
+      #
       # Fire-and-forget, like the trade tick: the screen is read-only review
       # material, and logging must never fail because of it. scan.yml keeps its
       # own hourly schedule as a fallback, so a missed tick costs freshness, not
       # data; a duplicate firing is harmless because the page reads only the
       # newest one.
       - name: Tick the mispriced-bracket screen
-        if: always()
+        if: always() && github.event_name == 'repository_dispatch'
         continue-on-error: true
         env:
           SCAN_GH_TOKEN: ${{ secrets.SCAN_GH_TOKEN }}
