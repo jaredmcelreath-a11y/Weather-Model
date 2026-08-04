@@ -148,3 +148,47 @@ jobs:
             -H "Authorization: Bearer $TRADE_GH_TOKEN" \
             "https://api.github.com/repos/${{ github.repository }}/dispatches" \
             -d '{"event_type":"trade-tick"}' || echo "trade tick POST failed — ignored"
+
+      # Piggyback the mispriced-bracket screen too, for the same reason and on
+      # the same measurement: this workflow's external cron delivered 100 runs at
+      # a median 10.0-min gap on 2026-08-04, while GitHub's own scheduler gave
+      # scan.yml 62% of its hourly slots (median 23 min late, worst gap 3 hours).
+      # The Screen page's Ref column is only recomputed when the screen fires, so
+      # that scheduler was leaving it 1-3 hours stale against a live NO price.
+      #
+      # Twice an hour, not every run: `minute % 30 < 10` selects exactly one
+      # heartbeat per half hour at any phase, given the 10-min cadence above.
+      # %-M (no leading zero) matters -- "08" is an invalid octal literal in
+      # shell arithmetic and would abort the step.
+      #
+      # Fire-and-forget, like the trade tick: the screen is read-only review
+      # material, and logging must never fail because of it. scan.yml keeps its
+      # own hourly schedule as a fallback, so a missed tick costs freshness, not
+      # data; a duplicate firing is harmless because the page reads only the
+      # newest one.
+      - name: Tick the mispriced-bracket screen
+        if: always()
+        continue-on-error: true
+        env:
+          SCAN_GH_TOKEN: ${{ secrets.SCAN_GH_TOKEN }}
+        run: |
+          MIN=$(date -u +%-M)
+          if [ $((MIN % 30)) -ge 10 ]; then
+            echo "minute $MIN — not a screen slot, skipping"; exit 0
+          fi
+          if [ -z "$SCAN_GH_TOKEN" ]; then
+            echo "SCAN_GH_TOKEN unset — skipping screen tick"; exit 0
+          fi
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $SCAN_GH_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/dispatches" \
+            -d '{"event_type":"screen-run"}') || code="000"
+          # 204 is success. Anything else is printed, not raised: a bad or
+          # expired PAT must be visible in the log rather than silently leaving
+          # the screen on the fallback schedule.
+          if [ "$code" = "204" ]; then
+            echo "screen-run dispatched (minute $MIN)"
+          else
+            echo "screen tick POST failed (HTTP $code) — ignored"
+          fi

@@ -64,8 +64,21 @@ measured over 14.6h on 2026-08-04 it ran **9 of 15** scheduled hours (62%),
 median 23 min late, worst gap 3 hours. Adding more `cron:` lines makes this
 worse, not better — high-frequency schedules are the first GitHub drops.
 
-So drive it externally, the same way `log.yml` gets its dependable 10-min
-cadence. On [cron-job.org](https://cron-job.org) (free), create a job:
+**Nothing to set up — this is already wired.** `log.yml`'s external cron is the
+one reliable clock in this repo (measured 2026-08-04: 100 runs, median gap
+**10.0 min**, max 10.1), so its last step POSTs a `screen-run`
+`repository_dispatch` whenever `minute % 30 < 10` — exactly one heartbeat per
+half hour at any phase. It reuses the `SCAN_GH_TOKEN` secret, because a PAT is
+required here: events raised with the built-in `GITHUB_TOKEN` deliberately do
+not start new workflow runs.
+
+It is fire-and-forget (`continue-on-error`), so a failed dispatch can never fail
+a logging run. If the screen goes quiet, check a recent "Log forecast snapshot"
+run for `screen tick POST failed (HTTP …)` — 401/403 means the PAT expired,
+and the screen falls back to `scan.yml`'s hourly schedule meanwhile.
+
+**Optional standalone job.** To decouple the screen from the logger, create a
+job on [cron-job.org](https://cron-job.org) (free) instead:
 
 - **URL** `https://api.github.com/repos/<owner>/<repo>/dispatches`
 - **Method** POST, **every 30 minutes**
@@ -74,10 +87,10 @@ cadence. On [cron-job.org](https://cron-job.org) (free), create a job:
   `User-Agent: <owner>-screen-cron` (GitHub rejects requests without one)
 - **Body** `{"event_type":"screen-run"}`
 
-The PAT can be the same one behind `SCAN_GH_TOKEN`; cron-job.org holds its own
-copy, since a repo secret is not readable from outside Actions. Verify with one
-manual run of the job, then check the Actions tab for a `repository_dispatch`
-run of "Kalshi multi-city price scan".
+cron-job.org needs its own copy of the PAT, since a repo secret is not readable
+from outside Actions. If you do this, **delete the "Tick the mispriced-bracket
+screen" step from `log.yml`** — otherwise the screen fires twice per slot,
+doubling the NWS load for no extra freshness.
 
 Costs at 30 min: ~48 firings/day, ~3,840 NWS + ~1,970 Kalshi requests, ~56
 Actions minutes (free — the repo is public), 48 commits and ~4.3 MB of PUTs to
