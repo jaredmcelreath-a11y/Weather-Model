@@ -440,7 +440,10 @@ def render() -> None:
     )
     st.markdown(_TIP_CSS, unsafe_allow_html=True)   # header tips for both tables
     try:
-        all_rows = scan_log.load(scan_log.CANDIDATES_PATH)
+        # Three days, not the whole history: enough for the newest firing, for
+        # "what did the last firing add", and for the open positions below —
+        # Kalshi temperature markets close within ~30h of being listed.
+        all_rows = scan_log.load_recent(scan_log.CANDIDATES_PATH, days=3)
     except Exception as e:              # noqa: BLE001 - a page must not crash
         st.info(f"No candidate log yet ({e}).")
         return

@@ -18,6 +18,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -45,14 +46,42 @@ class GitHubTransport:
     def _url(self, path):
         return f"https://api.github.com/repos/{self.repo}/contents/{path}"
 
-    def get(self, path):
-        r = requests.get(self._url(path), params={"ref": self.branch},
-                         headers=self._headers(), timeout=15)
+    def get(self, path, _requests_get=None):
+        """(text, sha) for `path`, or None when it does not exist.
+
+        Above 1 MB the JSON tier answers with the metadata and an EMPTY
+        `content` field rather than an error. Decoding that gives "", which
+        append_many reads as an empty file and then PUTs over — silently
+        destroying the whole log. So when content is absent, re-fetch through
+        the raw media type, which serves files up to 100 MB. The sha still comes
+        from the JSON response; the raw response does not carry one."""
+        get = _requests_get or requests.get
+        r = get(self._url(path), params={"ref": self.branch},
+                headers=self._headers(), timeout=15)
         if r.status_code == 404:
             return None
         r.raise_for_status()
         j = r.json()
-        return base64.b64decode(j["content"]).decode("utf-8"), j["sha"]
+        if j.get("content"):
+            return base64.b64decode(j["content"]).decode("utf-8"), j["sha"]
+        headers = dict(self._headers(), Accept="application/vnd.github.raw+json")
+        raw = get(self._url(path), params={"ref": self.branch},
+                  headers=headers, timeout=30)
+        raw.raise_for_status()
+        return raw.text, j["sha"]
+
+    def list_dir(self, path):
+        """Names of the files directly under `path`; [] when there is no such
+        directory (the contents API 404s on a path that has never been written)."""
+        r = requests.get(self._url(path), params={"ref": self.branch},
+                         headers=self._headers(), timeout=15)
+        if r.status_code == 404:
+            return []
+        r.raise_for_status()
+        items = r.json()
+        if not isinstance(items, list):
+            return []
+        return sorted(i["name"] for i in items if i.get("type") == "file")
 
     def put(self, path, text, sha):
         body = {"message": f"scan: update {path}", "branch": self.branch,
@@ -149,26 +178,80 @@ def build_settlement_row(market: dict, now):
             "settled_at": now.isoformat().replace("+00:00", "Z")}
 
 
-def load(path: str, transport=None) -> list:
-    """Every row in `path`, oldest first; [] when the file does not exist."""
-    got = _t(transport).get(path)
+def day_path(path: str, when: datetime) -> str:
+    """The daily partition `when`'s rows belong in ('scan_log/2026-08-04.jsonl').
+
+    Every append rewrites the WHOLE file through the contents API, so a single
+    growing log costs quadratically: at ~480 rows a firing the snapshot log put
+    on ~0.4 MB a day, and by month's end each of the day's appends would have
+    read and rewritten megabytes and stored another blob that size in git. A
+    daily file stays small forever, and each firing's commit is small too."""
+    stem = path[:-len(".jsonl")] if path.endswith(".jsonl") else path
+    return f"{stem}/{when:%Y-%m-%d}.jsonl"
+
+
+def _row_time(row: dict):
+    """A row's own timestamp, or None when it has none we can read."""
+    try:
+        return datetime.fromisoformat(str(row.get("ts")).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _read(path: str, transport) -> list:
+    got = transport.get(path)
     if not got:
         return []
     return [json.loads(l) for l in got[0].splitlines() if l.strip()]
 
 
-def append_many(path: str, rows: list, transport=None) -> int:
-    """Append every row in ONE read + ONE write.
+def load(path: str, transport=None) -> list:
+    """Every row ever written, oldest first.
+
+    The pre-split flat file comes first and is never written again — but it
+    still holds real history, so it is read, not migrated."""
+    t = _t(transport)
+    stem = path[:-len(".jsonl")] if path.endswith(".jsonl") else path
+    out = _read(path, t)
+    for name in t.list_dir(stem):
+        if name.endswith(".jsonl"):
+            out.extend(_read(f"{stem}/{name}", t))
+    return out
+
+
+def load_recent(path: str, days: int = 3, transport=None, now=None) -> list:
+    """Rows from the last `days` daily partitions, oldest first.
+
+    What a page wants: reading every partition would cost a directory listing
+    plus a request per day, forever. Legacy flat-file rows are filtered by their
+    own timestamp, since that file spans everything before the split."""
+    now = now or datetime.now(timezone.utc)
+    t = _t(transport)
+    cutoff = now - timedelta(days=days)
+    out = [r for r in _read(path, t)
+           if (_row_time(r) or cutoff) >= cutoff]
+    for i in range(days - 1, -1, -1):                    # oldest day first
+        out.extend(_read(day_path(path, now - timedelta(days=i)), t))
+    return out
+
+
+def append_many(path: str, rows: list, transport=None, now=None) -> int:
+    """Append every row to its day's partition in ONE read + ONE write.
 
     trade_state.append_jsonl does a GET+PUT per record, which is fine for the
     trader's handful of rows a day. A snapshot pass writes ~600 at once, so
     per-record round trips would mean 600 API calls and 600 commits per firing.
-    """
+
+    The partition comes from the ROWS' own timestamp where they carry one: a
+    pass that begins at 23:59 and writes after midnight belongs with the firing
+    it sampled, not the clock that happened to tick over mid-write."""
     if not rows:
         return 0
     t = _t(transport)
-    got = t.get(path)
+    when = _row_time(rows[0]) or now or datetime.now(timezone.utc)
+    target = day_path(path, when)
+    got = t.get(target)
     text, sha = (got[0], got[1]) if got else ("", None)
     payload = "".join(json.dumps(r) + "\n" for r in rows)
-    t.put(path, (text + payload) if text else payload, sha)
+    t.put(target, (text + payload) if text else payload, sha)
     return len(rows)
