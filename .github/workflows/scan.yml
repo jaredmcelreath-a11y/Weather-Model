@@ -12,6 +12,9 @@ name: Kalshi multi-city price scan
 #      (the contents API needs the branch to exist before the first write).
 #   2. Secret: SCAN_GH_TOKEN — repo-scoped PAT with contents:write.
 #      Kalshi's series/markets endpoints are public, so no Kalshi key is needed.
+#   3. External cron for the real 30-min screen cadence — see DEPLOY.md,
+#      "Screen cadence". Without it the screen falls back to GitHub's own
+#      scheduler, which delivers roughly two thirds of the hourly slots.
 #
 # Firings land ~18h, ~12h and ~6h before the ~06:00Z close of US city markets.
 # `hours_to_close` is recorded per row from each market's own close_time, so a
@@ -28,7 +31,17 @@ on:
     # log keeps its shape. Deliberately does not overlap the three above --
     # GitHub fires each matching expression separately, so "0 * * * *" here
     # would double-run at 00/12/18Z.
+    #
+    # BEST-EFFORT FALLBACK ONLY. Measured 2026-08-04 over 14.6h: GitHub ran 9 of
+    # the 15 scheduled hours (62%), median 23 min late, worst gap 3 hours -- so
+    # the Ref column was routinely 1-3 hours stale rather than one. The
+    # dependable 30-min cadence comes from an external cron (cron-job.org)
+    # POSTing a repository_dispatch of type `screen-run`, the same arrangement
+    # log.yml uses for its 10-min snapshots. Raising the frequency HERE does not
+    # work: high-frequency schedules are the first thing GitHub drops.
     - cron: "0 1-11,13-17,19-23 * * *"
+  repository_dispatch:
+    types: [screen-run]         # external scheduler drives the real cadence
   workflow_dispatch:
     inputs:
       command:
@@ -59,21 +72,30 @@ jobs:
       # WHOLE file through the contents API on every append -- so the cost is
       # quadratic, not linear. The reliability curve also wants a fixed set of
       # hours-to-close bands, not 24 of them.
+      # The gate is an ALLOW-list of the three sampling crons, not a deny-list
+      # of the hourly one. A deny-list silently opts every future trigger INTO
+      # snapshotting: adding one more cron expression here would have started
+      # writing ~600 rows a firing to a log whose append cost is quadratic.
       - name: Snapshot prices
         if: >-
           github.event_name == 'schedule'
-          && github.event.schedule != '0 1-11,13-17,19-23 * * *'
+          && (github.event.schedule == '0 12 * * *'
+              || github.event.schedule == '0 18 * * *'
+              || github.event.schedule == '0 0 * * *')
         env:
           SCAN_GH_REPO: ${{ github.repository }}
           SCAN_GH_BRANCH: scan-data
           SCAN_GH_TOKEN: ${{ secrets.SCAN_GH_TOKEN }}
         run: python scanner.py snapshot
 
-      # Screening runs on EVERY firing (hourly), right after the snapshot when
-      # there is one: those ladder fetches are still in the on-disk cache, so a
-      # paired run costs NWS calls only. An off-hour run pays for both.
+      # Screening runs on EVERY firing, right after the snapshot when there is
+      # one: those ladder fetches are still in the on-disk cache, so a paired run
+      # costs NWS calls only. An off-hour run pays for both. ~70s and ~121
+      # requests per pass (80 NWS across 20 distinct coords, 41 Kalshi).
       - name: Screen for mispriced brackets
-        if: github.event_name == 'schedule'
+        if: >-
+          github.event_name == 'schedule'
+          || github.event_name == 'repository_dispatch'
         env:
           SCAN_GH_REPO: ${{ github.repository }}
           SCAN_GH_BRANCH: scan-data

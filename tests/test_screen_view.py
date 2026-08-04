@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -357,3 +357,41 @@ def test_hidden_notice_explains_the_missing_rows():
         "1 hidden — live NO under 20%, the market has already resolved it.")
     assert screen_view.hidden_notice(3) == (
         "3 hidden — live NO under 20%, the market has already resolved them.")
+
+
+# ---- Freshness window tracks the firing cadence ----------------------------
+# The screen fires every 30 min (external cron; the in-repo schedule is a
+# best-effort fallback GitHub delivers ~62% of). The highlight window must
+# cover one firing plus the scheduler's slack, and no more -- an hour-wide
+# window on a 30-min cadence would keep claiming rows are new a firing after
+# they stopped being.
+
+def test_the_new_window_is_derived_from_the_firing_interval():
+    # Not an independent magic number: a cadence change must move the window
+    # with it, or the highlight quietly starts lying.
+    assert screen_view.FIRING_INTERVAL == timedelta(minutes=30)
+    assert screen_view.NEW_WINDOW == screen_view.FIRING_INTERVAL + timedelta(
+        minutes=15)
+
+
+def test_a_firing_one_full_interval_old_still_highlights():
+    # The common case: you open the page just before the next firing lands.
+    rows = [_c("2026-08-04T11:30:00Z", "carried", 0.2, 5.0),
+            _c("2026-08-04T12:00:00Z", "carried", 0.2, 5.0),
+            _c("2026-08-04T12:00:00Z", "fresh", 0.3, 6.0)]
+    assert screen_view.new_tickers(rows, NOW) == {"fresh"}   # 30 min old
+
+
+def test_a_skipped_firing_stops_the_highlight():
+    # One missed firing (30 min) plus the scheduler's slack (15) is the limit:
+    # past that the log is stale and nothing on it arrived recently.
+    stale = NOW - timedelta(minutes=50)
+    rows = [_c(stale.isoformat().replace("+00:00", "Z"), "old", 0.2, 5.0)]
+    assert screen_view.new_tickers(rows, NOW) == set()
+
+
+def test_a_firing_older_than_the_window_stops_glowing():
+    # A missed cron or a page left open must stop claiming anything is fresh.
+    late = NOW - screen_view.NEW_WINDOW - timedelta(minutes=1)
+    rows = [_c(late.isoformat().replace("+00:00", "Z"), "old", 0.2, 5.0)]
+    assert screen_view.new_tickers(rows, NOW) == set()

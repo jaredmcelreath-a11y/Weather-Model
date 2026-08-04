@@ -56,6 +56,34 @@ token = "github_pat_…"
 ```
 Deploy, then open the URL on your phone (**Add to Home Screen**).
 
+### 5. Screen cadence (external cron)
+
+The Screen page's `Ref` column is recomputed only when `scan.yml` fires, so its
+freshness *is* the firing cadence. GitHub's own scheduler will not carry it:
+measured over 14.6h on 2026-08-04 it ran **9 of 15** scheduled hours (62%),
+median 23 min late, worst gap 3 hours. Adding more `cron:` lines makes this
+worse, not better — high-frequency schedules are the first GitHub drops.
+
+So drive it externally, the same way `log.yml` gets its dependable 10-min
+cadence. On [cron-job.org](https://cron-job.org) (free), create a job:
+
+- **URL** `https://api.github.com/repos/<owner>/<repo>/dispatches`
+- **Method** POST, **every 30 minutes**
+- **Headers** `Accept: application/vnd.github+json`,
+  `Authorization: Bearer <PAT with contents:write>`,
+  `User-Agent: <owner>-screen-cron` (GitHub rejects requests without one)
+- **Body** `{"event_type":"screen-run"}`
+
+The PAT can be the same one behind `SCAN_GH_TOKEN`; cron-job.org holds its own
+copy, since a repo secret is not readable from outside Actions. Verify with one
+manual run of the job, then check the Actions tab for a `repository_dispatch`
+run of "Kalshi multi-city price scan".
+
+Costs at 30 min: ~48 firings/day, ~3,840 NWS + ~1,970 Kalshi requests, ~56
+Actions minutes (free — the repo is public), 48 commits and ~4.3 MB of PUTs to
+`scan-data`. The in-repo hourly schedule stays on as a free fallback; a
+duplicate firing is harmless, since the page reads only the newest one.
+
 ## Notes
 
 - **Actions minutes:** private repos get 2000 free min/month; hourly runs use

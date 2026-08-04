@@ -41,15 +41,29 @@ _SETTLED_BELOW_HOURS = {"low": 17.0, "high": 8.0}
 # would actually happen at.
 MIN_LIVE_NO_PRICE = 0.20
 
+# How often the screen actually fires. Driven by an external cron-job.org
+# repository_dispatch, NOT by the in-repo schedule: GitHub's own scheduler
+# delivered 62% of the hourly slots on 2026-08-04 (9 of 15), median 23 min late,
+# with gaps up to 3 hours -- the same finding log.yml records for its 30-min
+# crons. The schedule in scan.yml is kept only as a free best-effort fallback.
+#
+# Everything the page says about staleness reads from this one constant, so a
+# cadence change cannot leave a caption or tooltip quoting the old number.
+FIRING_INTERVAL = timedelta(minutes=30)
+
 _TIPS = {
     "Side": "Which side to buy. Always NO today: the screen only finds brackets "
             "priced ABOVE what the forecast supports, so the play is to fade.",
-    "Ref": "The reference the gap is measured from — the NWS forecast high/low "
-           "for that bracket's climate day, or for a 'dead' row the temperature "
-           "already realized.",
-    "Price": "The YES price when the screen last fired, which can be hours old "
-             "— the screen runs three times a day. What the bracket cost to "
-             "back then, not now.",
+    "Ref": f"The reference the gap is measured from — the NWS forecast high/low "
+           f"for that bracket's climate day, folded with any temperature "
+           f"already realized, or for a 'dead' row the realized extreme alone. "
+           f"Recomputed each firing, so up to "
+           f"{int(FIRING_INTERVAL.total_seconds() // 60)} minutes old — unlike "
+           f"'NO Now', which is live.",
+    "Price": f"The YES price when the screen last fired, up to "
+             f"{int(FIRING_INTERVAL.total_seconds() // 60)} minutes ago. What "
+             f"the bracket cost to back then, not now — judge the trade on 'NO "
+             f"Now', which is live.",
     "NO Now": "Live cost to buy NO, as a percent, fetched from Kalshi when this "
               "page loaded. This is the price of the trade the Side column "
               "names, and the one to judge it on. '—' means no live offer "
@@ -294,7 +308,10 @@ def latest_firing(rows: list) -> list:
     return [r for r in rows if (r.get("ts") or "") == newest]
 
 
-NEW_WINDOW = timedelta(hours=1)     # one firing: the screen now runs hourly
+# One firing plus the scheduler's slack. Derived rather than written out, so
+# changing the cadence cannot leave the highlight claiming rows are new a firing
+# after they stopped being.
+NEW_WINDOW = FIRING_INTERVAL + timedelta(minutes=15)
 
 
 def _parse_ts(ts):
@@ -505,7 +522,7 @@ def render() -> None:
                               for r in display_rows(rows)]),
             unsafe_allow_html=True)
         if fresh:
-            st.caption(f"{len(fresh)} in red arrived with this hour's firing.")
+            st.caption(f"{len(fresh)} in red arrived with the latest firing.")
     else:
         # Still fall through to the positions table: holding something the
         # screen flagged yesterday is exactly the day you want to see it.
