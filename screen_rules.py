@@ -17,6 +17,19 @@ from __future__ import annotations
 
 MIN_CANDIDATE_PRICE = 0.10
 MIN_CANDIDATE_GAP_F = 4.0
+# At or above this the market has effectively resolved the bracket: there is no
+# mispricing to harvest, and on a day already in progress it is simply the
+# outcome that happened. A live pass without this flagged KXLOWTOKC 65-66 at
+# $1.00 as "16F from the forecast" -- it was the low that had already occurred.
+SETTLED_PRICE = 0.97
+
+
+def _tradeable_price(row: dict):
+    """The bracket's price when it is worth harvesting at all, else None."""
+    price = price_of(row)
+    if price is None or price < MIN_CANDIDATE_PRICE or price >= SETTLED_PRICE:
+        return None
+    return price
 
 
 def price_of(row: dict):
@@ -61,8 +74,8 @@ def forecast_candidate(row: dict, forecast, now_iso: str):
     """A richly-priced bracket far from the forecast, or None."""
     if forecast is None:
         return None
-    price = price_of(row)
-    if price is None or price < MIN_CANDIDATE_PRICE:
+    price = _tradeable_price(row)
+    if price is None:
         return None
     gap = bracket_gap(row.get("floor"), row.get("cap"), forecast)
     if gap is None or gap < MIN_CANDIDATE_GAP_F:
@@ -111,8 +124,8 @@ def dead_candidate(row: dict, bound, now_iso: str):
     entirely BELOW it is dead."""
     if bound is None:
         return None
-    price = price_of(row)
-    if price is None or price < MIN_CANDIDATE_PRICE:
+    price = _tradeable_price(row)
+    if price is None:
         return None
     variable = row.get("variable")
     floor, cap = row.get("floor"), row.get("cap")

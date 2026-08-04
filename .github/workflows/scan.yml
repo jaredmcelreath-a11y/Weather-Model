@@ -54,6 +54,16 @@ jobs:
           SCAN_GH_TOKEN: ${{ secrets.SCAN_GH_TOKEN }}
         run: python scanner.py snapshot
 
+      # Screening runs on every firing, right after the snapshot: the ladder
+      # fetches are still in the on-disk cache, so this costs NWS calls only.
+      - name: Screen for mispriced brackets
+        if: github.event_name == 'schedule'
+        env:
+          SCAN_GH_REPO: ${{ github.repository }}
+          SCAN_GH_BRANCH: scan-data
+          SCAN_GH_TOKEN: ${{ secrets.SCAN_GH_TOKEN }}
+        run: python screen.py run
+
       # Settlement runs only on the 12:00Z firing: US city markets close ~06:00Z,
       # so by noon the prior climate day has finalized.
       - name: Record settlements

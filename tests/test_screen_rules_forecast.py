@@ -63,3 +63,13 @@ def test_the_thresholds_are_inclusive_at_the_boundary():
 
 def test_no_candidate_without_a_forecast():
     assert sr.forecast_candidate(_row(72, 73), None, _TS) is None
+
+
+def test_an_effectively_settled_bracket_is_never_a_candidate():
+    # A bracket bid at/above SETTLED_PRICE is the resolved outcome, not a
+    # mispricing. A live pass flagged KXLOWTOKC 65-66 at $1.00 as "16F from the
+    # forecast" -- it was simply the low that already happened.
+    assert sr.forecast_candidate(_row(72, 73, ask=1.00), 66.0, _TS) is None
+    assert sr.forecast_candidate(_row(72, 73, ask=sr.SETTLED_PRICE),
+                                 66.0, _TS) is None
+    assert sr.dead_candidate(_row(72, 73, ask=0.99), 66.0, _TS) is None

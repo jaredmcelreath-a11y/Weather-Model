@@ -49,3 +49,22 @@ def test_daily_extremes_skips_periods_with_no_temperature():
     ]
     got = sf.daily_extremes(periods, date(2026, 8, 4), "America/Denver")
     assert got["high"] == 91 and got["low"] == 91
+
+
+def test_fold_realized_corrects_a_day_already_in_progress():
+    # The killer bug: for a day in progress the remaining forecast periods no
+    # longer contain the extreme that already occurred. OKC's low of 65 had
+    # passed, so the forecast-only low was this evening's 82.
+    assert sf.fold_realized(82.0, [65.0, 70.0, 82.0], "low") == 65.0
+    assert sf.fold_realized(94.0, [88.0, 96.0], "high") == 96.0
+
+
+def test_fold_realized_keeps_the_forecast_when_it_is_more_extreme():
+    assert sf.fold_realized(60.0, [70.0, 72.0], "low") == 60.0
+    assert sf.fold_realized(99.0, [88.0], "high") == 99.0
+
+
+def test_fold_realized_handles_missing_sides():
+    assert sf.fold_realized(None, [65.0, 70.0], "low") == 65.0
+    assert sf.fold_realized(82.0, [], "low") == 82.0
+    assert sf.fold_realized(None, [], "low") is None

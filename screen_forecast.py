@@ -65,3 +65,19 @@ def daily_extremes(periods: list, day: date, tzname: str) -> dict:
     if not temps:
         return {"high": None, "low": None}
     return {"high": max(temps), "low": min(temps)}
+
+
+def fold_realized(forecast_value, realized_temps: list, variable: str):
+    """The day's extreme over BOTH what happened and what is still forecast.
+
+    For a climate day already in progress the remaining hourly periods no longer
+    contain an extreme that has already occurred, so a forecast-only reduction is
+    badly wrong: on 2026-08-03 Oklahoma City's low of 65 had passed, leaving the
+    forecast-only "low" as that evening's 82. The settled extreme is the extreme
+    of the realized readings and the remaining forecast together."""
+    values = [float(t) for t in (realized_temps or []) if t is not None]
+    if forecast_value is not None:
+        values.append(float(forecast_value))
+    if not values:
+        return None
+    return min(values) if variable == "low" else max(values)
