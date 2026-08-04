@@ -73,14 +73,16 @@ def latest_firing(rows: list) -> list:
 
 
 def display_rows(rows: list) -> list:
-    """Ranked by price x gap: how much the market pays, times how wrong it looks.
-    A missing gap sorts last rather than raising."""
+    """Soonest close first.
+
+    Ordered by urgency rather than size of the apparent edge: a bracket three
+    hours from settling needs a decision now, while a juicier one thirty hours
+    out can wait for the next firing — and by then its price and the forecast
+    will both have moved. A row with no hours sorts last rather than raising."""
     def rank(r):
-        price, gap = r.get("price"), r.get("gap")
-        if price is None or gap is None:
-            return -1.0
-        return float(price) * float(gap)
-    return sorted(rows, key=rank, reverse=True)
+        hours = r.get("hours_to_close")
+        return float("inf") if hours is None else float(hours)
+    return sorted(rows, key=rank)
 
 
 def _bracket_label(row: dict) -> str:
@@ -131,7 +133,9 @@ table.wtbl th .stip:focus ~ .stipt{opacity:1;visibility:visible;}
 # Order is a MOBILE decision: at 390px only the first five or so columns are
 # visible before the wrap scrolls, so the ones a call actually turns on come
 # first. Side is last precisely because it is constant (always NO today) and
-# therefore the least informative cell on the row.
+# therefore the least informative cell on the row. Hrs sits further right than
+# its importance suggests because rows are already SORTED by it — the ordering
+# carries the urgency, the column just confirms it.
 _COLUMNS = ["City", "Var", "Bracket", "Price", "Gap", "Settled", "Ref",
             "Hrs", "Side"]
 

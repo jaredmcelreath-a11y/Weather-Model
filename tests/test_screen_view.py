@@ -19,19 +19,21 @@ def test_latest_firing_of_nothing_is_empty():
     assert screen_view.latest_firing([]) == []
 
 
-def test_display_rows_rank_by_price_times_gap():
-    rows = [_c("t", "small", 0.15, 4.0),      # 0.60
-            _c("t", "big", 0.40, 8.0),        # 3.20
-            _c("t", "mid", 0.30, 5.0)]        # 1.50
+def test_display_rows_put_the_soonest_close_first():
+    # Urgency beats size: a bracket closing in 3h needs a decision now, however
+    # juicy a 30h-away one looks.
+    rows = [dict(_c("t", "far", 0.40, 8.0), hours_to_close=30.0),
+            dict(_c("t", "soon", 0.15, 4.0), hours_to_close=3.0),
+            dict(_c("t", "mid", 0.30, 5.0), hours_to_close=12.0)]
     got = screen_view.display_rows(rows)
-    assert [r["ticker"] for r in got] == ["big", "mid", "small"]
+    assert [r["ticker"] for r in got] == ["soon", "mid", "far"]
 
 
-def test_display_rows_tolerate_a_missing_gap():
-    rows = [_c("t", "ok", 0.40, 8.0),
-            dict(_c("t", "bad", 0.30, 5.0), gap=None)]
+def test_display_rows_sort_a_missing_hours_last():
+    rows = [dict(_c("t", "unknown", 0.40, 8.0), hours_to_close=None),
+            dict(_c("t", "soon", 0.30, 5.0), hours_to_close=2.0)]
     got = screen_view.display_rows(rows)
-    assert [r["ticker"] for r in got] == ["ok", "bad"]
+    assert [r["ticker"] for r in got] == ["soon", "unknown"]
 
 
 def test_display_uses_the_city_name_not_the_series_ticker():
