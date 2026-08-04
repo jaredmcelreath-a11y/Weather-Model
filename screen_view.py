@@ -9,6 +9,7 @@ horizontal scroll on a phone.
 from __future__ import annotations
 
 import html
+from datetime import datetime, timedelta, timezone
 
 import streamlit as st
 
@@ -250,6 +251,39 @@ def latest_firing(rows: list) -> list:
     return [r for r in rows if (r.get("ts") or "") == newest]
 
 
+NEW_WINDOW = timedelta(hours=1)     # one firing: the screen now runs hourly
+
+
+def _parse_ts(ts):
+    """A candidate row's ISO timestamp as an aware datetime, or None."""
+    try:
+        return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+
+def new_tickers(rows: list, now=None) -> set:
+    """Brackets the latest firing ADDED — highlighted for their first hour.
+
+    New means absent from the firing before this one, not merely present in the
+    latest: with an hourly screen, most rows survive several firings and marking
+    them all new would make the highlight meaningless. A bracket that drops off
+    and comes back counts as new again, because it is news again.
+
+    The whole set goes empty once the latest firing is older than an hour, so a
+    missed cron or a page left open overnight stops claiming anything is fresh."""
+    now = now or datetime.now(timezone.utc)
+    stamps = sorted({r.get("ts") for r in rows if r.get("ts")})
+    if not stamps:
+        return set()
+    when = _parse_ts(stamps[-1])
+    if when is None or now - when > NEW_WINDOW:
+        return set()
+    previous = {r.get("ticker") for r in rows if r.get("ts") == stamps[-2]} \
+        if len(stamps) > 1 else set()
+    return {r.get("ticker") for r in rows if r.get("ts") == stamps[-1]} - previous
+
+
 def display_rows(rows: list) -> list:
     """Soonest close first.
 
@@ -313,18 +347,27 @@ table.wtbl th .stipt{position:absolute;top:1.9rem;right:0;z-index:1000;
 table.wtbl th:first-child .stipt{right:auto;left:0;}
 table.wtbl th .stip:focus ~ .stipt{opacity:1;visibility:visible;}
 @media (hover:hover){table.wtbl th .stip:hover ~ .stipt{opacity:1;visibility:visible;}}
+/* Added by the newest firing — reverts to ordinary ink an hour later. Tints the
+   whole row, tracking the app's existing .hold red rather than a new colour. */
+table.wtbl tr.snew td{color:var(--bad);background:rgba(229,120,110,0.12);}
 </style>
 """
 
 def _table(columns: list, rows: list) -> str:
-    """A themed .wtbl table from display-string row dicts, headers tipped."""
+    """A themed .wtbl table from display-string row dicts, headers tipped.
+
+    A row may carry a `_class` marker (never a column) for the stylesheet."""
     head = "".join(_header_cell(c) for c in columns)
-    body = "".join(
-        "<tr>" + "".join(f"<td>{html.escape(str(r.get(c, '')))}</td>"
-                         for c in columns) + "</tr>"
-        for r in rows)
+    body = []
+    for r in rows:
+        cls = r.get("_class")
+        body.append(f'<tr class="{html.escape(cls)}">' if cls else "<tr>")
+        body.append("".join(f"<td>{html.escape(str(r.get(c, '')))}</td>"
+                            for c in columns))
+        body.append("</tr>")
     return ('<div class="wtbl-wrap"><table class="wtbl"><thead><tr>'
-            + head + "</tr></thead><tbody>" + body + "</tbody></table></div>")
+            + head + "</tr></thead><tbody>" + "".join(body)
+            + "</tbody></table></div>")
 
 
 # Order is a MOBILE decision: at 390px only the first five or so columns are
@@ -340,9 +383,10 @@ _POSITION_COLUMNS = ["City", "Contract", "Side", "Qty", "Entry", "Now",
                      "Unreal P&L"]
 
 
-def _candidate_row(r: dict, live: dict) -> dict:
+def _candidate_row(r: dict, live: dict, fresh: set) -> dict:
     price = r.get("price")
     return {
+        "_class": "snew" if r.get("ticker") in fresh else "",
         "City": city_of(r),
         "Var": str(r.get("variable") or ""),
         "Bracket": _bracket_label(r),
@@ -404,10 +448,13 @@ def render() -> None:
     rows = latest_firing(all_rows)
     if rows:
         live = live_no_prices(rows)
+        fresh = new_tickers(all_rows)
         st.markdown(
-            _table(_COLUMNS,
-                   [_candidate_row(r, live) for r in display_rows(rows)]),
+            _table(_COLUMNS, [_candidate_row(r, live, fresh)
+                              for r in display_rows(rows)]),
             unsafe_allow_html=True)
+        if fresh:
+            st.caption(f"{len(fresh)} in red arrived with this hour's firing.")
     else:
         # Still fall through to the positions table: holding something the
         # screen flagged yesterday is exactly the day you want to see it.

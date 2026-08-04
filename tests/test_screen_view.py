@@ -88,6 +88,47 @@ def test_a_dead_row_is_settled_regardless_of_the_clock():
     assert screen_view.settled_of(_row_hrs(23.0, "low", kind="dead")) == "Yes"
 
 
+NOW = datetime(2026, 8, 4, 12, 30, tzinfo=timezone.utc)
+
+
+def test_new_tickers_are_the_ones_this_firing_added():
+    rows = [_c("2026-08-04T11:00:00Z", "carried", 0.2, 5.0),
+            _c("2026-08-04T12:00:00Z", "carried", 0.2, 5.0),
+            _c("2026-08-04T12:00:00Z", "fresh", 0.3, 6.0)]
+    assert screen_view.new_tickers(rows, NOW) == {"fresh"}
+
+
+def test_everything_in_a_first_ever_firing_is_new():
+    rows = [_c("2026-08-04T12:00:00Z", "a", 0.2, 5.0),
+            _c("2026-08-04T12:00:00Z", "b", 0.3, 6.0)]
+    assert screen_view.new_tickers(rows, NOW) == {"a", "b"}
+
+
+def test_nothing_is_new_once_the_firing_is_over_an_hour_old():
+    # The highlight means "arrived within the hour", so a stale log -- a missed
+    # cron, a page left open -- must stop glowing rather than lie.
+    rows = [_c("2026-08-04T10:00:00Z", "old", 0.2, 5.0)]
+    assert screen_view.new_tickers(rows, NOW) == set()
+
+
+def test_a_returning_bracket_counts_as_new_again():
+    # Flagged at 10:00, gone at 11:00, back at 12:00: it is news again.
+    rows = [_c("2026-08-04T10:00:00Z", "x", 0.2, 5.0),
+            _c("2026-08-04T11:00:00Z", "other", 0.2, 5.0),
+            _c("2026-08-04T12:00:00Z", "x", 0.3, 6.0)]
+    assert screen_view.new_tickers(rows, NOW) == {"x"}
+
+
+def test_table_marks_a_new_row_for_the_stylesheet():
+    html = screen_view._table(["City"], [{"City": "Denver", "_class": "snew"}])
+    assert '<tr class="snew">' in html
+    assert "_class" not in html                  # the marker is not a column
+
+
+def test_table_leaves_an_ordinary_row_unclassed():
+    assert "<tr>" in screen_view._table(["City"], [{"City": "Denver"}])
+
+
 def _mkt(ticker, no_ask=None, yes_bid=None):
     """A raw Kalshi market dict — prices are dollar STRINGS, as the API sends."""
     m = {"ticker": ticker}

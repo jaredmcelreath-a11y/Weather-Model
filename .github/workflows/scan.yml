@@ -18,9 +18,17 @@ name: Kalshi multi-city price scan
 # throttled or late run is harmless — it is not assumed from the schedule.
 on:
   schedule:
+    # Snapshot + screen. These three are the price scanner's sampling design --
+    # ~18h, ~12h and ~6h to close -- and must not multiply (see below).
     - cron: "0 12 * * *"
     - cron: "0 18 * * *"
     - cron: "0 0 * * *"
+    # Every OTHER hour of the day: screen only. Mispricings appear and die
+    # between the three snapshots, so the screen looks hourly while the snapshot
+    # log keeps its shape. Deliberately does not overlap the three above --
+    # GitHub fires each matching expression separately, so "0 * * * *" here
+    # would double-run at 00/12/18Z.
+    - cron: "0 1-11,13-17,19-23 * * *"
   workflow_dispatch:
     inputs:
       command:
@@ -46,16 +54,24 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
 
+      # Only on the three original firings. Hourly snapshots would 8x a log that
+      # is already ~600 rows per pass, and scan_log.append_many rewrites the
+      # WHOLE file through the contents API on every append -- so the cost is
+      # quadratic, not linear. The reliability curve also wants a fixed set of
+      # hours-to-close bands, not 24 of them.
       - name: Snapshot prices
-        if: github.event_name == 'schedule'
+        if: >-
+          github.event_name == 'schedule'
+          && github.event.schedule != '0 1-11,13-17,19-23 * * *'
         env:
           SCAN_GH_REPO: ${{ github.repository }}
           SCAN_GH_BRANCH: scan-data
           SCAN_GH_TOKEN: ${{ secrets.SCAN_GH_TOKEN }}
         run: python scanner.py snapshot
 
-      # Screening runs on every firing, right after the snapshot: the ladder
-      # fetches are still in the on-disk cache, so this costs NWS calls only.
+      # Screening runs on EVERY firing (hourly), right after the snapshot when
+      # there is one: those ladder fetches are still in the on-disk cache, so a
+      # paired run costs NWS calls only. An off-hour run pays for both.
       - name: Screen for mispriced brackets
         if: github.event_name == 'schedule'
         env:
