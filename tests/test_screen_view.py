@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 import pytest
 
 import screen_view
@@ -191,6 +193,38 @@ def test_position_row_survives_an_unpriced_market():
     screened = screen_view.screened_by_ticker([_c("t", "x", 0.2, 5.0)])
     row = screen_view.position_rows([_pos("x", now=None)], screened)[0]
     assert (row["Now"], row["Unreal P&L"]) == ("—", "—")
+
+
+def _fill(ticker, action="buy", side="no", count=10.0, price=0.78):
+    return {"trade_id": ticker + action, "ticker": ticker, "variable": None,
+            "side": side, "action": action, "count": count, "price": price,
+            "yes_price": 1 - price, "no_price": price, "fee": 0.0,
+            "ts": datetime(2026, 8, 3, 15, tzinfo=timezone.utc)}
+
+
+def test_build_positions_covers_a_city_the_model_does_not_run():
+    # The whole point of the fix: KXLOWTDEN has no station in this app, so it
+    # carries no `variable` -- it must still produce a position row.
+    got = screen_view.build_positions([_fill("KXLOWTDEN-26AUG04-B66.5")], {},
+                                      lambda t, side: 0.84)
+    assert [(p["ticker"], p["side"], p["qty"], p["entry"], p["current_value"])
+            for p in got] == [("KXLOWTDEN-26AUG04-B66.5", "no", 10.0, 0.78, 0.84)]
+
+
+def test_build_positions_drops_a_settled_bracket():
+    fills = [_fill("KXLOWTDEN-26AUG04-B66.5")]
+    settled = {"KXLOWTDEN-26AUG04-B66.5": {
+        "result": "no", "ts": datetime(2026, 8, 5, 6, tzinfo=timezone.utc),
+        "revenue": 10.0, "fee": 0.0}}
+    assert screen_view.build_positions(fills, settled, lambda t, s: 0.9) == []
+
+
+def test_empty_notice_says_whether_you_hold_anything_at_all():
+    # The section used to render nothing in every failure mode, which is how a
+    # feed that could not see 38 of the 40 cities went unnoticed.
+    assert screen_view.empty_notice([]) == "No open positions."
+    assert screen_view.empty_notice([_pos("a"), _pos("b")]) == (
+        "No open positions in a flagged bracket (2 open elsewhere).")
 
 
 def test_total_unrealized_skips_unpriced_positions():

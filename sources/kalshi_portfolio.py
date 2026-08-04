@@ -54,7 +54,15 @@ def _iter_pages(fetch, path, items_key):
             return
 
 
-def fills(start: date, fetch=None) -> list[dict]:
+def fills(start: date, fetch=None, all_markets: bool = False) -> list[dict]:
+    """Your fills since `start`, scoped to the two stations this app models.
+
+    `all_markets=True` lifts that scoping for callers that legitimately span
+    every Kalshi city — the 40-city Screen page, whose positions are invisible
+    otherwise. It is opt-in precisely because the History page, Edge report and
+    trader all read this feed and must stay on KDFW/KAUS. A caller that lifts it
+    inherits EVERYTHING in the account, weather or not, and owns narrowing the
+    result itself."""
     fetch = fetch or kalshi_auth.signed_get
     seen, out = set(), []
     # /portfolio holds recent fills (required); /historical holds only
@@ -70,7 +78,7 @@ def fills(start: date, fetch=None) -> list[dict]:
         for f in items:
             ticker = f.get("ticker", "")
             var = variable_of(ticker)
-            if var is None:
+            if var is None and not all_markets:
                 continue
             ts = _parse_ts(f["created_time"])
             # Cut off by the ticker's WEATHER day, not the fill's UTC timestamp:
@@ -103,7 +111,11 @@ def fills(start: date, fetch=None) -> list[dict]:
     return out
 
 
-def settlements(start: date, fetch=None) -> dict[str, dict]:
+def settlements(start: date, fetch=None,
+                all_markets: bool = False) -> dict[str, dict]:
+    """Settled markets since `start`; `all_markets` as in `fills` — and required
+    alongside it, or a decided bracket in an unmodeled city never closes out and
+    shows as a live open position forever."""
     fetch = fetch or kalshi_auth.signed_get
     out: dict[str, dict] = {}
     for path, required in (("/portfolio/settlements", True),
@@ -116,7 +128,7 @@ def settlements(start: date, fetch=None) -> dict[str, dict]:
             continue
         for s in items:
             ticker = s.get("ticker", "")
-            if variable_of(ticker) is None:
+            if variable_of(ticker) is None and not all_markets:
                 continue
             rev = s.get("revenue")   # cents -> dollars (actual payout received)
             out[ticker] = {"result": s.get("market_result"),

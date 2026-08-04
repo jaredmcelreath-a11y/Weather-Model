@@ -144,6 +144,50 @@ def open_screened(positions: list, screened: dict) -> list:
     return [p for p in positions if p.get("ticker") in screened]
 
 
+def build_positions(fills: list, settlements: dict, mark) -> list:
+    """Still-open positions from raw fills, each marked at `mark(ticker, side)`.
+
+    Deliberately NOT market_view._open_positions: that goes through
+    kalshi_portfolio.fills() at its default scoping, which drops every ticker
+    outside the two stations this app models — i.e. 38 of the 40 cities this
+    page screens. Anything bought off this screen in Denver or Philadelphia was
+    filtered out three layers down and the table simply rendered nothing.
+
+    Market metadata is left empty: label, city and variable all come from the
+    candidate row, so there is no reason to spend a request per ticker on it."""
+    import bet_history                 # lazy: pulls the signing dependency
+    out = []
+    for r in bet_history.build_rows(fills, settlements, {}):
+        if r["status"] != "open":
+            continue
+        out.append({**r, "current_value": mark(r["ticker"], r["side"])})
+    return out
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _portfolio_positions() -> list:
+    """Your open positions across EVERY Kalshi city, marked to the live bid."""
+    import bet_history
+    from sources import kalshi_portfolio
+    start = bet_history.BETS_START
+    return build_positions(
+        kalshi_portfolio.fills(start, all_markets=True),
+        kalshi_portfolio.settlements(start, all_markets=True),
+        kalshi_portfolio.market_price)
+
+
+def empty_notice(positions: list) -> str:
+    """Why the table is empty — never nothing at all.
+
+    The first version of this section simply hid whenever it had no rows, which
+    is how a portfolio feed blind to 38 of the 40 screened cities looked exactly
+    like holding no positions."""
+    if not positions:
+        return "No open positions."
+    return (f"No open positions in a flagged bracket "
+            f"({len(positions)} open elsewhere).")
+
+
 def unrealized(position: dict):
     """Dollars of open P&L: qty x (mark - entry), or None when unpriced."""
     mark, entry, qty = (position.get("current_value"), position.get("entry"),
@@ -315,17 +359,24 @@ def _candidate_row(r: dict, live: dict) -> dict:
 def _render_positions(all_rows: list) -> None:
     """What you actually hold in brackets this screen has flagged.
 
-    Hidden entirely when you hold none — or when the portfolio feed is
-    unreachable, since `_open_positions` swallows a credentials or API failure
-    into an empty list. Read-only; nothing here places or closes an order."""
-    screened = screened_by_ticker(all_rows)
-    positions = open_screened(market_view._open_positions(), screened)
-    if not positions:
-        return
+    The heading always renders, with a caption saying why when there is no
+    table under it: an empty section that could equally mean 'no positions',
+    'no creds' or 'the feed cannot see this city' is unreadable, which is what
+    hid the KDFW/KAUS scoping bug. Read-only; nothing here places an order."""
     import bet_history            # lazy: pulls the cryptography-backed portfolio
+    screened = screened_by_ticker(all_rows)
+    st.markdown("**Your Open Positions**")
+    try:
+        held = _portfolio_positions()
+    except Exception as e:          # noqa: BLE001 - a page must not crash
+        st.caption(f"Kalshi portfolio unavailable ({type(e).__name__}: {e}).")
+        return
+    positions = open_screened(held, screened)
+    if not positions:
+        st.caption(empty_notice(held))
+        return
     rows = sorted(position_rows(positions, screened),
                   key=lambda r: (r["City"], r["Contract"]))
-    st.markdown("**Your Open Positions**")
     st.caption(
         f"{len(rows)} open in brackets the screen has flagged, marked to the "
         f"live bid — unrealized {_money(total_unrealized(positions))}. Fills "

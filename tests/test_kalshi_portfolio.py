@@ -85,6 +85,61 @@ def test_fills_cut_off_by_weather_day_not_utc_timestamp():
     assert sorted(f["trade_id"] for f in out) == ["keep"]
 
 
+def _other_city_pages(key, extra):
+    """One page holding a Dallas record and a Denver one (a city this app does
+    not model, but the 40-city screen does)."""
+    return {("/portfolio/" + key, None): {key: [
+        dict({"ticker": "KXHIGHTDAL-26JUN22-B97"}, **extra),
+        dict({"ticker": "KXLOWTDEN-26JUN22-B66.5"}, **extra)], "cursor": ""},
+        ("/historical/" + key, None): {key: [], "cursor": ""}}
+
+
+def test_fills_drop_unmodeled_cities_by_default():
+    # The History page, Edge report and trader all read this feed and are scoped
+    # to the two stations the model runs on; that must not change.
+    pages = _other_city_pages("fills", {
+        "fill_id": "f", "side": "yes", "action": "buy", "count_fp": "1",
+        "yes_price_dollars": "0.5000", "no_price_dollars": "0.5000",
+        "created_time": "2026-06-22T19:00:00Z"})
+    out = kp.fills(date(2026, 6, 22), fetch=lambda p, params=None: pages[(p, None)])
+    assert [f["ticker"] for f in out] == ["KXHIGHTDAL-26JUN22-B97"]
+
+
+def test_fills_keep_every_city_when_asked():
+    # The Screen page covers 40 cities, so its positions cannot come through the
+    # two-station filter. Dedupe still applies, hence distinct fill_ids.
+    pages = {("/portfolio/fills", None): {"fills": [
+        {"fill_id": "a", "ticker": "KXHIGHTDAL-26JUN22-B97", "side": "yes",
+         "action": "buy", "count_fp": "1", "yes_price_dollars": "0.5000",
+         "no_price_dollars": "0.5000", "created_time": "2026-06-22T19:00:00Z"},
+        {"fill_id": "b", "ticker": "KXLOWTDEN-26JUN22-B66.5", "side": "no",
+         "action": "buy", "count_fp": "1", "yes_price_dollars": "0.3000",
+         "no_price_dollars": "0.7000", "created_time": "2026-06-22T19:00:00Z"},
+    ], "cursor": ""}, ("/historical/fills", None): {"fills": [], "cursor": ""}}
+    out = kp.fills(date(2026, 6, 22), fetch=lambda p, params=None: pages[(p, None)],
+                   all_markets=True)
+    assert sorted(f["ticker"] for f in out) == ["KXHIGHTDAL-26JUN22-B97",
+                                                "KXLOWTDEN-26JUN22-B66.5"]
+    denver = next(f for f in out if f["ticker"].startswith("KXLOWTDEN"))
+    assert denver["variable"] is None     # unmodeled city: no high/low mapping
+    assert denver["price"] == 0.70        # still priced from its own side
+
+
+def test_settlements_follow_the_same_scoping_switch():
+    # A settled Denver bracket must be able to close out its position, or the
+    # Screen page would show a decided market as still open.
+    extra = {"market_result": "yes", "settled_time": "2026-06-23T06:00:00Z",
+             "revenue": 100}
+    pages = _other_city_pages("settlements", extra)
+    default = kp.settlements(date(2026, 6, 22),
+                             fetch=lambda p, params=None: pages[(p, None)])
+    every = kp.settlements(date(2026, 6, 22),
+                           fetch=lambda p, params=None: pages[(p, None)],
+                           all_markets=True)
+    assert list(default) == ["KXHIGHTDAL-26JUN22-B97"]
+    assert sorted(every) == ["KXHIGHTDAL-26JUN22-B97", "KXLOWTDEN-26JUN22-B66.5"]
+
+
 def test_settlements_keyed_by_ticker():
     def fetch(path, params=None):
         if path == "/portfolio/settlements":
