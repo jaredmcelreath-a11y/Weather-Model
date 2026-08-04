@@ -24,7 +24,7 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: "snapshot | settle | report"
+        description: "snapshot | settle | report | screen"
         required: true
         default: "snapshot"
 
@@ -74,10 +74,19 @@ jobs:
           SCAN_GH_TOKEN: ${{ secrets.SCAN_GH_TOKEN }}
         run: python scanner.py settle
 
+      # The screen is a separate entry point, so a dispatch of "screen" must not
+      # be handed to scanner.py -- without this branch the Screen page could only
+      # be populated by waiting for a scheduled firing.
       - name: Manual run
         if: github.event_name == 'workflow_dispatch'
         env:
           SCAN_GH_REPO: ${{ github.repository }}
           SCAN_GH_BRANCH: scan-data
           SCAN_GH_TOKEN: ${{ secrets.SCAN_GH_TOKEN }}
-        run: python scanner.py ${{ inputs.command }}
+          COMMAND: ${{ inputs.command }}
+        run: |
+          if [ "$COMMAND" = "screen" ]; then
+            python screen.py run
+          else
+            python scanner.py "$COMMAND"
+          fi
