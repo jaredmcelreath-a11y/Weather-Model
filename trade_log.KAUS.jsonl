@@ -996,3 +996,4 @@
 {"ts": "2026-08-04T12:11:56.619029+00:00", "kind": "exit", "ticker": "KXLOWTAUS-26AUG04-B76.5", "side": "yes", "count": 1, "reason": "reversal: safety gate fired", "mode": "shadow", "variable": "low", "exit_price": 0.07, "pnl": -0.18}
 {"ts": "2026-08-04T12:21:58.181068+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26AUG04-B101.5"}
 {"ts": "2026-08-04T12:21:59.607887+00:00", "kind": "skip", "variable": "low", "reason": "low still forming", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26AUG04-B76.5"}
+{"ts": "2026-08-04T12:31:58.800455+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26AUG04-B101.5"}
