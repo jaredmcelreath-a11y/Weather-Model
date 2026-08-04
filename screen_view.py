@@ -10,7 +10,13 @@ import html
 
 import streamlit as st
 
+import scan_cities
 import scan_log
+
+
+def city_of(row: dict) -> str:
+    """The row's city for display; the raw series ticker if it is unmapped."""
+    return scan_cities.city_name(row.get("series") or "")
 
 
 def latest_firing(rows: list) -> list:
@@ -65,7 +71,7 @@ def render() -> None:
     for r in display_rows(rows):
         body.append(
             "<tr>"
-            f"<td>{html.escape(str(r.get('series') or ''))}</td>"
+            f"<td>{html.escape(city_of(r))}</td>"
             f"<td>{html.escape(str(r.get('variable') or ''))}</td>"
             f"<td>{html.escape(_bracket_label(r))}</td>"
             f"<td>{r.get('price')}</td>"

@@ -40,11 +40,22 @@ _CITY_COORDS = {
     "SFO": (37.6188, -122.3750),    # KSFO
 }
 
+# Display names. Kept beside the coordinates so a new city cannot be added with
+# one and not the other.
+_CITY_NAMES = {
+    "ATL": "Atlanta", "AUS": "Austin", "BOS": "Boston", "CHI": "Chicago",
+    "DAL": "Dallas", "DC": "Washington DC", "DEN": "Denver", "HOU": "Houston",
+    "LAX": "Los Angeles", "LV": "Las Vegas", "MIA": "Miami",
+    "MIN": "Minneapolis", "NOLA": "New Orleans", "NYC": "New York",
+    "OKC": "Oklahoma City", "PHIL": "Philadelphia", "PHX": "Phoenix",
+    "SATX": "San Antonio", "SEA": "Seattle", "SFO": "San Francisco",
+}
+
 # Kalshi's series naming is inconsistent -- the high dropped the 'T' for some
 # cities (KXHIGHAUS) and kept it for others (KXHIGHTDAL), and the low is its own
 # mess. These are the 40 PRICED series observed live on 2026-08-03; anything not
 # listed simply is not screened.
-CITY_POINTS = {series: _CITY_COORDS[city] for series, city in {
+_SERIES_CITY = {
     "KXHIGHAUS": "AUS", "KXHIGHCHI": "CHI", "KXHIGHDEN": "DEN",
     "KXHIGHLAX": "LAX", "KXHIGHMIA": "MIA", "KXHIGHNY": "NYC",
     "KXHIGHPHIL": "PHIL", "KXHIGHTATL": "ATL", "KXHIGHTBOS": "BOS",
@@ -59,12 +70,23 @@ CITY_POINTS = {series: _CITY_COORDS[city] for series, city in {
     "KXLOWTNOLA": "NOLA", "KXLOWTNYC": "NYC", "KXLOWTOKC": "OKC",
     "KXLOWTPHIL": "PHIL", "KXLOWTPHX": "PHX", "KXLOWTSATX": "SATX",
     "KXLOWTSEA": "SEA", "KXLOWTSFO": "SFO",
-}.items()}
+}
+
+CITY_POINTS = {series: _CITY_COORDS[city] for series, city in _SERIES_CITY.items()}
 
 
 def point_for(series: str):
     """(lat, lon) for a Kalshi series, or None when the city is not mapped."""
     return CITY_POINTS.get((series or "").upper())
+
+
+def city_name(series: str) -> str:
+    """Human-readable city for a Kalshi series.
+
+    Falls back to the raw ticker rather than a blank when Kalshi adds a city we
+    have not mapped -- an unrecognised ticker is still identifiable."""
+    ticker = (series or "").upper()
+    return _CITY_NAMES.get(_SERIES_CITY.get(ticker), ticker)
 
 
 def resolve(lat: float, lon: float, fetch=None) -> dict:

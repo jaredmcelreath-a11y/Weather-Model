@@ -46,3 +46,23 @@ def test_station_for_takes_the_nearest_station():
 
 def test_station_for_returns_none_when_there_are_no_stations():
     assert scan_cities.station_for("u", fetch=lambda url: {"features": []}) is None
+
+
+def test_city_name_is_human_readable():
+    assert scan_cities.city_name("KXHIGHPHIL") == "Philadelphia"
+    assert scan_cities.city_name("KXLOWTNYC") == "New York"
+    assert scan_cities.city_name("KXHIGHTSATX") == "San Antonio"
+
+
+def test_high_and_low_of_one_city_share_a_name():
+    assert scan_cities.city_name("KXHIGHDEN") == scan_cities.city_name("KXLOWTDEN")
+
+
+def test_an_unmapped_series_falls_back_to_its_ticker():
+    # Better a raw ticker than a blank cell if Kalshi adds a city.
+    assert scan_cities.city_name("KXHIGHNOWHERE") == "KXHIGHNOWHERE"
+
+
+def test_every_mapped_series_has_a_name():
+    for s in scan_cities.CITY_POINTS:
+        assert scan_cities.city_name(s) != s

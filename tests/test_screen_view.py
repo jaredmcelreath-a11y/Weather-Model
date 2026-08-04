@@ -32,3 +32,15 @@ def test_display_rows_tolerate_a_missing_gap():
             dict(_c("t", "bad", 0.30, 5.0), gap=None)]
     got = screen_view.display_rows(rows)
     assert [r["ticker"] for r in got] == ["ok", "bad"]
+
+
+def test_display_uses_the_city_name_not_the_series_ticker():
+    row = _c("t", "x", 0.4, 5.0)
+    row["series"] = "KXHIGHPHIL"
+    assert screen_view.city_of(row) == "Philadelphia"
+
+
+def test_display_falls_back_to_the_series_when_unmapped():
+    row = _c("t", "x", 0.4, 5.0)
+    row["series"] = "KXHIGHNOWHERE"
+    assert screen_view.city_of(row) == "KXHIGHNOWHERE"
