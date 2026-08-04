@@ -68,3 +68,62 @@ def forecast_candidate(row: dict, forecast, now_iso: str):
     if gap is None or gap < MIN_CANDIDATE_GAP_F:
         return None
     return _candidate(row, "forecast", float(forecast), gap, price, now_iso)
+
+
+# ---- Realized-extreme (hard) screen ---------------------------------------
+
+MIN_OBS_SUPPORT = 2
+
+
+def c_to_f(celsius):
+    """NWS observations report Celsius; brackets are Fahrenheit."""
+    if celsius is None:
+        return None
+    return round(float(celsius) * 9.0 / 5.0 + 32.0, 1)
+
+
+def realized_extreme(temps_f: list, variable: str,
+                     min_support: int = MIN_OBS_SUPPORT):
+    """The day's realized extreme so far, or None when unestablished.
+
+    Physics, not forecasting: the minimum realized so far is a CEILING on the
+    settled low, and the maximum a FLOOR on the settled high. Neither can move
+    back the other way.
+
+    `min_support` guards against a single spurious reading: the returned extreme
+    is the most extreme value that at least `min_support` observations reach.
+    One bad 40F print must not declare every bracket above it dead."""
+    values = sorted(float(t) for t in temps_f if t is not None)
+    if len(values) < min_support:
+        return None
+    if variable == "low":
+        return values[min_support - 1]      # min corroborated by min_support
+    if variable == "high":
+        return values[-min_support]         # max corroborated by min_support
+    return None
+
+
+def dead_candidate(row: dict, bound, now_iso: str):
+    """A bracket the realized extreme has already made impossible, or None.
+
+    For a LOW, `bound` is the realized minimum and any bracket entirely ABOVE it
+    is dead. For a HIGH, `bound` is the realized maximum and any bracket
+    entirely BELOW it is dead."""
+    if bound is None:
+        return None
+    price = price_of(row)
+    if price is None or price < MIN_CANDIDATE_PRICE:
+        return None
+    variable = row.get("variable")
+    floor, cap = row.get("floor"), row.get("cap")
+    if variable == "low":
+        if floor is None or floor <= bound:
+            return None
+        gap = round(float(floor) - float(bound), 2)
+    elif variable == "high":
+        if cap is None or cap >= bound:
+            return None
+        gap = round(float(bound) - float(cap), 2)
+    else:
+        return None
+    return _candidate(row, "dead", float(bound), gap, price, now_iso)
