@@ -25,6 +25,7 @@ from sources.kalshi import parse_kalshi_ts
 
 SNAPSHOT_PATH = "scan_log.jsonl"
 SETTLED_PATH = "scan_settled.jsonl"
+CANDIDATES_PATH = "scan_candidates.jsonl"
 
 
 class GitHubTransport:
