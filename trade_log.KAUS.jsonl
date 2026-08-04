@@ -1111,3 +1111,4 @@
 {"ts": "2026-08-04T21:51:43.598047+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-08-04T21:57:11.427149+00:00", "kind": "hold", "ticker": "KXHIGHAUS-26AUG04-B101.5", "variable": "high", "side": "yes", "count": 1, "entry_ask": 0.65, "current_ask": null, "current_bid": 0.98, "stop_at": 0.45, "target_ticker": "KXHIGHAUS-26AUG04-B101.5", "mode": "shadow"}
 {"ts": "2026-08-04T22:11:56.695337+00:00", "kind": "hold", "ticker": "KXHIGHAUS-26AUG04-B101.5", "variable": "high", "side": "yes", "count": 1, "entry_ask": 0.65, "current_ask": 0.99, "current_bid": 0.98, "stop_at": 0.45, "target_ticker": "KXHIGHAUS-26AUG04-B101.5", "mode": "shadow"}
+{"ts": "2026-08-04T22:11:58.316459+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
