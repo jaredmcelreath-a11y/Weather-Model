@@ -44,3 +44,39 @@ def test_display_falls_back_to_the_series_when_unmapped():
     row = _c("t", "x", 0.4, 5.0)
     row["series"] = "KXHIGHNOWHERE"
     assert screen_view.city_of(row) == "KXHIGHNOWHERE"
+
+
+def _row_hrs(hours, variable="low", kind="forecast"):
+    r = _c("t", "x", 0.3, 5.0, kind)
+    r["hours_to_close"] = hours
+    r["variable"] = variable
+    return r
+
+
+def test_side_is_always_no_because_the_screen_only_finds_overpriced_brackets():
+    assert screen_view.side_of(_row_hrs(10.0)) == "NO"
+    assert screen_view.side_of(_row_hrs(10.0, kind="dead")) == "NO"
+
+
+def test_a_future_climate_day_is_not_settled():
+    # >24h to close means the day has not begun; nothing is determined.
+    assert screen_view.settled_of(_row_hrs(27.9, "high")) == "No"
+    assert screen_view.settled_of(_row_hrs(28.9, "low")) == "No"
+
+
+def test_a_low_is_settled_once_the_dawn_window_has_passed():
+    # Day runs 24h to close -> 0. A low forms early, so by 6h left it is in.
+    assert screen_view.settled_of(_row_hrs(5.9, "low")) == "Yes"
+    assert screen_view.settled_of(_row_hrs(20.0, "low")) == "No"
+
+
+def test_a_high_needs_the_afternoon_before_it_is_settled():
+    # The high peaks late, so it stays unsettled far longer than the low.
+    assert screen_view.settled_of(_row_hrs(12.0, "high")) == "No"
+    assert screen_view.settled_of(_row_hrs(5.0, "high")) == "Yes"
+
+
+def test_a_dead_row_is_settled_regardless_of_the_clock():
+    # 'dead' means realized temperature already ruled it out -- hard evidence
+    # beats the diurnal heuristic.
+    assert screen_view.settled_of(_row_hrs(23.0, "low", kind="dead")) == "Yes"
