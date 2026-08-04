@@ -78,6 +78,22 @@ if _trade:
     os.environ.setdefault("TRADE_GH_BRANCH", _trade.get("branch", "trade-data"))
     os.environ.setdefault("TRADE_GH_TOKEN", _trade.get("token", ""))
 
+# Multi-city scanner/screen store — the Screen page READS candidates the scan
+# Action writes to a dedicated branch [scan]. Without this bridge scan_log's
+# transport (which reads os.environ, not st.secrets) sees no repo and the page is
+# permanently empty. The repo is public, so `token` is optional for reading —
+# supply one anyway to get the authenticated GitHub rate limit (5000/hr) instead
+# of the unauthenticated 60/hr shared across Streamlit Cloud's egress IP, which is
+# the same shared-IP throttle that already bites Open-Meteo above.
+try:
+    _scan = dict(st.secrets["scan"]) if "scan" in st.secrets else None
+except Exception:
+    _scan = None
+if _scan:
+    os.environ.setdefault("SCAN_GH_REPO", _scan.get("repo", ""))
+    os.environ.setdefault("SCAN_GH_BRANCH", _scan.get("branch", "scan-data"))
+    os.environ.setdefault("SCAN_GH_TOKEN", _scan.get("token", ""))
+
 # TTL matches the page's 60s autorefresh and the Kalshi market cache (30s) so the
 # model snapshot and the market-implied EV are recomputed on the same cycle — a
 # 120s model cache next to a 30s market cache let the model lag up to ~2 min behind
