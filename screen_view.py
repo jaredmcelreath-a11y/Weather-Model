@@ -29,6 +29,18 @@ from sources import kalshi
 # is the only hard evidence here.
 _SETTLED_BELOW_HOURS = {"low": 17.0, "high": 8.0}
 
+# Below this live NO ask there is nothing left to fade: NO at 0.09 means the
+# market has YES at ~0.91, i.e. it has already resolved the bracket, and the
+# disagreement is the screen's reference being wrong rather than the price.
+#
+# screen_rules gates the price too (MIN_CANDIDATE_PRICE / SETTLED_PRICE), but
+# both act on the YES price AT FIRING, which the Price column shows and which is
+# up to an hour stale by the time this page renders. A bracket logged at 0.82
+# that has since drifted to 0.91 YES passes every firing-time gate and still
+# reaches the table as a lost fade. This is the only gate on the price the trade
+# would actually happen at.
+MIN_LIVE_NO_PRICE = 0.20
+
 _TIPS = {
     "Side": "Which side to buy. Always NO today: the screen only finds brackets "
             "priced ABOVE what the forecast supports, so the play is to fade.",
@@ -116,6 +128,37 @@ def live_no_prices(rows: list, fetch=None) -> dict:
                 if price is not None:
                     out[m["ticker"]] = price
     return out
+
+
+def tradeable_now(rows: list, live: dict):
+    """(rows still worth reviewing, how many the live market has resolved).
+
+    A row is dropped only when it HAS a live NO price and that price is below
+    MIN_LIVE_NO_PRICE. A row with no live quote survives: an absent quote is
+    thin liquidity or a market that has since closed, not evidence the market
+    resolved against the fade, and dropping it would hide the row for a reason
+    the price never gave us. Order is preserved for the caller's sort."""
+    visible, hidden = [], 0
+    for r in rows:
+        price = live.get(r.get("ticker"))
+        if price is not None and float(price) < MIN_LIVE_NO_PRICE:
+            hidden += 1
+        else:
+            visible.append(r)
+    return visible, hidden
+
+
+def hidden_notice(hidden: int) -> str:
+    """Why rows are missing from the table, or '' when none are.
+
+    The count is always shown rather than the rows quietly disappearing -- an
+    unexplained short table reads exactly like a screen that found nothing."""
+    if not hidden:
+        return ""
+    pct = round(MIN_LIVE_NO_PRICE * 100)
+    it = "it" if hidden == 1 else "them"
+    return (f"{hidden} hidden — live NO under {pct}%, the market has already "
+            f"resolved {it}.")
 
 
 def _pct(price) -> str:
@@ -449,9 +492,14 @@ def render() -> None:
         return
 
     rows = latest_firing(all_rows)
+    hidden = 0
     if rows:
         live = live_no_prices(rows)
-        fresh = new_tickers(all_rows)
+        rows, hidden = tradeable_now(rows, live)
+    if rows:
+        # Freshness is counted off the VISIBLE rows: a filtered-out arrival is
+        # not on screen and must not be claimed in red.
+        fresh = new_tickers(all_rows) & {r.get("ticker") for r in rows}
         st.markdown(
             _table(_COLUMNS, [_candidate_row(r, live, fresh)
                               for r in display_rows(rows)]),
@@ -462,4 +510,6 @@ def render() -> None:
         # Still fall through to the positions table: holding something the
         # screen flagged yesterday is exactly the day you want to see it.
         st.info("No candidates in the latest firing.")
+    if hidden:
+        st.caption(hidden_notice(hidden))
     _render_positions(all_rows)

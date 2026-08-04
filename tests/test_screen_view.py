@@ -284,3 +284,76 @@ def test_bracket_label_falls_back_for_rows_logged_before_labels():
     row = _c("t", "x", 0.4, 5.0)
     row.update(strike_type="greater", floor=90, cap=None, label=None)
     assert screen_view._bracket_label(row) == ">90"
+
+
+# ---- Live NO-price gate ----------------------------------------------------
+# A NO ask of 9% means the live market has YES at ~91%: the bracket is already
+# resolved and the screen's reference is what is wrong, not the price. The
+# firing-time gates in screen_rules cannot see this -- their price is up to an
+# hour stale.
+
+def test_a_row_the_market_has_already_resolved_is_hidden():
+    rows = [_c("t", "settled", 0.82, 5.0)]
+    visible, hidden = screen_view.tradeable_now(rows, {"settled": 0.09})
+    assert visible == []
+    assert hidden == 1
+
+
+def test_a_row_at_the_threshold_survives():
+    # Strictly below hides: 20% is still a fade worth reviewing.
+    rows = [_c("t", "edge", 0.80, 5.0)]
+    visible, hidden = screen_view.tradeable_now(
+        rows, {"edge": screen_view.MIN_LIVE_NO_PRICE})
+    assert [r["ticker"] for r in visible] == ["edge"]
+    assert hidden == 0
+
+
+def test_an_ordinarily_priced_row_survives():
+    rows = [_c("t", "live", 0.55, 5.0)]
+    visible, hidden = screen_view.tradeable_now(rows, {"live": 0.45})
+    assert [r["ticker"] for r in visible] == ["live"]
+    assert hidden == 0
+
+
+def test_a_row_with_no_live_quote_survives():
+    # No quote is thin liquidity or a just-closed market -- not evidence the
+    # market resolved against the fade. Hiding it would drop rows for the
+    # wrong reason.
+    rows = [_c("t", "unquoted", 0.60, 5.0)]
+    visible, hidden = screen_view.tradeable_now(rows, {})
+    assert [r["ticker"] for r in visible] == ["unquoted"]
+    assert hidden == 0
+
+
+def test_the_gate_counts_every_row_it_hides():
+    rows = [_c("t", "settled", 0.82, 5.0), _c("t", "dead2", 0.95, 6.0),
+            _c("t", "live", 0.55, 7.0), _c("t", "unquoted", 0.60, 8.0)]
+    live = {"settled": 0.09, "dead2": 0.06, "live": 0.45}
+    visible, hidden = screen_view.tradeable_now(rows, live)
+    assert [r["ticker"] for r in visible] == ["live", "unquoted"]
+    assert hidden == 2
+
+
+def test_the_gate_preserves_row_order():
+    rows = [_c("t", "a", 0.3, 5.0), _c("t", "gone", 0.9, 6.0),
+            _c("t", "b", 0.4, 7.0)]
+    visible, _ = screen_view.tradeable_now(rows, {"gone": 0.05})
+    assert [r["ticker"] for r in visible] == ["a", "b"]
+
+
+def test_a_hidden_row_is_not_counted_as_a_fresh_arrival():
+    # The red highlight counts what arrived this hour; a row the gate removed
+    # is not on screen and must not be counted red.
+    rows = [_c("2026-08-04T12:00:00Z", "shown", 0.3, 5.0),
+            _c("2026-08-04T12:00:00Z", "hidden", 0.9, 6.0)]
+    visible, _ = screen_view.tradeable_now(rows, {"hidden": 0.04})
+    fresh = screen_view.new_tickers(rows, NOW) & {r["ticker"] for r in visible}
+    assert fresh == {"shown"}
+
+
+def test_hidden_notice_explains_the_missing_rows():
+    assert screen_view.hidden_notice(0) == ""
+    assert screen_view.hidden_notice(1) == (
+        "1 hidden — live NO under 20%, the market has already resolved it.")
+    assert screen_view.hidden_notice(3) == (
+        "3 hidden — live NO under 20%, the market has already resolved them.")
