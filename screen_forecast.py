@@ -43,14 +43,13 @@ def lst_offset_hours(tzname: str) -> int:
     return int(january.utcoffset().total_seconds() // 3600)
 
 
-def daily_extremes(periods: list, day: date, tzname: str) -> dict:
-    """{'high': f, 'low': f} over the LST climate day, or Nones when absent."""
+def _day_periods(periods: list, day: date, tzname: str) -> list:
+    """[(start, period)] for the periods falling in `day`'s LST climate window,
+    in forecast order. `start` is the period's own aware UTC-offset time, so a
+    caller can still compare it against `now`."""
     offset = timedelta(hours=lst_offset_hours(tzname))
-    temps = []
+    out = []
     for p in periods or []:
-        raw = p.get("temperature")
-        if raw is None:
-            continue
         try:
             start = datetime.fromisoformat(str(p.get("startTime")))
         except (TypeError, ValueError):
@@ -59,12 +58,66 @@ def daily_extremes(periods: list, day: date, tzname: str) -> dict:
         if utc_offset is None:
             continue
         # Shift into fixed standard time, then take the calendar date.
-        lst = start - utc_offset + offset
-        if lst.date() == day:
-            temps.append(float(raw))
+        if (start - utc_offset + offset).date() == day:
+            out.append((start, p))
+    return out
+
+
+def daily_extremes(periods: list, day: date, tzname: str) -> dict:
+    """{'high': f, 'low': f} over the LST climate day, or Nones when absent."""
+    temps = [float(p["temperature"])
+             for _, p in _day_periods(periods, day, tzname)
+             if p.get("temperature") is not None]
     if not temps:
         return {"high": None, "low": None}
     return {"high": max(temps), "low": min(temps)}
+
+
+def _pop(period: dict) -> int:
+    """A period's precipitation probability, treating an absent one as zero."""
+    value = (period.get("probabilityOfPrecipitation") or {}).get("value")
+    return 0 if value is None else int(value)
+
+
+def _still_open(day_periods: list, variable: str) -> list:
+    """The periods in which this variable's extreme can still MOVE.
+
+    Asymmetric, and deliberately not mirrored. A high is finished at its peak:
+    no later storm can raise it, so counting an evening thunderstorm against an
+    afternoon high row is noise. A low is not — evening convection can crash it
+    any time before midnight, which is the whole reason convective.py exists —
+    so its window runs to the end of the climate day. The same asymmetry the
+    peak-lock guard already records."""
+    if variable != "high":
+        return day_periods
+    temps = [(i, p.get("temperature")) for i, (_, p) in enumerate(day_periods)
+             if p.get("temperature") is not None]
+    if not temps:
+        return day_periods
+    peak = max(temps, key=lambda pair: float(pair[1]))[0]
+    return day_periods[:peak + 1]
+
+
+def storm_chance(periods: list, day: date, tzname: str, variable: str, now):
+    """Whole-percent chance of THUNDERSTORMS over the hours that can still move
+    this variable's extreme, or None when there are no such hours.
+
+    Thunder-only on purpose: it is the convective downdraft that crashes a high
+    or props up a low, while a steady overcast drizzle at the same POP does
+    neither. 0 and None mean different things — 0 is a live window with clean
+    hours in it, None is no window left at all."""
+    # The window is cut on the WHOLE day first, then narrowed to what is still
+    # ahead. Cutting the remaining hours instead would re-peak on whatever is
+    # left, so a high at 9pm would keep reporting the evening's storms long
+    # after the peak that settled it had passed.
+    day_periods = _day_periods(periods, day, tzname)
+    window = [(start, p) for start, p in _still_open(day_periods, variable)
+              if start >= now]
+    if not window:
+        return None
+    return max((_pop(p) for _, p in window
+                if "thunder" in str(p.get("shortForecast") or "").lower()),
+               default=0)
 
 
 def fold_realized(forecast_value, realized_temps: list, variable: str):

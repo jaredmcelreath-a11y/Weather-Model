@@ -70,6 +70,12 @@ _TIPS = {
               "(often a market that has since closed).",
     "Gap": "Degrees F from the reference to the nearest edge of the bracket. A "
            "distance, NOT a probability — there is no per-city calibration here.",
+    "Storm": "Chance of THUNDERSTORMS over the hours that can still move this "
+             "extreme, from the same NWS forecast as Ref. A high's window ends "
+             "at the forecast peak — no later storm can raise it; a low's runs "
+             "to midnight, because an evening downdraft can still crash it. "
+             "Read it as a caution on how much to trust Gap, not as a "
+             "probability the bracket is wrong. '—' means no such hours left.",
     "Settled": "Whether that day's extreme has typically already formed, from "
                "the hours left and the variable. 'dead' rows are always Yes. "
                "Based on normal diurnal timing, not a lock detector.",
@@ -289,6 +295,16 @@ def position_rows(positions: list, screened: dict) -> list:
     return out
 
 
+def storm_of(row: dict) -> str:
+    """Thunderstorm chance as a whole percent, or an em dash.
+
+    A row logged before this field existed has no `storm` key and reads as '—',
+    the same as a row whose window has closed — both mean "nothing to say
+    here", and neither is worth a log migration to distinguish."""
+    value = row.get("storm")
+    return "—" if value is None else f"{int(value)}%"
+
+
 def settled_of(row: dict) -> str:
     """'Yes' when that day's extreme has already formed, else 'No'."""
     if row.get("kind") == "dead":
@@ -436,8 +452,8 @@ def _table(columns: list, rows: list) -> str:
 # therefore the least informative cell on the row. Hrs sits further right than
 # its importance suggests because rows are already SORTED by it — the ordering
 # carries the urgency, the column just confirms it.
-_COLUMNS = ["City", "Var", "Bracket", "Price", "NO Now", "Gap", "Settled",
-            "Ref", "Hrs", "Side"]
+_COLUMNS = ["City", "Var", "Bracket", "Price", "NO Now", "Gap", "Storm",
+            "Settled", "Ref", "Hrs", "Side"]
 
 _POSITION_COLUMNS = ["City", "Contract", "Side", "Qty", "Entry", "Now",
                      "Unreal P&L"]
@@ -453,6 +469,7 @@ def _candidate_row(r: dict, live: dict, fresh: set) -> dict:
         "Price": "" if price is None else f"{float(price):.2f}",
         "NO Now": _pct(live.get(r.get("ticker"))),
         "Gap": r.get("gap"),
+        "Storm": storm_of(r),
         "Settled": settled_of(r),
         "Ref": r.get("forecast"),
         "Hrs": r.get("hours_to_close"),

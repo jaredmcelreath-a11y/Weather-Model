@@ -95,3 +95,46 @@ def test_one_failing_city_does_not_kill_the_pass():
 
 def test_main_returns_nonzero_for_an_unknown_command():
     assert screen.main(["nope"], deps=_deps([], []), now=_NOW) == 2
+
+
+# ---- Storm context on the candidate row ------------------------------------
+
+_STORMY_PERIODS = [
+    {"startTime": "2026-08-03T02:00:00-06:00", "temperature": 66,
+     "probabilityOfPrecipitation": {"value": 20},
+     "shortForecast": "Chance Rain Showers"},
+    {"startTime": "2026-08-03T15:00:00-06:00", "temperature": 94,
+     "probabilityOfPrecipitation": {"value": 70},
+     "shortForecast": "Chance Showers And Thunderstorms"},
+]
+
+
+def test_a_candidate_carries_the_storm_chance():
+    # Denver low, _NOW is 12:00 LST: the 15:00 storm hour is still ahead and a
+    # low's window runs to midnight, so it counts.
+    sink = []
+    d = _deps(sink, [_market("KXLOWTDEN-26AUG03-B72.5", 72, 73)])
+    d.fetch_forecast = lambda url: _STORMY_PERIODS
+    screen.screen_pass(_NOW, d)
+    assert sink[0]["storm"] == 70
+
+
+def test_a_dead_candidate_carries_it_too():
+    # The hard screen's rows need the same caution as the soft screen's.
+    obs = [{"properties": {"timestamp": "2026-08-03T08:00:00-06:00",
+                           "temperature": {"value": 18.9}}},
+           {"properties": {"timestamp": "2026-08-03T09:00:00-06:00",
+                           "temperature": {"value": 18.9}}}]
+    sink = []
+    d = _deps(sink, [_market("KXLOWTDEN-26AUG03-B72.5", 72, 73)], obs=obs)
+    d.fetch_forecast = lambda url: _STORMY_PERIODS
+    screen.screen_pass(_NOW, d)
+    assert [c["kind"] for c in sink] == ["forecast", "dead"]
+    assert all(c["storm"] == 70 for c in sink)
+
+
+def test_a_storm_free_day_records_zero_not_a_missing_field():
+    sink = []
+    d = _deps(sink, [_market("KXLOWTDEN-26AUG03-B72.5", 72, 73)])
+    screen.screen_pass(_NOW, d)          # _PERIODS carry no shortForecast
+    assert sink[0]["storm"] == 0

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 
 import screen_forecast as sf
 
@@ -68,3 +68,114 @@ def test_fold_realized_handles_missing_sides():
     assert sf.fold_realized(None, [65.0, 70.0], "low") == 65.0
     assert sf.fold_realized(82.0, [], "low") == 82.0
     assert sf.fold_realized(None, [], "low") is None
+
+
+# ---- Storm chance ----------------------------------------------------------
+# A gap is only as good as the forecast it is measured from, and a convective
+# day is when that forecast is least reliable. Thunder-only POP over the hours
+# that can still move the extreme.
+
+def _p(start, temp, pop=None, short="Sunny"):
+    period = {"startTime": start, "temperature": temp, "shortForecast": short}
+    if pop is not None:
+        period["probabilityOfPrecipitation"] = {"value": pop}
+    return period
+
+
+STORMY = "Chance Showers And Thunderstorms"
+RAINY = "Chance Rain Showers"
+DAY = date(2026, 8, 4)
+TZ = "America/Chicago"
+
+
+def _hour(h, temp, pop=None, short="Sunny"):
+    """A period at hour `h` of 2026-08-04, Chicago standard time (-06:00)."""
+    return _p(f"2026-08-04T{h:02d}:00:00-06:00", temp, pop, short)
+
+
+def test_storm_chance_counts_thunder_hours_only():
+    # 70% of rain is not a storm; the 45% thunder hour is the answer.
+    periods = [_hour(13, 88, 70, RAINY), _hour(14, 90, 45, STORMY),
+               _hour(15, 91, 20, STORMY)]
+    now = datetime(2026, 8, 4, 12, tzinfo=timezone.utc)
+    assert sf.storm_chance(periods, DAY, TZ, "high", now) == 45
+
+
+def test_storm_chance_is_zero_when_no_hour_mentions_thunder():
+    # Distinct from None: the window exists and is clean.
+    periods = [_hour(13, 88, 70, RAINY), _hour(14, 90, 60, RAINY)]
+    now = datetime(2026, 8, 4, 12, tzinfo=timezone.utc)
+    assert sf.storm_chance(periods, DAY, TZ, "high", now) == 0
+
+
+def test_storm_chance_ignores_hours_already_past():
+    # An 80% storm at 13:00 is history at 18:00 UTC (12:00 CST).
+    periods = [_hour(11, 85, 80, STORMY), _hour(13, 90, 30, STORMY)]
+    now = datetime(2026, 8, 4, 18, tzinfo=timezone.utc)      # 12:00 LST
+    assert sf.storm_chance(periods, DAY, TZ, "high", now) == 30
+
+
+def test_a_highs_window_ends_at_the_forecast_peak():
+    # Once the peak has passed a storm cannot RAISE the day's high, so the 90%
+    # evening storm is irrelevant to a high row.
+    periods = [_hour(14, 95, 10, STORMY),      # the peak
+               _hour(21, 78, 90, STORMY)]      # after it: ignored
+    now = datetime(2026, 8, 4, 17, tzinfo=timezone.utc)      # 11:00 LST
+    assert sf.storm_chance(periods, DAY, TZ, "high", now) == 10
+
+
+def test_a_lows_window_runs_to_the_end_of_the_day():
+    # Evening convection CAN crash a low before midnight -- the whole reason
+    # convective.py exists. The low is not the high run backwards.
+    periods = [_hour(5, 74, 10, STORMY),       # the forecast minimum
+               _hour(21, 78, 90, STORMY)]      # after it: still counts
+    now = datetime(2026, 8, 4, 6, tzinfo=timezone.utc)       # 00:00 LST
+    assert sf.storm_chance(periods, DAY, TZ, "low", now) == 90
+
+
+def test_storm_chance_excludes_another_climate_day():
+    # The neighbouring day's storms are not this bracket's problem.
+    periods = [_p("2026-08-05T14:00:00-06:00", 90, 95, STORMY),
+               _hour(14, 88, 25, STORMY)]
+    now = datetime(2026, 8, 4, 12, tzinfo=timezone.utc)
+    assert sf.storm_chance(periods, DAY, TZ, "high", now) == 25
+
+
+def test_a_missing_pop_counts_as_zero_not_a_crash():
+    periods = [_hour(14, 90, None, STORMY), _hour(15, 91, 35, STORMY)]
+    now = datetime(2026, 8, 4, 12, tzinfo=timezone.utc)
+    assert sf.storm_chance(periods, DAY, TZ, "high", now) == 35
+
+
+def test_storm_chance_is_none_when_the_window_is_empty():
+    # Nothing ahead that can still move the extreme.
+    periods = [_hour(14, 90, 80, STORMY)]
+    now = datetime(2026, 8, 5, 6, tzinfo=timezone.utc)       # day already over
+    assert sf.storm_chance(periods, DAY, TZ, "high", now) is None
+
+
+def test_storm_chance_is_none_for_a_day_with_no_forecast():
+    now = datetime(2026, 8, 4, 12, tzinfo=timezone.utc)
+    assert sf.storm_chance([], DAY, TZ, "high", now) is None
+
+
+def test_storm_chance_matches_thunderstorms_case_insensitively():
+    periods = [_hour(14, 90, 55, "Slight Chance thunderstorms")]
+    now = datetime(2026, 8, 4, 12, tzinfo=timezone.utc)
+    assert sf.storm_chance(periods, DAY, TZ, "high", now) == 55
+
+
+def test_a_high_whose_peak_has_passed_has_no_window_left():
+    # 18:00 LST, peak was at 14:00: no remaining hour can RAISE the day's high,
+    # so there is no storm risk left that could move it. None, not 90.
+    periods = [_hour(14, 95, 10, STORMY), _hour(21, 78, 90, STORMY)]
+    now = datetime(2026, 8, 5, 0, tzinfo=timezone.utc)       # 18:00 LST
+    assert sf.storm_chance(periods, DAY, TZ, "high", now) is None
+
+
+def test_a_low_whose_minimum_has_passed_still_has_a_window():
+    # The mirror case, and the point of the asymmetry: the evening can still
+    # take the low lower.
+    periods = [_hour(5, 74, 10, STORMY), _hour(21, 78, 90, STORMY)]
+    now = datetime(2026, 8, 5, 0, tzinfo=timezone.utc)       # 18:00 LST
+    assert sf.storm_chance(periods, DAY, TZ, "low", now) == 90

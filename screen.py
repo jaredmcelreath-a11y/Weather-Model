@@ -134,9 +134,15 @@ def screen_pass(now: datetime, deps: Deps) -> dict:
             extremes = screen_forecast.daily_extremes(periods, day, tzname)
             forecast = screen_forecast.fold_realized(
                 extremes.get(variable), realized, variable)
+            # Context for the human, not a screening input: a gap is only as
+            # good as the forecast it is measured from, and convection is when
+            # that forecast is least reliable. Free — the same payload.
+            storm = screen_forecast.storm_chance(
+                periods, day, tzname, variable, now)
             for r in day_rows:
                 hit = screen_rules.forecast_candidate(r, forecast, now_iso)
                 if hit:
+                    hit["storm"] = storm
                     candidates.append(hit)
 
             if not in_progress:
@@ -145,6 +151,7 @@ def screen_pass(now: datetime, deps: Deps) -> dict:
             for r in day_rows:
                 hit = screen_rules.dead_candidate(r, bound, now_iso)
                 if hit:
+                    hit["storm"] = storm
                     candidates.append(hit)
 
     written = deps.append_rows(scan_log.CANDIDATES_PATH, candidates)

@@ -395,3 +395,21 @@ def test_a_firing_older_than_the_window_stops_glowing():
     late = NOW - screen_view.NEW_WINDOW - timedelta(minutes=1)
     rows = [_c(late.isoformat().replace("+00:00", "Z"), "old", 0.2, 5.0)]
     assert screen_view.new_tickers(rows, NOW) == set()
+
+
+# ---- Storm column ----------------------------------------------------------
+
+def test_storm_renders_as_a_whole_percent():
+    assert screen_view.storm_of({"storm": 70}) == "70%"
+    assert screen_view.storm_of({"storm": 0}) == "0%"
+
+
+def test_a_row_logged_before_the_storm_field_reads_as_a_dash():
+    # No migration: an old row and a closed window both mean "nothing to say".
+    assert screen_view.storm_of({}) == "—"
+    assert screen_view.storm_of({"storm": None}) == "—"
+
+
+def test_the_storm_column_sits_next_to_the_gap_it_qualifies():
+    cols = screen_view._COLUMNS
+    assert cols[cols.index("Gap") + 1] == "Storm"
