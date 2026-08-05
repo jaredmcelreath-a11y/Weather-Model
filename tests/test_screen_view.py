@@ -682,12 +682,15 @@ def test_each_days_table_rows_sum_to_that_days_step_on_the_chart():
 
 def test_the_readout_states_what_a_day_added_not_just_the_running_total():
     # Reading a step off the line meant subtracting two points by eye.
-    curve = [{"date": date(2026, 8, 3), "total": 0.83, "unrealized": 0.0,
+    # The $0 anchor leads the curve, and has no prior day to step from.
+    curve = [{"date": date(2026, 8, 2), "total": 0.0, "unrealized": 0.0,
+              "open": False},
+             {"date": date(2026, 8, 3), "total": 0.83, "unrealized": 0.0,
               "open": False},
              {"date": date(2026, 8, 4), "total": 0.72, "unrealized": 0.0,
               "open": False}]
     assert [p["step"] for p in screen_view.with_steps(curve)] == [
-        pytest.approx(0.83), pytest.approx(-0.11)]
+        0.0, pytest.approx(0.83), pytest.approx(-0.11)]
 
 
 def test_the_day_column_is_the_market_day_not_the_fill_date():

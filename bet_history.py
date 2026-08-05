@@ -185,24 +185,160 @@ def summary(rows: list[dict]) -> dict:
     }
 
 
-def equity_curve(rows: list[dict]) -> list[dict]:
-    """Cumulative realized P&L, one point per WEATHER (target) DAY — the day each
-    market is *about*, parsed from its ticker. Kalshi temp markets settle the NEXT
-    morning (~1-2am, after the final CLI), so bucketing by settlement time plotted each
-    day's result one day late — a loss on your bets for a given day landed on the next
-    day's point. Same-day bets sum into a single point (the line steps once per day)."""
-    daily: dict = {}
+def row_day(row: dict, today=None):
+    """The WEATHER (target) day a row is filed under — the day its market is
+    *about*, parsed from the ticker, with the settlement date as a fallback.
+
+    THE one dating rule. Every view that shows or sums a day's P&L reads it here,
+    because two rules is how a table and a chart come to disagree: dating rows by
+    the fill instead put a bracket bought Aug 3 for the Aug 4 market in one group
+    and counted it in the other. Kalshi temp markets also settle the NEXT morning
+    (~1-2am, after the final CLI), so bucketing by settlement time plots every
+    day's result a day late.
+
+    `today` dates a still-open position whose ticker carries no readable date;
+    without it such a row has no day at all."""
+    parsed = _ticker_date(row.get("ticker"))
+    if parsed:
+        return date.fromisoformat(parsed)
+    settled = row.get("settled_ts")
+    if settled:
+        return settled.date()
+    return today if row.get("status") == "open" else None
+
+
+def daily_pnl(rows: list[dict], today=None) -> dict:
+    """{weather day: [realized, unrealized]} across `rows`.
+
+    The single aggregation behind the equity curve, the per-period tables and the
+    reconciliation view, so those three cannot drift apart. Open positions are
+    marked to market and counted on THEIR OWN day, not on today: a bracket bought
+    for tomorrow belongs to tomorrow. A row with no P&L to state (open, no live
+    bid) is skipped rather than counted flat."""
+    out: dict = {}
     for r in rows:
-        if r["status"] not in ("settled", "closed"):   # realized: settled or sold-out
+        pnl = _pnl_mtm(r)
+        if pnl is None:
             continue
-        td = _ticker_date(r["ticker"])
-        d = date.fromisoformat(td) if td else r["settled_ts"].date()   # fallback if unparsable
-        daily[d] = daily.get(d, 0.0) + r["pnl"]
-    out, total = [], STARTING_BANKROLL   # curve tracks account balance, not P&L from 0
-    for d in sorted(daily):
-        total += daily[d]
-        out.append({"date": d, "total": total})
+        day = row_day(r, today)
+        if day is None:
+            continue
+        realized = r["status"] in ("settled", "closed")
+        bucket = out.setdefault(day, [0.0, 0.0])
+        bucket[0 if realized else 1] += pnl
     return out
+
+
+def curve(rows: list[dict], today=None, base: float = 0.0) -> list[dict]:
+    """Cumulative P&L by weather day, oldest first, running from `base`.
+
+    One point per day with trades: `total` (running), `unrealized` (how much of
+    that day's step is still a live mark) and `open` (whether any of it is) — the
+    last two are what let a chart draw the unrealized stretch dashed instead of
+    implying the money is banked. Led by an ANCHOR at `base` dated the day before
+    the first trade, so a single trading day still has a slope to read.
+
+    `base` is the only difference between the two pages' lines: the account
+    balance for History, $0 for the Screen's earnings."""
+    daily = daily_pnl(rows, today)
+    out, total = [], base
+    for d in sorted(daily):
+        realized, unreal = daily[d]
+        total += realized + unreal
+        out.append({"date": d, "total": total, "unrealized": unreal,
+                    "open": unreal != 0.0})
+    if out:
+        out = [{"date": out[0]["date"] - timedelta(days=1), "total": base,
+                "unrealized": 0.0, "open": False}] + out
+    return out
+
+
+def with_steps(points: list[dict]) -> list[dict]:
+    """`points` with each one's own day's gain added as `step`.
+
+    A line only ever shows a running total, so reading what a day contributed
+    means subtracting two points by eye — and then arguing with a table about the
+    result. State the step instead.
+
+    Fills in `unrealized`/`open` when a caller hands over a bare {date, total}
+    curve, so a chart can encode those fields unconditionally. The first point has
+    no prior day, so its step is 0 — with the anchor leading a curve, that is the
+    opening balance, which nothing was won or lost to reach."""
+    out, prev = [], None
+    for p in points:
+        out.append({"unrealized": 0.0, "open": False, **p,
+                    "step": round(p["total"] - prev, 4)
+                    if prev is not None else 0.0})
+        prev = p["total"]
+    return out
+
+
+def line_parts(points: list[dict]):
+    """(realized stretch, unrealized stretch) for two line layers.
+
+    Split at the LAST fully-realized point; everything after it is a live mark and
+    should be drawn dashed. The stretches share that point so the dashes continue
+    the line rather than starting after a gap, and the anchor is never open, so a
+    split point always exists. Once one day's step is a mark, every cumulative
+    total past it is one too — which is why the tail runs to the end."""
+    last_real = 0
+    for i, p in enumerate(points):
+        if not p.get("open"):
+            last_real = i
+    return points[:last_real + 1], points[last_real:]
+
+
+def day_breakdown(rows: list[dict], today=None) -> list[dict]:
+    """Every day's number with the trades behind it — newest day first.
+
+    Instrumentation, kept on the page. Two rounds of "the chart says −11¢, the
+    table says +5¢" were argued from arithmetic done by eye, without the one thing
+    that settles it: each trade's gross price move, the fees Kalshi actually took,
+    and whether the curve could place the trade at all.
+
+    Per day: `step` (what the chart draws), `subtotal` (its trades summed — equal
+    to `step` unless something is wrong), `on_chart` (False when no day could be
+    determined), and per trade `gross` = net + fee, so a hand-count from the
+    Entry/Exit columns has somewhere to land."""
+    steps = {p["date"]: p["step"] for p in with_steps(curve(rows, today))}
+    by_day: dict = {}
+    for r in rows:
+        net = _pnl_mtm(r)
+        if net is None:
+            continue
+        realized = r["status"] in ("settled", "closed")
+        fee = r.get("fee") or 0.0
+        by_day.setdefault(row_day(r, today), []).append({
+            "ticker": r.get("ticker"), "label": r.get("label"),
+            "status": r.get("status"), "realized": realized,
+            "qty": r.get("qty"), "entry": r.get("entry"),
+            "exit": r.get("current_value") if not realized else r.get("exit"),
+            "staked": r.get("staked"), "fee": fee, "net": net,
+            # What the prices alone imply, before Kalshi's cut — the number a
+            # hand-count from Entry/Exit produces.
+            "gross": round(net + fee, 4),
+            "first_ts": r.get("first_ts"),
+        })
+    out = []
+    for day in sorted(by_day, key=lambda d: (d is not None, d), reverse=True):
+        trades = by_day[day]
+        out.append({
+            "day": day,
+            "on_chart": day in steps,
+            "step": steps.get(day),
+            "subtotal": round(sum(t["net"] for t in trades), 4),
+            "fees": round(sum(t["fee"] for t in trades), 4),
+            "trades": sorted(trades, key=lambda t: t["first_ts"] or 0),
+        })
+    return out
+
+
+def equity_curve(rows: list[dict]) -> list[dict]:
+    """Cumulative REALIZED P&L by weather day, from the starting bankroll — the
+    settled-and-sold line, with no open marks in it. `equity_curve_live` is the one
+    the History page draws; this is kept for callers that want banked money only."""
+    realized = [r for r in rows if r["status"] in ("settled", "closed")]
+    return [p for p in curve(realized, base=STARTING_BANKROLL)][1:]  # no anchor
 
 
 def open_unrealized(rows: list[dict]) -> float:
@@ -215,31 +351,15 @@ def open_unrealized(rows: list[dict]) -> float:
 
 
 def equity_curve_live(rows: list[dict], today) -> list[dict]:
-    """The realized `equity_curve`, extended with a final LIVE point at `today` carrying
-    today's still-open positions' unrealized P&L — so the last point moves with the
-    market — and led by an opening-balance ANCHOR dot at the starting bankroll, dated the
-    day before the first trade. The anchor gives the line a visible origin: with a single
-    trade day there'd otherwise be just one point and no slope, so you couldn't see the
-    account rise from (or fall below) where it started."""
-    curve = equity_curve(rows)
-    unreal = open_unrealized(rows)
-    if unreal:
-        base = curve[-1]["total"] if curve else STARTING_BANKROLL
-        live = {"date": today, "total": base + unreal}
-        # Selling a contract about today's weather creates a realized point ALSO dated
-        # today (equity_curve buckets by weather day), so the live point is not always
-        # distinct: appending would emit a second point at the same date (an extra
-        # vertical step, and the open MTM appearing to lag a day until those positions
-        # settle). Fold the open MTM into that same-day point instead of duplicating it.
-        if curve and curve[-1]["date"] == today:
-            curve = curve[:-1] + [live]
-        else:
-            curve = curve + [live]
-    if curve:
-        anchor = {"date": curve[0]["date"] - timedelta(days=1),
-                  "total": STARTING_BANKROLL}
-        curve = [anchor] + curve
-    return curve
+    """The line the History page draws: account balance by weather day, from the
+    starting bankroll, with open positions marked to market ON THEIR OWN DAY and an
+    opening-balance anchor the day before the first trade.
+
+    Open marks used to be summed into a single point dated `today`. That put them
+    on a different day from the Daily table, which has always bucketed by weather
+    day — so the chart and the table disagreed about a bracket bought for tomorrow,
+    and neither said why. One aggregation now feeds both (`daily_pnl`)."""
+    return curve(rows, today, base=STARTING_BANKROLL)
 
 
 def period_table(rows: list[dict], period: str) -> list[dict]:
@@ -249,7 +369,10 @@ def period_table(rows: list[dict], period: str) -> list[dict]:
     gain ($), total = running end-of-period balance from the $STARTING_BANKROLL base}. Dated by the
     WEATHER day (same as the equity curve). Includes realized bets (settled or sold) AND
     open positions marked to market (via `_pnl_mtm`), so today's still-open trades show up
-    as the current period — an open bet with no live price yet is skipped."""
+    as the current period — an open bet with no live price yet is skipped.
+
+    Dated through `row_day`, the same rule the equity curve uses, so a period's
+    gain is exactly the sum of that period's steps on the line."""
     def bucket(d: date) -> date:
         if period == "week":
             return d - timedelta(days=d.weekday())
@@ -262,13 +385,9 @@ def period_table(rows: list[dict], period: str) -> list[dict]:
         pnl = _pnl_mtm(r)
         if pnl is None:                              # open with no live price -> can't place
             continue
-        td = _ticker_date(r["ticker"])
-        if td:
-            d = date.fromisoformat(td)
-        elif r["settled_ts"]:
-            d = r["settled_ts"].date()
-        else:
-            continue                                 # open + unparsable ticker -> can't date
+        d = row_day(r)
+        if d is None:                                # open + unparsable ticker -> can't date
+            continue
         b = agg.setdefault(bucket(d), [0.0, 0.0])   # [gain, staked]
         b[0] += pnl
         b[1] += r["staked"]
