@@ -41,6 +41,16 @@ _SETTLED_BELOW_HOURS = {"low": 17.0, "high": 8.0}
 # would actually happen at.
 MIN_LIVE_NO_PRICE = 0.20
 
+# And above this there is nothing left to win: buying NO at 0.93 risks 93c to
+# make 7c, which needs a ~93% strike rate merely to break even. The market has
+# already AGREED with the fade and priced the disagreement away — the opposite
+# failure to the floor above, where it says the fade is simply wrong.
+#
+# Both gates matter more than they look: the first outcome scoring run put the
+# mean cost of a flagged fade at 84.7%, i.e. the screen has been selecting
+# near-favourites where 83.4% of all brackets settle NO anyway.
+MAX_LIVE_NO_PRICE = 0.90
+
 # How often the screen actually fires. Driven by an external cron-job.org
 # repository_dispatch, NOT by the in-repo schedule: GitHub's own scheduler
 # delivered 62% of the hourly slots on 2026-08-04 (9 of 15), median 23 min late,
@@ -151,34 +161,48 @@ def live_no_prices(rows: list, fetch=None) -> dict:
 
 
 def tradeable_now(rows: list, live: dict):
-    """(rows still worth reviewing, how many the live market has resolved).
+    """(rows worth reviewing, n too cheap, n too expensive).
 
-    A row is dropped only when it HAS a live NO price and that price is below
-    MIN_LIVE_NO_PRICE. A row with no live quote survives: an absent quote is
-    thin liquidity or a market that has since closed, not evidence the market
-    resolved against the fade, and dropping it would hide the row for a reason
-    the price never gave us. Order is preserved for the caller's sort."""
-    visible, hidden = [], 0
+    A row is dropped only when it HAS a live NO price outside the band. A row
+    with no live quote survives: an absent quote is thin liquidity or a market
+    that has since closed, not evidence about the fade, and dropping it would
+    hide the row for a reason the price never gave us.
+
+    The two counts are returned separately because they mean opposite things —
+    below the floor the market says the fade is WRONG, above the cap it agrees
+    and has priced the edge away. Order is preserved for the caller's sort."""
+    visible, cheap, dear = [], 0, 0
     for r in rows:
         price = live.get(r.get("ticker"))
-        if price is not None and float(price) < MIN_LIVE_NO_PRICE:
-            hidden += 1
+        price = None if price is None else float(price)
+        if price is not None and price < MIN_LIVE_NO_PRICE:
+            cheap += 1
+        elif price is not None and price > MAX_LIVE_NO_PRICE:
+            dear += 1
         else:
             visible.append(r)
-    return visible, hidden
+    return visible, cheap, dear
 
 
-def hidden_notice(hidden: int) -> str:
+def hidden_notice(cheap: int, dear: int) -> str:
     """Why rows are missing from the table, or '' when none are.
 
+    Both reasons are named rather than totalled: one combined count would hide
+    whether the market is calling the screen wrong or simply agreeing with it.
     The count is always shown rather than the rows quietly disappearing -- an
     unexplained short table reads exactly like a screen that found nothing."""
-    if not hidden:
-        return ""
-    pct = round(MIN_LIVE_NO_PRICE * 100)
-    it = "it" if hidden == 1 else "them"
-    return (f"{hidden} hidden — live NO under {pct}%, the market has already "
-            f"resolved {it}.")
+    floor = round(MIN_LIVE_NO_PRICE * 100)
+    cap = round(MAX_LIVE_NO_PRICE * 100)
+    upside = round((1 - MAX_LIVE_NO_PRICE) * 100)
+    parts = []
+    if cheap:
+        it = "it" if cheap == 1 else "them"
+        parts.append(f"{cheap} hidden — live NO under {floor}%, the market has "
+                     f"already resolved {it}.")
+    if dear:
+        lead = f"{dear} over {cap}%" if parts else f"{dear} hidden — live NO over {cap}%"
+        parts.append(f"{lead}: {upside}¢ of upside for {cap}¢ of risk.")
+    return " ".join(parts)
 
 
 def _pct(price) -> str:
@@ -571,10 +595,10 @@ def render() -> None:
         return
 
     rows = latest_firing(all_rows)
-    hidden = 0
+    cheap = dear = 0
     if rows:
         live = live_no_prices(rows)
-        rows, hidden = tradeable_now(rows, live)
+        rows, cheap, dear = tradeable_now(rows, live)
     if rows:
         # Freshness is counted off the VISIBLE rows: a filtered-out arrival is
         # not on screen and must not be claimed in red.
@@ -589,7 +613,7 @@ def render() -> None:
         # Still fall through to the positions table: holding something the
         # screen flagged yesterday is exactly the day you want to see it.
         st.info("No candidates in the latest firing.")
-    if hidden:
-        st.caption(hidden_notice(hidden))
+    if cheap or dear:
+        st.caption(hidden_notice(cheap, dear))
     _render_track_record(all_rows)
     _render_positions(all_rows)
