@@ -703,3 +703,67 @@ def test_an_evening_fill_is_not_dated_a_day_late():
         [_t("KXLOWTDEN-26AUG04-B66.5", "open", mark=0.35, bought=4, hour=1)],
         {})[0]
     assert row["Day"] == "Aug 4"
+
+
+# ---- Days must be contiguous, and add up on the page -----------------------
+# Second report, 2026-08-05: dating rows by market day was not enough. The rows
+# were still ORDERED by fill time, so a bracket bought Aug 3 for the Aug 4 market
+# sorted below the Aug 5 rows — the Aug 4 group was split, and reading it as a
+# contiguous block missed the stranded row entirely.
+
+def test_rows_are_grouped_by_the_day_they_are_filed_under():
+    rows = [_t("KXLOWTNYC-26AUG05-B72", "settled", pnl=0.20, bought=4, hour=18),
+            _t("KXHIGHTMIN-26AUG04-T88", "settled", pnl=0.05, bought=4, hour=10),
+            _t("KXHIGHPHIL-26AUG03-T90", "settled", pnl=0.83, bought=3, hour=20),
+            # bought EARLIEST, but it is the Aug 4 market: it belongs with Aug 4
+            _t("KXHIGHDEN-26AUG04-T95", "settled", pnl=-0.16, bought=3, hour=9)]
+    days = [r["Day"] for r in screen_view.table_rows(rows, {})
+            if not r.get("_class") == "ssub"]
+    assert days == ["Aug 5", "Aug 4", "Aug 4", "Aug 3"]
+
+
+def test_each_day_carries_a_subtotal_matching_the_charts_step():
+    rows = [_t("KXHIGHTMIN-26AUG04-T88", "settled", pnl=0.05, bought=4),
+            _t("KXHIGHDEN-26AUG04-T95", "settled", pnl=-0.16, bought=3),
+            _t("KXHIGHPHIL-26AUG03-T90", "settled", pnl=0.83, bought=3)]
+    subtotals = {r["Day"]: r["P&L"] for r in screen_view.table_rows(rows, {})
+                 if r.get("_class") == "ssub"}
+    assert subtotals["Aug 4 total"] == "−$0.11"     # the step the chart draws
+    assert subtotals["Aug 3 total"] == "+$0.83"
+
+
+def test_a_subtotal_counts_open_marks_and_says_so():
+    rows = [_t("KXHIGHTMIN-26AUG04-T88", "settled", pnl=0.05, bought=4),
+            _t("KXHIGHDEN-26AUG04-T95", "open", mark=0.14, entry=0.30, qty=10.0,
+               bought=3)]
+    sub = next(r for r in screen_view.table_rows(rows, {})
+               if r.get("_class") == "ssub")
+    # 0.05 + 10*(0.14-0.30) = -1.55, and the '~' says part of it is a mark.
+    assert sub["P&L"] == "~−$1.55"
+    assert sub["Result"] == "2 trades, 1 open"
+
+
+def test_a_subtotal_stands_alone_when_a_day_has_one_trade():
+    rows = [_t("KXHIGHPHIL-26AUG03-T90", "settled", pnl=0.83, bought=3)]
+    sub = next(r for r in screen_view.table_rows(rows, {})
+               if r.get("_class") == "ssub")
+    assert (sub["P&L"], sub["Result"]) == ("+$0.83", "1 trade")
+
+
+def test_a_days_subtotals_reconcile_with_every_step_on_the_line():
+    # The invariant, now checked on what the page actually renders.
+    rows = [_t("KXLOWTNYC-26AUG05-B72", "open", mark=0.44, entry=0.31, bought=4),
+            _t("KXHIGHTMIN-26AUG04-T88", "settled", pnl=0.05, bought=4),
+            _t("KXHIGHDEN-26AUG04-T95", "settled", pnl=-0.16, bought=3),
+            _t("KXHIGHPHIL-26AUG03-T90", "settled", pnl=0.83, bought=3)]
+    steps = {p["date"].strftime("%b %-d") + " total": _money(p["step"])
+             for p in screen_view.with_steps(
+                 screen_pnl.earnings_curve(rows, date(2026, 8, 6)))
+             if p["step"]}
+    shown = {r["Day"]: r["P&L"].lstrip("~") for r in
+             screen_view.table_rows(rows, {}) if r.get("_class") == "ssub"}
+    assert shown == steps
+
+
+def _money(v):
+    return f"+${v:,.2f}" if v >= 0 else f"−${abs(v):,.2f}"
