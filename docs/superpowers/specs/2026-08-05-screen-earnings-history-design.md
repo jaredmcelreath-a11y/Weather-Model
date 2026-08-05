@@ -110,11 +110,32 @@ membership test is not written against the private `_SERIES_CITY` map.
 
 ## Column order
 
-`Date, City, Contract, Side, P&L, % Gain, Entry, Exit, Qty, Settled, Flagged`
+`Date, City, Contract, Result, P&L, % Gain, Entry, Exit, Qty, Flagged, Side`
 
-A mobile decision, as with the candidate table: at 390px only the first few
-columns are visible before the wrap scrolls, and on a *history* table the money
-is the point — so P&L and % Gain sit ahead of the mechanics of the fill.
+A mobile decision, as with the candidate table: at 390px only four columns are
+visible before the wrap scrolls, and on a *history* table the outcome and the
+money are the point — so Result, P&L and % Gain sit ahead of the mechanics of the
+fill, and Side sits last because it is NO on nearly every row.
+
+Eleven columns overflow even a 1400px desktop window, which the first build got
+wrong: with Side ahead of the money, `Result` fell off the right edge where
+nobody would find it.
+
+## Display corrections found in verification
+
+Three things only rendering could show, all fixed:
+
+- `st.caption` is markdown, and markdown reads a PAIR of `$` as inline LaTeX: a
+  caption quoting two amounts rendered the text between them as italic math
+  (`+$2.27 on $18.56` became one equation). Captions escape their dollar signs
+  (`_caption_safe`); the HTML tables need no such thing.
+- Staked is unsigned (`_usd`). `_money` printed it `+$18.56`, as though staking
+  money were a gain.
+- Percents use the app's true minus (`_pct_signed`), so one table does not spell
+  a loss `−$3.08` and `-100.0%`.
+- The chart's x axis is pinned to day granularity. Over a three-day span Vega
+  picks hourly ticks and labels a daily line `12 PM`, `06 PM` — times at which
+  nothing on this chart ever happens.
 
 ## Testing
 

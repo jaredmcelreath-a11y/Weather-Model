@@ -80,6 +80,14 @@ def point_for(series: str):
     return CITY_POINTS.get((series or "").upper())
 
 
+def is_screened_series(series: str) -> bool:
+    """Whether this Kalshi series is one the screen covers.
+
+    A predicate rather than callers testing the private map — or inferring it from
+    `city_name` returning its own argument, which is a fallback, not an answer."""
+    return (series or "").upper() in _SERIES_CITY
+
+
 def city_name(series: str) -> str:
     """Human-readable city for a Kalshi series.
 
