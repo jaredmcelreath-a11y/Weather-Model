@@ -418,6 +418,54 @@ def trade_display_rows(rows: list, screened: dict) -> list:
     return out
 
 
+def _day_subtotal(day: str, trades: list) -> dict:
+    """One day's total, as a row of the same table.
+
+    This exists because the page used to ask you to add its rows up yourself, and
+    a day's total is exactly what the chart draws as that day's step. Two reports
+    of "the chart says −11¢, the table says +5¢" both came down to arithmetic done
+    by eye over rows that were not even contiguous."""
+    graded = [r for r in trades if screen_pnl.row_pnl(r) is not None]
+    total = sum(screen_pnl.row_pnl(r) for r in graded)
+    staked = sum(r.get("staked") or 0.0 for r in graded)
+    n_open = sum(1 for r in trades if r.get("status") == "open")
+    money = _money(total)
+    label = f"{len(trades)} trade" + ("" if len(trades) == 1 else "s")
+    return {
+        "_class": "ssub",
+        "Day": f"{day} total",
+        "Result": label + (f", {n_open} open" if n_open else ""),
+        # '~' when any of it is a live mark, matching the per-trade rows.
+        "P&L": f"~{money}" if n_open else money,
+        "% Gain": _pct_signed(100.0 * total / staked) if staked else "—",
+    }
+
+
+def table_rows(trades: list, screened: dict) -> list:
+    """Every trade as a display row, grouped by the day it is filed under, each
+    day's block followed by its subtotal.
+
+    Ordered by MARKET DAY (newest first), then by fill time within the day —
+    NOT by fill time alone, which is what `build_rows` hands over. Those are
+    different orderings once rows are dated by market day: a bracket bought Aug 3
+    for the Aug 4 market sorted below the Aug 5 rows, splitting the Aug 4 group in
+    two, and a reader taking the Aug 4 block as contiguous silently dropped it."""
+    ordered = sorted(trades, reverse=True,
+                     key=lambda r: (screen_pnl.weather_day(r) or date.min,
+                                    r["first_ts"]))
+    out, block, day = [], [], None
+    for trade in ordered:
+        label = day_label(trade)
+        if day is not None and label != day:
+            out.append(_day_subtotal(day, block))
+            block = []
+        day, block = label, block + [trade]
+        out.extend(trade_display_rows([trade], screened))
+    if block:
+        out.append(_day_subtotal(day, block))
+    return out
+
+
 def earnings_caption(summary: dict) -> str:
     """One line under the chart: what the line is, and what is not yet real.
 
@@ -587,6 +635,10 @@ table.wtbl tr.snew td{color:var(--bad);background:rgba(229,120,110,0.12);}
    visibly not a realized one. Whole-row, because _table escapes its cells and
    cannot carry an inline span. */
 table.wtbl tr.sopen td{color:#C97B5E;}
+/* A day's subtotal row: the same number the chart draws as that day's step. Set
+   apart so it reads as a total rather than as one more trade. */
+table.wtbl tr.ssub td{font-weight:700;background:var(--surface2);
+ border-top:1px solid var(--border);}
 </style>
 """
 
@@ -881,7 +933,7 @@ def _render_history(all_rows: list) -> None:
                                        market_view._chart_colors()["kalshi"]),
                         use_container_width=True)
     st.caption(earnings_caption(summary))
-    st.markdown(_table(_TRADE_COLUMNS, trade_display_rows(trades, screened),
+    st.markdown(_table(_TRADE_COLUMNS, table_rows(trades, screened),
                        _TRADE_TIPS), unsafe_allow_html=True)
 
 
