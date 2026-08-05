@@ -109,8 +109,11 @@ _TIPS = {
 # day's extreme has formed. One shared map would silently explain the wrong
 # thing.
 _TRADE_TIPS = {
-    "Date": "When you first bought this position (your earliest fill on it), "
-            "not the market's climate day.",
+    "Day": "The market's own climate day — the day the bracket is ABOUT, and "
+           "exactly where the chart plots this trade. Sum a day's rows here and "
+           "you get that day's step on the line. It is NOT when you bought: the "
+           "screen lists brackets up to 30 hours out, so a bracket bought "
+           "yesterday for today's market is filed under today.",
     "Side": "The side you actually hold. A fade off this screen is NO; a YES "
             "row is a bet the bracket hits.",
     "Entry": "Your average fill price for this position, from Kalshi's own "
@@ -305,6 +308,22 @@ def empty_notice(others: int) -> str:
             f"traded (Dallas and Austin are on the History page).")
 
 
+def day_label(row: dict) -> str:
+    """The day this trade is filed under — the market's own climate day, which is
+    exactly the day the chart plots it on.
+
+    NOT the fill timestamp, which is what this column used to show. Two problems
+    with that: the screen lists brackets up to ~30h out, so a bracket bought Aug 3
+    for the Aug 4 market read 'Aug 3' here while the chart counted it in Aug 4's
+    step — the table and the chart could not be reconciled by eye — and `first_ts`
+    is UTC, so an evening fill (7pm CDT = 00:00Z) already read a day late."""
+    day = screen_pnl.weather_day(row)
+    if day is None:
+        first = row.get("first_ts")
+        return first.strftime("%b %-d") if first else "—"
+    return day.strftime("%b %-d")
+
+
 def city_of_ticker(ticker: str) -> str:
     """The city a traded ticker belongs to, from its series prefix.
 
@@ -384,7 +403,7 @@ def trade_display_rows(rows: list, screened: dict) -> list:
         exit_at = r.get("current_value") if is_open else r.get("exit")
         out.append({
             "_class": "sopen" if is_open else "",
-            "Date": r["first_ts"].strftime("%b %-d"),
+            "Day": day_label(r),
             "City": city_of_ticker(r.get("ticker")),
             "Contract": contract_of(r, cand),
             "Side": str(r.get("side") or "").upper(),
@@ -602,7 +621,7 @@ _COLUMNS = ["City", "Var", "Bracket", "Price", "NO Now", "Gap", "Str", "Storm",
 # mechanics of the fill — eleven columns overflow even a desktop width, and
 # Result was scrolling off the right edge where nobody would find it. Side is
 # last for the same reason as the candidate table: it is NO on nearly every row.
-_TRADE_COLUMNS = ["Date", "City", "Contract", "Result", "P&L", "% Gain",
+_TRADE_COLUMNS = ["Day", "City", "Contract", "Result", "P&L", "% Gain",
                   "Entry", "Exit", "Qty", "Flagged", "Side"]
 
 
@@ -670,6 +689,20 @@ def _render_track_record(all_rows: list) -> None:
                                     screen_score.base_rate(settled)))
 
 
+def with_steps(curve: list) -> list:
+    """`curve` with each point's own DAY's gain added as `step`.
+
+    The line only ever showed a running total, so a reader comparing it against
+    the trade table had to subtract two points by eye to learn what a day
+    contributed — and then found a number the table's rows did not obviously add
+    up to. The readout states the step outright."""
+    out, prev = [], 0.0
+    for point in curve:
+        out.append({**point, "step": round(point["total"] - prev, 4)})
+        prev = point["total"]
+    return out
+
+
 def line_parts(curve: list):
     """(realized stretch, unrealized stretch) of the curve, for two line layers.
 
@@ -701,14 +734,16 @@ def earnings_chart(curve: list, color: str):
     Tap or click a point to pin its readout: touch devices never fire the hover
     events Vega tooltips need, the same reason the consensus and equity charts
     carry this pattern."""
-    df = pd.DataFrame(curve)
+    df = pd.DataFrame(with_steps(curve))
     # Bare date strings on a :T axis parse as UTC and render a day early for US
     # viewers; converting first keeps each point on its own day.
     df["date"] = pd.to_datetime(df["date"])
     labels = df.assign(label=df.apply(
         lambda r: f"{pd.to_datetime(r['date']).strftime('%b %-d')}\n"
-                  f"{_money(r['total'])}"
-                  + (f"\n{_money(r['unrealized'])} open" if r["open"] else ""),
+                  f"{_money(r['step'])} that day\n"
+                  f"{_money(r['total'])} total"
+                  + (f"\n{_money(r['unrealized'])} still open" if r["open"]
+                     else ""),
         axis=1))
     # Day granularity, explicitly: over a three-day span Vega otherwise picks
     # hourly ticks and labels a daily line '12 PM', '06 PM' — times at which
@@ -741,8 +776,9 @@ def earnings_chart(curve: list, color: str):
                            alt.value(color)),
         size=alt.condition(pick, alt.value(150), alt.value(60)),
         tooltip=[alt.Tooltip("date:T", title="day"),
-                 alt.Tooltip("total:Q", title="P&L", format="$.2f"),
-                 alt.Tooltip("unrealized:Q", title="open", format="$.2f")],
+                 alt.Tooltip("step:Q", title="that day", format="$.2f"),
+                 alt.Tooltip("total:Q", title="running total", format="$.2f"),
+                 alt.Tooltip("unrealized:Q", title="still open", format="$.2f")],
     ).add_params(pick)
     pinned = alt.Chart(labels).mark_text(
         align="left", baseline="top", x=6, y=4, fontSize=13, fontWeight="bold",

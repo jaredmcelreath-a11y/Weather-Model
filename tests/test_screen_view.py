@@ -640,3 +640,66 @@ def test_rows_are_still_ordered_by_urgency_not_strength():
             dict(_c("t", "weak-soon", 0.3, 4.0), hours_to_close=2.0)]
     assert [r["ticker"] for r in screen_view.display_rows(rows)] == [
         "weak-soon", "strong-far"]
+
+
+# ---- The chart and the table must reconcile --------------------------------
+# Reported 2026-08-05: the chart's Aug 3 point was $0.83 and Aug 4 was $0.72, a
+# −$0.11 step, while summing the table's Aug 4 rows by eye gave +$0.05. Neither
+# number was wrong; they were different quantities under similar labels. The
+# table dated a row by the FILL (in UTC, at that), the chart by the day the
+# market is about, so a bracket bought Aug 3 for the Aug 4 market appeared in one
+# group and was counted in the other.
+
+def _t(ticker, status, pnl=None, mark=None, entry=0.30, qty=10.0, bought=4,
+       hour=15):
+    return {"ticker": ticker, "label": "x", "side": "no", "entry": entry,
+            "exit": None, "qty": qty, "status": status, "pnl": pnl,
+            "staked": entry * qty, "current_value": mark, "result": None,
+            "first_ts": datetime(2026, 8, bought, hour, tzinfo=timezone.utc),
+            "settled_ts": None}
+
+
+def test_each_days_table_rows_sum_to_that_days_step_on_the_chart():
+    rows = [
+        # Bought Aug 3, but it is the Aug 4 market: the row the two views
+        # disagreed about. Under the old fill-dated column it read 'Aug 3'.
+        _t("KXHIGHDEN-26AUG04-T95", "settled", pnl=-0.16, bought=3),
+        _t("KXLOWTNYC-26AUG04-B72", "settled", pnl=0.05, bought=4),
+        _t("KXHIGHPHIL-26AUG03-T90", "settled", pnl=0.83, bought=3),
+    ]
+    steps = {p["date"].strftime("%b %-d"): p["step"] for p
+             in screen_view.with_steps(
+                 screen_pnl.earnings_curve(rows, date(2026, 8, 5)))}
+    # trade_display_rows preserves order, so each display row pairs with its trade.
+    per_day = {}
+    for trade, shown in zip(rows, screen_view.trade_display_rows(rows, {})):
+        per_day[shown["Day"]] = per_day.get(shown["Day"], 0.0) + trade["pnl"]
+
+    assert steps["Aug 4"] == pytest.approx(-0.11)      # what the chart shows
+    assert per_day["Aug 4"] == pytest.approx(-0.11)    # what the table adds to
+    assert steps["Aug 3"] == per_day["Aug 3"] == pytest.approx(0.83)
+
+
+def test_the_readout_states_what_a_day_added_not_just_the_running_total():
+    # Reading a step off the line meant subtracting two points by eye.
+    curve = [{"date": date(2026, 8, 3), "total": 0.83, "unrealized": 0.0,
+              "open": False},
+             {"date": date(2026, 8, 4), "total": 0.72, "unrealized": 0.0,
+              "open": False}]
+    assert [p["step"] for p in screen_view.with_steps(curve)] == [
+        pytest.approx(0.83), pytest.approx(-0.11)]
+
+
+def test_the_day_column_is_the_market_day_not_the_fill_date():
+    row = screen_view.trade_display_rows(
+        [_t("KXHIGHDEN-26AUG04-T95", "settled", pnl=-0.16, bought=3)], {})[0]
+    assert row["Day"] == "Aug 4"
+
+
+def test_an_evening_fill_is_not_dated_a_day_late():
+    # 01:00Z on Aug 4 is 8pm CDT Aug 3 — an evening firing's trade. Dating rows
+    # by the market day makes the UTC roll-over irrelevant.
+    row = screen_view.trade_display_rows(
+        [_t("KXLOWTDEN-26AUG04-B66.5", "open", mark=0.35, bought=4, hour=1)],
+        {})[0]
+    assert row["Day"] == "Aug 4"
