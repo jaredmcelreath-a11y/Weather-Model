@@ -169,3 +169,37 @@ def test_the_base_rate_comes_from_every_settled_bracket():
     # The reference line: what fading a bracket at random would have returned.
     settled = [_settled(str(i), "no" if i < 83 else "yes") for i in range(100)]
     assert ss.base_rate(settled) == 0.83
+
+
+# ---- Splitting by strength, not raw gap ------------------------------------
+# Raw gap is the wrong axis: 4F means ~5.7 sigma on a same-day high and ~2.4 on
+# a same-day low, so a gap bucket mixes strong and weak evidence together.
+
+def test_a_record_carries_its_lead_adjusted_strength():
+    rows = [_cand("A", "t", gap=4.0, hours=3.0)]
+    rows[0]["variable"] = "high"
+    got = ss.score(rows, [_settled("A", "no")])[0]
+    assert got["strength"] == 1.0
+
+
+def test_strength_bands_separate_strong_from_weak():
+    def row(ticker, gap, hours):
+        r = _cand(ticker, "t", gap=gap, hours=hours)
+        r["variable"] = "high"
+        return r
+    records = ss.score(
+        [row("weak", 4.0, 36.0), row("strong", 8.0, 3.0)],
+        [_settled("weak", "yes"), _settled("strong", "no")])
+    bands = ss.by_strength(records)
+    assert sum(g["n"] for g in bands.values()) == 2
+    # The strong one won and the weak one lost -- the split must show that.
+    strong = [g for k, g in bands.items() if k[0] >= 1.0]
+    assert strong and strong[0]["hit_rate"] == 1.0
+
+
+def test_a_record_without_a_lead_still_scores():
+    # Strength is unknown, but the trade still happened and still counts.
+    rows = [_cand("A", "t", hours=None)]
+    got = ss.score(rows, [_settled("A", "no")])[0]
+    assert got["strength"] is None
+    assert got["won"] is True

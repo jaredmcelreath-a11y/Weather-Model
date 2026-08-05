@@ -162,3 +162,47 @@ def test_the_same_gap_is_much_weaker_a_day_ahead():
 def test_strength_needs_a_gap_and_a_lead():
     assert sr.strength({"gap": None, "hours_to_close": 3.0}) is None
     assert sr.strength({"gap": 6.0, "hours_to_close": None}) is None
+
+
+# ---- Strength is comparable ACROSS variables too ---------------------------
+# The flat 4F bar is variable-blind as well as lead-blind: measured same-day
+# sigma is 0.70 for a high but 1.70 for a low, so 4F is ~5.7 sigma of evidence
+# on a high and only ~2.4 on a low. Without this, a low at 1.0x looked as
+# convincing as a high at 1.0x when it was less than half as strong.
+
+def test_a_same_day_low_needs_a_far_bigger_gap_for_the_same_strength():
+    # 1.70/0.70 = 2.43x the gap, because the low forecast is that much noisier.
+    high_bar = sr.required_gap(3.0, "high")
+    low_bar = sr.required_gap(3.0, "low")
+    assert round(low_bar / high_bar, 2) == 2.43
+
+
+def test_the_reference_bar_is_unchanged_for_a_same_day_high():
+    # The anchor: a same-day high still reads exactly 1.0x at the 4F threshold,
+    # so nothing about the original scale moves.
+    assert sr.required_gap(3.0, "high") == sr.MIN_CANDIDATE_GAP_F
+    assert sr.strength({"gap": 4.0, "hours_to_close": 3.0,
+                        "variable": "high"}) == 1.0
+
+
+def test_equal_strength_now_means_equal_evidence():
+    # The point of the whole column: one number, one meaning. A high and a low
+    # reading 1.0x are the same multiple of their own forecast error.
+    high = sr.strength({"gap": 4.0, "hours_to_close": 3.0, "variable": "high"})
+    low = sr.strength({"gap": 4.0 * 1.70 / 0.70, "hours_to_close": 3.0,
+                       "variable": "low"})
+    assert round(high, 2) == round(low, 2)
+
+
+def test_strength_converts_to_sigma_by_one_constant_everywhere():
+    # 1.0x == SIGMAS_AT_BAR sigma, for every variable and every lead.
+    for variable in ("high", "low"):
+        for hours in (3.0, 20.0, 36.0):
+            gap = sr.required_gap(hours, variable)
+            sigma = gap / (sr.VARIABLE_SIGMA[variable]
+                           * sr.lead_multiplier(hours, variable))
+            assert round(sigma, 4) == round(sr.SIGMAS_AT_BAR, 4)
+
+
+def test_an_unknown_variable_falls_back_to_the_plain_bar():
+    assert sr.required_gap(3.0, None) == sr.MIN_CANDIDATE_GAP_F

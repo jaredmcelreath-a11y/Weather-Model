@@ -36,6 +36,23 @@ SETTLED_PRICE = 0.97
 # noisy and have less room to get worse.
 LEAD_SIGMA_RATIO = {"high": 1.87 / 0.70, "low": 1.97 / 1.70}
 
+# Same-day error by VARIABLE, from the same measurement. The flat 4F threshold
+# is variable-blind as well as lead-blind: 4F is ~5.7 sigma of evidence against
+# a high but only ~2.4 against a low, because the low forecast is that much
+# noisier. Without this factor a low reading 1.0x looked as convincing as a high
+# reading 1.0x while being less than half as strong -- the column invited a
+# comparison it could not support.
+#
+# Used only as a RATIO against the reference below, never as an absolute per-city
+# sigma. The anchor is arbitrary but explicit: a same-day HIGH still reads
+# exactly 1.0x at MIN_CANDIDATE_GAP_F, so the original scale does not move.
+VARIABLE_SIGMA = {"high": 0.70, "low": 1.70}
+_REFERENCE_VARIABLE = "high"
+
+# What 1.0x means in sigma, identically for every variable and lead. Anything
+# quoted in multiples of the bar can be converted with this one constant.
+SIGMAS_AT_BAR = MIN_CANDIDATE_GAP_F / VARIABLE_SIGMA[_REFERENCE_VARIABLE]
+
 # hours_to_close counts to the END of the climate day, so today's markets sit
 # below 24 and tomorrow's above it. The extreme forms around mid-day, which puts
 # a genuinely same-day forecast near 12h out and a full day-ahead one near 36h.
@@ -60,8 +77,15 @@ def lead_multiplier(hours_to_close, variable: str) -> float:
 
 
 def required_gap(hours_to_close, variable: str) -> float:
-    """The gap this row would need to be as convincing as a same-day 4F one."""
-    return MIN_CANDIDATE_GAP_F * lead_multiplier(hours_to_close, variable)
+    """The gap this row needs to carry SIGMAS_AT_BAR sigma of evidence.
+
+    Two corrections to the flat threshold, both pure ratios: the variable's own
+    baseline noise, and how that noise grows with lead."""
+    baseline = VARIABLE_SIGMA.get(variable)
+    factor = 1.0 if baseline is None else (
+        baseline / VARIABLE_SIGMA[_REFERENCE_VARIABLE])
+    return MIN_CANDIDATE_GAP_F * factor * lead_multiplier(hours_to_close,
+                                                          variable)
 
 
 def strength(row: dict):

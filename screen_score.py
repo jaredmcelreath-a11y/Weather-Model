@@ -19,6 +19,7 @@ import math
 
 import scan_log
 import scan_report
+import screen_rules
 
 # Decisions below which no verdict is given. Matches the culture of the rest of
 # the repo (MIN_LEAD_DAYS, min_nights): report the counts, refuse the
@@ -27,6 +28,11 @@ import scan_report
 MIN_SAMPLE = 30
 
 GAP_BANDS = [(4.0, 5.0), (5.0, 7.0), (7.0, 999.0)]
+# Multiples of the lead- and variable-adjusted bar. 1.0 is the reference (a
+# same-day high at MIN_CANDIDATE_GAP_F, ~5.7 sigma); everything the screen
+# flagged before 2026-08-04 sat below it, so the interesting question is
+# whether the sub-bar rows ever paid.
+STRENGTH_BANDS = [(0.0, 0.5), (0.5, 0.8), (0.8, 1.0), (1.0, 999.0)]
 HOUR_BANDS = [(0.0, 6.0), (6.0, 18.0), (18.0, 999.0)]
 STORM_BANDS = [(0.0, 1.0), (1.0, 40.0), (40.0, 101.0)]
 
@@ -110,6 +116,9 @@ def score(candidates: list, settled: list) -> list:
             "variable": row.get("variable"),
             "kind": row.get("kind"),
             "gap": row.get("gap"),
+            # The axis that actually means something: raw gap mixes a ~5.7
+            # sigma same-day high in with a ~2.4 sigma same-day low.
+            "strength": screen_rules.strength(row),
             "storm": row.get("storm"),
             "hours_to_close": row.get("hours_to_close"),
             "firings": row.get("firings", 1),
@@ -184,6 +193,12 @@ def by_gap(records: list) -> dict:
     return _group(records, lambda r: _band(r.get("gap"), GAP_BANDS))
 
 
+def by_strength(records: list) -> dict:
+    """Multiples of the lead-adjusted bar. The split that answers "what counts
+    as a good Str", which no threshold on the page can currently justify."""
+    return _group(records, lambda r: _band(r.get("strength"), STRENGTH_BANDS))
+
+
 def by_hours(records: list) -> dict:
     """The flat 4F threshold treats a 30-hour gap like a 3-hour one, though the
     measured day-ahead sigma is nearly 3x the same-day figure."""
@@ -219,7 +234,8 @@ def format_report(records: list, settled: list) -> str:
     if not overall["enough"]:
         lines.append(f"  Below MIN_SAMPLE={MIN_SAMPLE}: counts only, no verdict.")
     for title, groups in (("BY KIND", by_kind(records)),
-                          ("BY GAP", by_gap(records)),
+                          ("BY STRENGTH (x bar)", by_strength(records)),
+                          ("BY GAP (raw F)", by_gap(records)),
                           ("BY HOURS TO CLOSE", by_hours(records)),
                           ("BY STORM %", by_storm(records))):
         lines += ["", title, "-" * 78]
