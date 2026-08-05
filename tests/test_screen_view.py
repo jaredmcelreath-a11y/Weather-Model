@@ -1,7 +1,8 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
+import screen_pnl
 import screen_view
 
 
@@ -187,11 +188,6 @@ def test_live_price_renders_as_a_whole_percent():
     assert screen_view._pct(None) == "—"
 
 
-def _pos(ticker, side="no", qty=10.0, entry=0.78, now=0.84):
-    return {"ticker": ticker, "side": side, "qty": qty, "entry": entry,
-            "current_value": now, "label": "from meta", "status": "open"}
-
-
 def test_screened_tickers_span_every_firing_not_just_the_newest():
     # A bracket bought this morning may not be in the latest firing -- its price
     # rose past the cap, or the gap closed. The position must not vanish from
@@ -207,70 +203,150 @@ def test_screened_tickers_keep_the_newest_row_for_a_repeated_bracket():
     assert screen_view.screened_by_ticker(rows)["x"]["gap"] == 9.0
 
 
-def test_open_screened_keeps_only_positions_the_screen_flagged():
-    screened = screen_view.screened_by_ticker([_c("t", "flagged", 0.2, 5.0)])
-    got = screen_view.open_screened([_pos("flagged"), _pos("elsewhere")], screened)
-    assert [p["ticker"] for p in got] == ["flagged"]
+# ---- Earnings history table -------------------------------------------------
+
+DEN = "KXLOWTDEN-26AUG04-B66.5"
 
 
-def test_position_row_shows_entry_against_the_live_mark():
-    screened = screen_view.screened_by_ticker([_c("t", "x", 0.2, 5.0)])
-    row = screen_view.position_rows([_pos("x")], screened)[0]
-    assert row["City"] == "Denver"
-    assert row["Contract"] == "72-73"          # from the candidate, not meta
-    assert (row["Side"], row["Entry"], row["Now"]) == ("NO", "78¢", "84¢")
-    assert row["Unreal P&L"] == "+$0.60"       # 10 x (0.84 - 0.78)
+def _trade(ticker=DEN, status="open", pnl=None, entry=0.78, now=0.84, qty=10.0,
+           staked=7.80, label="66.5 to 67.5", exit_price=None, side="no"):
+    """A row in the shape bet_history.build_rows emits."""
+    return {"ticker": ticker, "label": label, "side": side, "entry": entry,
+            "exit": exit_price, "qty": qty, "status": status, "pnl": pnl,
+            "staked": staked, "current_value": now, "result": None,
+            "first_ts": datetime(2026, 8, 4, 15, tzinfo=timezone.utc),
+            "settled_ts": None}
 
 
-def test_position_row_shows_a_loss_signed():
-    screened = screen_view.screened_by_ticker([_c("t", "x", 0.2, 5.0)])
-    rows = screen_view.position_rows([_pos("x", entry=0.80, now=0.65)], screened)
-    assert rows[0]["Unreal P&L"] == "−$1.50"
+def test_trade_row_marks_an_open_position_to_the_live_bid():
+    row = screen_view.trade_display_rows([_trade()], {})[0]
+    assert row["City"] == "Denver"                  # from the TICKER, not a flag
+    assert row["Contract"] == "66.5 to 67.5"        # Kalshi's own wording
+    assert (row["Entry"], row["Exit"]) == ("78¢", "84¢")
+    assert row["P&L"] == "~+$0.60"                  # 10 x (0.84 - 0.78)
+    assert row["% Gain"] == "~+7.7%"
+    assert row["Result"] == "Open"
+    assert row["_class"] == "sopen"                 # tinted: not a realized number
 
 
-def test_position_row_survives_an_unpriced_market():
+def test_trade_row_shows_a_settled_win_as_realized():
+    row = screen_view.trade_display_rows(
+        [_trade(status="settled", pnl=2.20, exit_price=1.0, now=None)], {})[0]
+    assert (row["P&L"], row["Result"], row["_class"]) == ("+$2.20", "Won", "")
+    assert row["Exit"] == "100¢"
+
+
+def test_trade_row_reads_won_or_lost_not_the_brackets_own_outcome():
+    # Nearly every trade here is a NO fade, so Kalshi's 'no' result would label a
+    # winner with the word for the bracket losing.
+    loss = screen_view.trade_display_rows(
+        [_trade(status="settled", pnl=-7.80, exit_price=0.0, now=None)], {})[0]
+    # Both the money and the percent use the app's true minus sign, so one table
+    # does not spell a loss two ways.
+    assert (loss["Result"], loss["P&L"], loss["% Gain"]) == (
+        "Lost", "−$7.80", "−100.0%")
+
+
+def test_trade_row_labels_a_position_you_sold_out_of():
+    row = screen_view.trade_display_rows(
+        [_trade(status="closed", pnl=0.40, exit_price=0.82, now=None)], {})[0]
+    assert (row["Result"], row["P&L"]) == ("Sold", "+$0.40")
+
+
+def test_trade_row_survives_an_open_position_with_no_mark():
     # market_price returns None on a market with no live quote; the row must
     # still render rather than the section dying.
-    screened = screen_view.screened_by_ticker([_c("t", "x", 0.2, 5.0)])
-    row = screen_view.position_rows([_pos("x", now=None)], screened)[0]
-    assert (row["Now"], row["Unreal P&L"]) == ("—", "—")
+    row = screen_view.trade_display_rows([_trade(now=None)], {})[0]
+    assert (row["Exit"], row["P&L"], row["% Gain"]) == ("—", "—", "—")
+    assert row["Result"] == "Open"
 
 
-def _fill(ticker, action="buy", side="no", count=10.0, price=0.78):
-    return {"trade_id": ticker + action, "ticker": ticker, "variable": None,
-            "side": side, "action": action, "count": count, "price": price,
-            "yes_price": 1 - price, "no_price": price, "fee": 0.0,
-            "ts": datetime(2026, 8, 3, 15, tzinfo=timezone.utc)}
+def test_trade_row_says_whether_the_screen_flagged_the_bracket():
+    # Membership here is by city, so a bet the screen never listed can appear.
+    screened = screen_view.screened_by_ticker([_c("t", DEN, 0.2, 5.0)])
+    flagged = screen_view.trade_display_rows([_trade()], screened)[0]
+    unflagged = screen_view.trade_display_rows([_trade()], {})[0]
+    assert (flagged["Flagged"], unflagged["Flagged"]) == ("Yes", "—")
 
 
-def test_build_positions_covers_a_city_the_model_does_not_run():
-    # The whole point of the fix: KXLOWTDEN has no station in this app, so it
-    # carries no `variable` -- it must still produce a position row.
-    got = screen_view.build_positions([_fill("KXLOWTDEN-26AUG04-B66.5")], {},
-                                      lambda t, side: 0.84)
-    assert [(p["ticker"], p["side"], p["qty"], p["entry"], p["current_value"])
-            for p in got] == [("KXLOWTDEN-26AUG04-B66.5", "no", 10.0, 0.78, 0.84)]
+def test_contract_falls_back_to_the_candidate_when_meta_was_not_fetched():
+    # build_rows defaults `label` to the ticker when no metadata was passed.
+    cand = _c("t", DEN, 0.2, 5.0)
+    row = screen_view.trade_display_rows([_trade(label=DEN)], {DEN: cand})[0]
+    assert row["Contract"] == "72-73"               # floor/cap from the candidate
 
 
-def test_build_positions_drops_a_settled_bracket():
-    fills = [_fill("KXLOWTDEN-26AUG04-B66.5")]
-    settled = {"KXLOWTDEN-26AUG04-B66.5": {
-        "result": "no", "ts": datetime(2026, 8, 5, 6, tzinfo=timezone.utc),
-        "revenue": 10.0, "fee": 0.0}}
-    assert screen_view.build_positions(fills, settled, lambda t, s: 0.9) == []
+def test_contract_falls_back_to_the_strike_when_nothing_knows_the_label():
+    row = screen_view.trade_display_rows([_trade(label=DEN)], {})[0]
+    assert row["Contract"] == "B66.5"               # identifiable, at least
 
 
-def test_empty_notice_says_whether_you_hold_anything_at_all():
+def test_city_of_an_unmapped_ticker_is_its_own_series():
+    assert screen_view.city_of_ticker("KXHIGHNOWHERE-26AUG04-T90") == \
+        "KXHIGHNOWHERE"
+
+
+def test_every_trade_column_carries_a_tooltip_or_needs_none():
+    # City and Contract are self-evident; the rest each state a convention
+    # (fees, '~' marks, what Flagged's em dash means) that the table cannot.
+    untipped = [c for c in screen_view._TRADE_COLUMNS
+                if c not in screen_view._TRADE_TIPS]
+    assert untipped == ["City", "Contract"]
+
+
+def test_the_trade_table_does_not_inherit_the_candidate_tables_meanings():
+    # 'Side' above is the side to BUY (always NO); 'Settled' above is whether the
+    # day's extreme has formed. One shared tip map would explain the wrong thing.
+    header = screen_view._table(["Side"], [{"Side": "NO"}],
+                                screen_view._TRADE_TIPS)
+    assert "side you actually hold" in header
+    assert "Settled" not in screen_view._TRADE_COLUMNS
+
+
+def test_empty_notice_says_whether_you_traded_anything_at_all():
     # The section used to render nothing in every failure mode, which is how a
     # feed that could not see 38 of the 40 cities went unnoticed.
-    assert screen_view.empty_notice([]) == "No open positions."
-    assert screen_view.empty_notice([_pos("a"), _pos("b")]) == (
-        "No open positions in a flagged bracket (2 open elsewhere).")
+    assert screen_view.empty_notice(0) == "No trades in screened brackets since Aug 3."
+    assert screen_view.empty_notice(2) == (
+        "No trades in screened brackets since Aug 3 — 2 other brackets traded "
+        "(Dallas and Austin are on the History page).")
 
 
-def test_total_unrealized_skips_unpriced_positions():
-    positions = [_pos("a"), _pos("b", now=None)]
-    assert screen_view.total_unrealized(positions) == pytest.approx(0.6)
+def test_earnings_caption_flags_the_live_point_and_the_unrealized_part():
+    summary = screen_pnl.summary(
+        [_trade(), _trade(ticker="KXHIGHDEN-26AUG03-T95", status="settled",
+                          pnl=2.20, now=None)])
+    caption = screen_view.earnings_caption(summary)
+    assert "last point is live" in caption
+    # Dollar signs are escaped: st.caption is markdown, and a PAIR of them renders
+    # the text between as inline LaTeX (the caption became one italic equation).
+    assert r"+\$0.60 unrealized" in caption
+    assert r"\$15.60 staked" in caption          # staked is unsigned, not '+$'
+
+
+
+def test_earnings_caption_says_when_nothing_is_realized_yet():
+    caption = screen_view.earnings_caption(screen_pnl.summary([_trade()]))
+    assert "Nothing has settled yet" in caption
+
+
+def test_earnings_chart_plots_dollars_against_the_weather_day():
+    curve = screen_pnl.earnings_curve(
+        [_trade(status="settled", pnl=2.20, now=None)], date(2026, 8, 5))
+    spec = screen_view.earnings_chart(curve, "#51cf66").to_dict()
+    line = spec["layer"][1]
+    assert (line["encoding"]["y"]["field"], line["encoding"]["x"]["field"]) == (
+        "total", "date")
+    # The break-even rule sits at $0: this line starts from zero, not a bankroll.
+    rule = spec["layer"][0]
+    assert rule["mark"]["type"] == "rule"
+    assert spec["datasets"][rule["data"]["name"]] == [{"y": 0.0}]
+    # Dates are converted before plotting -- bare strings on a :T axis render a
+    # day early for US viewers.
+    days = [p["date"][:10] for p in
+            spec["datasets"][spec["layer"][1]["data"]["name"]]]
+    # The Aug 4 bracket's own weather day, led by the $0 anchor the day before.
+    assert days == ["2026-08-03", "2026-08-04"]
 
 
 def test_bracket_label_prefers_kalshis_wording():

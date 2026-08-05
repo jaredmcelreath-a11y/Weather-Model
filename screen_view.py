@@ -9,13 +9,16 @@ horizontal scroll on a phone.
 from __future__ import annotations
 
 import html
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
+import altair as alt
+import pandas as pd
 import streamlit as st
 
 import market_view
 import scan_cities
 import scan_log
+import screen_pnl
 import screen_rules
 from sources import kalshi
 
@@ -98,13 +101,37 @@ _TIPS = {
                "Based on normal diurnal timing, not a lock detector.",
     "Hrs": "Hours until the Kalshi market closes, which is also the end of its "
            "climate day. Over 24 means the day has not started yet.",
+}
+
+# The trade table's own tooltips. A SEPARATE map because half its column names
+# also appear above with different meanings -- 'Side' there is the side to buy
+# (always NO), here the side you actually took; 'Settled' there is whether the
+# day's extreme has formed. One shared map would silently explain the wrong
+# thing.
+_TRADE_TIPS = {
+    "Date": "When you first bought this position (your earliest fill on it), "
+            "not the market's climate day.",
+    "Side": "The side you actually hold. A fade off this screen is NO; a YES "
+            "row is a bet the bracket hits.",
     "Entry": "Your average fill price for this position, from Kalshi's own "
-             "record of your fills. Fees are not included.",
-    "Now": "What the position is worth right now, marked to the live BID — the "
-           "price you could exit at. Deliberately lower than the 'NO Now' ask "
-           "above, which is what ENTERING costs.",
-    "Unreal P&L": "Open profit or loss at that mark: qty × (now − entry). "
-                  "Nothing is realized until you sell or the market settles.",
+             "record of your fills. Fees are not included here, but they ARE "
+             "taken out of P&L.",
+    "Exit": "What you got out at — your average sell price, or 100¢/0¢ for a "
+            "position held to settlement. For a position still open it is the "
+            "live BID (what you could exit at now), which is deliberately "
+            "below the 'NO Now' ask above: that is what ENTERING costs.",
+    "P&L": "Profit or loss in dollars, net of Kalshi fees once realized. A `~` "
+           "value is an OPEN position marked to the live bid — nothing is "
+           "realized until you sell or the market settles.",
+    "% Gain": "This trade's P&L ÷ what you staked on it. A fade bought at 30¢ "
+              "that settles pays +233%; one that misses is −100%.",
+    "Qty": "Contracts held. Fractional sizes are Kalshi's own — it fills in "
+           "cents of notional, not whole contracts.",
+    "Result": "Won or Lost once realized, Sold if you closed it before "
+              "settlement, Open while it is still running.",
+    "Flagged": "Whether this screen's own log contains that bracket. Only the "
+               "last three days of flags are loaded, so an older trade reads "
+               "'—' — that means 'not checked', not 'never flagged'.",
 }
 
 
@@ -234,69 +261,6 @@ def screened_by_ticker(rows: list) -> dict:
     return out
 
 
-def open_screened(positions: list, screened: dict) -> list:
-    """The open positions held in brackets the screen has flagged."""
-    return [p for p in positions if p.get("ticker") in screened]
-
-
-def build_positions(fills: list, settlements: dict, mark) -> list:
-    """Still-open positions from raw fills, each marked at `mark(ticker, side)`.
-
-    Deliberately NOT market_view._open_positions: that goes through
-    kalshi_portfolio.fills() at its default scoping, which drops every ticker
-    outside the two stations this app models — i.e. 38 of the 40 cities this
-    page screens. Anything bought off this screen in Denver or Philadelphia was
-    filtered out three layers down and the table simply rendered nothing.
-
-    Market metadata is left empty: label, city and variable all come from the
-    candidate row, so there is no reason to spend a request per ticker on it."""
-    import bet_history                 # lazy: pulls the signing dependency
-    out = []
-    for r in bet_history.build_rows(fills, settlements, {}):
-        if r["status"] != "open":
-            continue
-        out.append({**r, "current_value": mark(r["ticker"], r["side"])})
-    return out
-
-
-@st.cache_data(ttl=60, show_spinner=False)
-def _portfolio_positions() -> list:
-    """Your open positions across EVERY Kalshi city, marked to the live bid."""
-    import bet_history
-    from sources import kalshi_portfolio
-    start = bet_history.BETS_START
-    return build_positions(
-        kalshi_portfolio.fills(start, all_markets=True),
-        kalshi_portfolio.settlements(start, all_markets=True),
-        kalshi_portfolio.market_price)
-
-
-def empty_notice(positions: list) -> str:
-    """Why the table is empty — never nothing at all.
-
-    The first version of this section simply hid whenever it had no rows, which
-    is how a portfolio feed blind to 38 of the 40 screened cities looked exactly
-    like holding no positions."""
-    if not positions:
-        return "No open positions."
-    return (f"No open positions in a flagged bracket "
-            f"({len(positions)} open elsewhere).")
-
-
-def unrealized(position: dict):
-    """Dollars of open P&L: qty x (mark - entry), or None when unpriced."""
-    mark, entry, qty = (position.get("current_value"), position.get("entry"),
-                        position.get("qty"))
-    if mark is None or entry is None or qty is None:
-        return None
-    return qty * (mark - entry)
-
-
-def total_unrealized(positions: list):
-    """Open P&L across `positions`, counting only the ones that have a mark."""
-    return sum(u for u in (unrealized(p) for p in positions) if u is not None)
-
-
 def _money(amount) -> str:
     """A signed dollar figure, with the app's true minus sign."""
     if amount is None:
@@ -304,26 +268,154 @@ def _money(amount) -> str:
     return f"+${amount:,.2f}" if amount >= 0 else f"−${abs(amount):,.2f}"
 
 
-def position_rows(positions: list, screened: dict) -> list:
-    """Display rows pairing what each position cost against what it is worth now.
+def _usd(amount) -> str:
+    """An UNSIGNED dollar figure — for amounts that have no direction, like what
+    a trade staked. `_money` would print it '+$18.56', as if staking were a gain."""
+    return "—" if amount is None else f"${amount:,.2f}"
 
-    City, variable and label come from the CANDIDATE row rather than the
-    portfolio feed's market metadata: the feed's `variable` is derived from the
-    two stations this app models (KDFW/KAUS) and is None for the other 38 cities
-    the screen covers, while the candidate row already carries all three."""
+
+def _caption_safe(text: str) -> str:
+    """A caption string with its dollar signs escaped.
+
+    st.caption is markdown, and markdown reads a PAIR of '$' as inline LaTeX: a
+    caption quoting two amounts renders the text between them in italic math
+    ('+$2.27 on $18.56' became one equation). Escaping is the fix; the HTML
+    tables are unaffected, which is why this is only needed here."""
+    return text.replace("$", r"\$")
+
+
+def _pct_signed(value) -> str:
+    """A signed percent using the app's true minus sign, so a table's percents
+    and its dollar figures agree on what a negative looks like."""
+    return f"{value:+.1f}%".replace("-", "−")
+
+
+def empty_notice(others: int) -> str:
+    """Why the table is empty — never nothing at all.
+
+    The first version of this section simply hid whenever it had no rows, which
+    is how a portfolio feed blind to 38 of the 40 screened cities looked exactly
+    like holding no positions. `others` is how many of your traded brackets this
+    page does not cover (Dallas and Austin live on the History page)."""
+    since = f"since {screen_pnl.SCREEN_START:%b %-d}"
+    if not others:
+        return f"No trades in screened brackets {since}."
+    traded = "bracket" if others == 1 else "brackets"
+    return (f"No trades in screened brackets {since} — {others} other {traded} "
+            f"traded (Dallas and Austin are on the History page).")
+
+
+def city_of_ticker(ticker: str) -> str:
+    """The city a traded ticker belongs to, from its series prefix.
+
+    Read off the TICKER rather than a candidate row: a trade older than the
+    three days of flags this page loads has no candidate row, and it still has
+    to say where it was."""
+    return scan_cities.city_name((ticker or "").split("-")[0])
+
+
+def contract_of(row: dict, cand: dict) -> str:
+    """The bracket's wording — Kalshi's own where we have it.
+
+    `build_rows` defaults `label` to the ticker when no market metadata was
+    fetched, so that case falls back to the candidate row and then to the
+    ticker's strike suffix ('T95'), which is at least identifiable."""
+    label, ticker = row.get("label"), row.get("ticker") or ""
+    if label and label != ticker:
+        return str(label)
+    if cand:
+        return _bracket_label(cand)
+    parts = ticker.split("-")
+    return parts[-1] if len(parts) > 1 else ticker
+
+
+def result_of(row: dict) -> str:
+    """Won / Lost / Sold / Open.
+
+    Deliberately NOT Kalshi's own 'yes'/'no' result, which the History page
+    shows: nearly every trade here is a NO fade, so a settled winner would read
+    'No' — the outcome of the bracket, the opposite of what happened to you."""
+    if row.get("status") == "open":
+        return "Open"
+    if row.get("status") == "closed":
+        return "Sold"
+    pnl = row.get("pnl")
+    if pnl is None:
+        return "—"
+    return "Won" if pnl > 0 else "Lost"
+
+
+def flagged_of(ticker: str, screened: dict) -> str:
+    """Whether the screen's own log has this bracket, over the days loaded.
+
+    '—' means not in the loaded window, NOT 'never flagged' — the page reads
+    three days of candidates. Shown because membership here is by city, so a bet
+    the screen never listed can appear; leaving it invisible would let a manual
+    trade quietly grade this screen's record."""
+    return "Yes" if ticker in screened else "—"
+
+
+def pct_gain_of(row: dict) -> str:
+    """This trade's P&L as a percent of what it staked, or an em dash."""
+    pnl, staked = screen_pnl.row_pnl(row), row.get("staked")
+    if pnl is None or not staked:
+        return "—"
+    out = _pct_signed(100.0 * pnl / staked)
+    return f"~{out}" if row.get("status") == "open" else out
+
+
+def pnl_of(row: dict) -> str:
+    """Dollars made or lost — prefixed '~' while the position is still open, so a
+    mark is never mistaken for a realized number."""
+    pnl = screen_pnl.row_pnl(row)
+    out = _money(pnl)
+    return f"~{out}" if row.get("status") == "open" and pnl is not None else out
+
+
+def trade_display_rows(rows: list, screened: dict) -> list:
+    """One display row per trade, newest first (the order `build_rows` gives).
+
+    Open rows carry the `sopen` class: `_table` escapes every cell, so a tint has
+    to come from the row, not an inline span."""
     out = []
-    for p in positions:
-        cand = screened.get(p.get("ticker")) or {}
+    for r in rows:
+        cand = screened.get(r.get("ticker")) or {}
+        is_open = r.get("status") == "open"
+        exit_at = r.get("current_value") if is_open else r.get("exit")
         out.append({
-            "City": city_of(cand) if cand else (p.get("ticker") or ""),
-            "Contract": _bracket_label(cand) if cand else p.get("label", ""),
-            "Side": str(p.get("side") or "").upper(),
-            "Qty": f"{float(p.get('qty') or 0):.2f}",
-            "Entry": market_view.cents(p.get("entry")),
-            "Now": market_view.cents(p.get("current_value")),
-            "Unreal P&L": _money(unrealized(p)),
+            "_class": "sopen" if is_open else "",
+            "Date": r["first_ts"].strftime("%b %-d"),
+            "City": city_of_ticker(r.get("ticker")),
+            "Contract": contract_of(r, cand),
+            "Side": str(r.get("side") or "").upper(),
+            "P&L": pnl_of(r),
+            "% Gain": pct_gain_of(r),
+            "Entry": market_view.cents(r.get("entry")),
+            "Exit": market_view.cents(exit_at),
+            "Qty": f"{float(r.get('qty') or 0):.2f}",
+            "Result": result_of(r),
+            "Flagged": flagged_of(r.get("ticker"), screened),
         })
     return out
+
+
+def earnings_caption(summary: dict) -> str:
+    """One line under the chart: what the line is, and what is not yet real.
+
+    Dollar signs are escaped — st.caption is markdown, which reads a pair of them
+    as inline LaTeX and would render this whole sentence as an equation."""
+    parts = [f"Cumulative P&L on screened-bracket trades since "
+             f"{screen_pnl.SCREEN_START:%b %-d}, by the day each market is "
+             f"about — {_money(summary['net_pnl'])} on "
+             f"{_usd(summary['staked'])} staked."]
+    if summary["n_open"]:
+        held = "position" if summary["n_open"] == 1 else "positions"
+        parts.append(f"The last point is live: {summary['n_open']} open {held} "
+                     f"marked to the live bid ({_money(summary['unrealized'])} "
+                     f"unrealized), so it moves with the market.")
+    if not summary["n_settled"]:
+        parts.append("Nothing has settled yet, so none of it is realized.")
+    return _caption_safe(" ".join(parts))
 
 
 def strength_of(row: dict) -> str:
@@ -435,12 +527,12 @@ def _bracket_label(row: dict) -> str:
     return "?"
 
 
-def _header_cell(label: str) -> str:
+def _header_cell(label: str, tips: dict = None) -> str:
     """A <th>, with a tap-or-hover tooltip when the column needs explaining.
 
     Mirrors the app's .wxq/.wxqt pattern (focus for touch, hover for pointer)
     rather than a `title=` attribute, which phones cannot show at all."""
-    tip = _TIPS.get(label)
+    tip = (_TIPS if tips is None else tips).get(label)
     if not tip:
         return f"<th>{html.escape(label)}</th>"
     return (f'<th class="stip-h">{html.escape(label)}'
@@ -469,14 +561,19 @@ table.wtbl th .stip:focus ~ .stipt{opacity:1;visibility:visible;}
 /* Added by the newest firing — reverts to ordinary ink an hour later. Tints the
    whole row, tracking the app's existing .hold red rather than a new colour. */
 table.wtbl tr.snew td{color:var(--bad);background:rgba(229,120,110,0.12);}
+/* Still-open trades in the history table, in the app's terracotta — the same
+   colour the History page uses for a marked-to-market number, so a `~` value is
+   visibly not a realized one. Whole-row, because _table escapes its cells and
+   cannot carry an inline span. */
+table.wtbl tr.sopen td{color:#C97B5E;}
 </style>
 """
 
-def _table(columns: list, rows: list) -> str:
+def _table(columns: list, rows: list, tips: dict = None) -> str:
     """A themed .wtbl table from display-string row dicts, headers tipped.
 
     A row may carry a `_class` marker (never a column) for the stylesheet."""
-    head = "".join(_header_cell(c) for c in columns)
+    head = "".join(_header_cell(c, tips) for c in columns)
     body = []
     for r in rows:
         cls = r.get("_class")
@@ -498,8 +595,13 @@ def _table(columns: list, rows: list) -> str:
 _COLUMNS = ["City", "Var", "Bracket", "Price", "NO Now", "Gap", "Str", "Storm",
             "Settled", "Ref", "Hrs", "Side"]
 
-_POSITION_COLUMNS = ["City", "Contract", "Side", "Qty", "Entry", "Now",
-                     "Unreal P&L"]
+# Same mobile logic as above, different priority: on a HISTORY table the outcome
+# and the money are the point, so Result, P&L and % Gain sit ahead of the
+# mechanics of the fill — eleven columns overflow even a desktop width, and
+# Result was scrolling off the right edge where nobody would find it. Side is
+# last for the same reason as the candidate table: it is NO on nearly every row.
+_TRADE_COLUMNS = ["Date", "City", "Contract", "Result", "P&L", "% Gain",
+                  "Entry", "Exit", "Qty", "Flagged", "Side"]
 
 
 def _candidate_row(r: dict, live: dict, fresh: set) -> dict:
@@ -566,34 +668,140 @@ def _render_track_record(all_rows: list) -> None:
                                     screen_score.base_rate(settled)))
 
 
-def _render_positions(all_rows: list) -> None:
-    """What you actually hold in brackets this screen has flagged.
+def earnings_chart(curve: list, color: str):
+    """Cumulative-P&L line (x = weather day, y = dollars) with a dashed rule at
+    break-even, on a transparent background so it follows the palette.
 
-    The heading always renders, with a caption saying why when there is no
-    table under it: an empty section that could equally mean 'no positions',
-    'no creds' or 'the feed cannot see this city' is unreadable, which is what
-    hid the KDFW/KAUS scoping bug. Read-only; nothing here places an order."""
-    import bet_history            # lazy: pulls the cryptography-backed portfolio
+    Tap or click a point to pin its readout: touch devices never fire the hover
+    events Vega tooltips need, the same reason the consensus and equity charts
+    carry this pattern."""
+    df = pd.DataFrame(curve)
+    # Bare date strings on a :T axis parse as UTC and render a day early for US
+    # viewers; converting first keeps each point on its own day.
+    df["date"] = pd.to_datetime(df["date"])
+    labels = df.assign(label=df.apply(
+        lambda r: f"{pd.to_datetime(r['date']).strftime('%b %-d')}\n"
+                  f"{_money(r['total'])}", axis=1))
+    enc = alt.Chart(df).encode(
+        # Day granularity, explicitly: over a three-day span Vega otherwise picks
+        # hourly ticks and labels a daily line '12 PM', '06 PM' — times at which
+        # nothing on this chart ever happens.
+        x=alt.X("date:T", title=None,
+                axis=alt.Axis(format="%b %-d",
+                              tickCount={"interval": "day", "step": 1})),
+        y=alt.Y("total:Q", title="Cumulative P&L ($)",
+                scale=alt.Scale(zero=False)))
+    line = enc.mark_line(strokeWidth=2.5, color=color)
+    pick = alt.selection_point(on="click", nearest=True, fields=["date"],
+                               empty=False, clear="dblclick")
+    dots = enc.mark_point(filled=True, opacity=1, color=color).encode(
+        size=alt.condition(pick, alt.value(150), alt.value(60)),
+        tooltip=[alt.Tooltip("date:T", title="day"),
+                 alt.Tooltip("total:Q", title="P&L", format="$.2f")],
+    ).add_params(pick)
+    pinned = alt.Chart(labels).mark_text(
+        align="left", baseline="top", x=6, y=4, fontSize=13, fontWeight="bold",
+        lineBreak="\n", lineHeight=15, color=color,
+    ).encode(text="label:N").transform_filter(pick)
+    rule = alt.Chart(pd.DataFrame({"y": [0.0]})).mark_rule(
+        strokeDash=[4, 4], opacity=0.5).encode(y="y:Q")
+    return ((rule + line + dots + pinned)
+            .properties(height=260, background="transparent")
+            .configure_view(fill=None, strokeWidth=0))
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _market_meta(ticker: str) -> dict:
+    """Kalshi's own label and strikes for one bracket.
+
+    Cached an hour, per ticker: a bracket's wording never changes, and the
+    alternative is a request per trade every time the 60-second trade cache turns
+    over. A failure is NOT cached — it raises, and the caller drops that one
+    label rather than pinning the error in place for an hour."""
+    from sources import kalshi_portfolio
+    return kalshi_portfolio.market_meta(ticker)
+
+
+def _trade_meta(tickers) -> dict:
+    """{ticker: market metadata} for the labels, best-effort per ticker."""
+    out = {}
+    for t in tickers:
+        try:
+            out[t] = _market_meta(t)
+        except Exception as e:      # noqa: BLE001 - a label, not the row
+            print(f"[screen_view] {t}: no market meta ({e})")
+    return out
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _screen_trades():
+    """(your screened-bracket trades, count of brackets traded elsewhere).
+
+    `all_markets=True` is load-bearing: the default scoping drops every ticker
+    outside the two stations this app models — 38 of the 40 cities screened here
+    — which once made this whole section render nothing at all."""
+    from sources import kalshi_portfolio
+    start = screen_pnl.SCREEN_START
+    fills = kalshi_portfolio.fills(start, all_markets=True)
+    setts = kalshi_portfolio.settlements(start, all_markets=True)
+    meta = _trade_meta({f["ticker"] for f in fills
+                        if screen_pnl.is_screen_ticker(f["ticker"])})
+    rows = screen_pnl.trade_rows(fills, setts, meta,
+                                kalshi_portfolio.market_price)
+    return rows, screen_pnl.other_tickers(fills)
+
+
+def _render_history(all_rows: list) -> None:
+    """What these trades have actually earned: the cumulative line, then every
+    trade behind it.
+
+    The heading always renders, with a caption saying why when there is no table
+    under it: an empty section that could equally mean 'no trades', 'no creds' or
+    'the feed cannot see this city' is unreadable, which is what hid the
+    KDFW/KAUS scoping bug. Read-only; nothing here places an order."""
     screened = screened_by_ticker(all_rows)
-    st.markdown("**Your Open Positions**")
+    st.markdown("**Your Trades — Earnings History**")
     try:
-        held = _portfolio_positions()
+        trades, others = _screen_trades()
     except Exception as e:          # noqa: BLE001 - a page must not crash
         st.caption(f"Kalshi portfolio unavailable ({type(e).__name__}: {e}).")
         return
-    positions = open_screened(held, screened)
-    if not positions:
-        st.caption(empty_notice(held))
+    if not trades:
+        st.caption(empty_notice(others))
         return
-    rows = sorted(position_rows(positions, screened),
-                  key=lambda r: (r["City"], r["Contract"]))
-    st.caption(
-        f"{len(rows)} open in brackets the screen has flagged, marked to the "
-        f"live bid — unrealized {_money(total_unrealized(positions))}. Fills "
-        f"before {bet_history.BETS_START:%b %-d} are outside the current "
-        "history window and will not appear."
-    )
-    st.markdown(_table(_POSITION_COLUMNS, rows), unsafe_allow_html=True)
+
+    summary = screen_pnl.summary(trades)
+    with st.container(key="metrics2_screen_earnings"):
+        cards = st.columns(4)
+    _mc = market_view.metric_card
+    cards[0].markdown(_mc(
+        "Net P&L", _money(summary["net_pnl"]),
+        f"Realized P&L on settled and sold trades ({_money(summary['realized_pnl'])}"
+        f"), plus open positions marked to the live bid. Net of Kalshi fees."),
+        unsafe_allow_html=True)
+    cards[1].markdown(_mc(
+        "Record (W–L)", f"{summary['wins']}–{summary['losses']}",
+        "Settled and sold trades only — an open fade has not won yet."),
+        unsafe_allow_html=True)
+    cards[2].markdown(_mc(
+        "Win rate", f"{summary['win_rate']:.0f}%",
+        "Share of realized trades in profit. Remember 83% of ALL brackets settle "
+        "NO, so a high hit rate on fades is not by itself an edge — the money "
+        "figures are what decide it."), unsafe_allow_html=True)
+    cards[3].markdown(_mc(
+        "Avg % Return", f"{summary['roi']:+.1f}%",
+        f"Stake-weighted: net P&L ÷ the {_money(summary['staked'])} staked. "
+        f"Typical trade (median) {summary['median_trade_return']:+.1f}%."),
+        unsafe_allow_html=True)
+
+    curve = screen_pnl.earnings_curve(trades, date.today())
+    if curve:
+        st.altair_chart(earnings_chart(curve,
+                                       market_view._chart_colors()["kalshi"]),
+                        use_container_width=True)
+    st.caption(earnings_caption(summary))
+    st.markdown(_table(_TRADE_COLUMNS, trade_display_rows(trades, screened),
+                       _TRADE_TIPS), unsafe_allow_html=True)
 
 
 def render() -> None:
@@ -607,8 +815,10 @@ def render() -> None:
     st.markdown(_TIP_CSS, unsafe_allow_html=True)   # header tips for both tables
     try:
         # Three days, not the whole history: enough for the newest firing, for
-        # "what did the last firing add", and for the open positions below —
-        # Kalshi temperature markets close within ~30h of being listed.
+        # "what did the last firing add", and for the trade table's Flagged
+        # column — Kalshi temperature markets close within ~30h of being listed.
+        # A trade older than this window reads Flagged '—', which its tooltip
+        # says means 'not checked' rather than 'never flagged'.
         all_rows = scan_log.load_recent(scan_log.CANDIDATES_PATH, days=3)
     except Exception as e:              # noqa: BLE001 - a page must not crash
         st.info(f"No candidate log yet ({e}).")
@@ -636,4 +846,4 @@ def render() -> None:
     if cheap or dear:
         st.caption(hidden_notice(cheap, dear))
     _render_track_record(all_rows)
-    _render_positions(all_rows)
+    _render_history(all_rows)
