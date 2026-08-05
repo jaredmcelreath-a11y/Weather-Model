@@ -101,35 +101,35 @@ def earnings_curve(rows: list, today) -> list:
     out: these settle ~1-2am the next morning, so settlement time plots every
     day's result a day late.
 
-    Today's open positions add a final LIVE point that moves with the market, and
-    an anchor at $0 the day before the first trade gives the line an origin — with
+    OPEN positions count too, marked to the live bid, on the day their own market
+    resolves — so a bracket bought for tomorrow sits on tomorrow rather than
+    bulging today's point. Each point carries `unrealized` (how much of the step
+    is still a mark) and `open` (whether any of it is), which is what lets the
+    chart draw that stretch dashed instead of implying the money is banked. An
+    open position whose ticker carries no readable date falls back to `today`.
+
+    An anchor at $0 the day before the first trade gives the line an origin — with
     a single trading day there would otherwise be one point and no slope."""
     daily: dict = {}
     for r in rows:
-        if r["status"] not in ("settled", "closed"):     # realized: settled or sold
+        realized = r["status"] in ("settled", "closed")
+        pnl = row_pnl(r)
+        if pnl is None:                       # open with no mark yet -> no point
             continue
-        day = _weather_day(r)
+        day = _weather_day(r) or (None if realized else today)
         if day is None:
             continue
-        daily[day] = daily.get(day, 0.0) + r["pnl"]
+        bucket = daily.setdefault(day, [0.0, 0.0])       # [realized, unrealized]
+        bucket[0 if realized else 1] += pnl
     curve, total = [], 0.0
     for d in sorted(daily):
-        total += daily[d]
-        curve.append({"date": d, "total": total})
-
-    unreal = open_unrealized(rows)
-    if unreal:
-        base = curve[-1]["total"] if curve else 0.0
-        live = {"date": today, "total": base + unreal}
-        # Selling a contract about today's weather realizes a point dated today
-        # too, so the live point is not always distinct: appending would draw a
-        # second point at the same date.
-        if curve and curve[-1]["date"] == today:
-            curve = curve[:-1] + [live]
-        else:
-            curve = curve + [live]
+        realized, unreal = daily[d]
+        total += realized + unreal
+        curve.append({"date": d, "total": total, "unrealized": unreal,
+                      "open": unreal != 0.0})
     if curve:
-        curve = [{"date": curve[0]["date"] - timedelta(days=1), "total": 0.0}] + curve
+        curve = [{"date": curve[0]["date"] - timedelta(days=1), "total": 0.0,
+                  "unrealized": 0.0, "open": False}] + curve
     return curve
 
 

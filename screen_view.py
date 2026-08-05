@@ -410,9 +410,11 @@ def earnings_caption(summary: dict) -> str:
              f"{_usd(summary['staked'])} staked."]
     if summary["n_open"]:
         held = "position" if summary["n_open"] == 1 else "positions"
-        parts.append(f"The last point is live: {summary['n_open']} open {held} "
-                     f"marked to the live bid ({_money(summary['unrealized'])} "
-                     f"unrealized), so it moves with the market.")
+        parts.append(f"The dashed stretch is live, not banked: {summary['n_open']} "
+                     f"open {held} marked to the live bid "
+                     f"({_money(summary['unrealized'])} unrealized), each on the "
+                     f"day its own market resolves — so it moves with the market "
+                     f"and a bracket bought for tomorrow sits on tomorrow.")
     if not summary["n_settled"]:
         parts.append("Nothing has settled yet, so none of it is realized.")
     return _caption_safe(" ".join(parts))
@@ -668,9 +670,33 @@ def _render_track_record(all_rows: list) -> None:
                                     screen_score.base_rate(settled)))
 
 
+def line_parts(curve: list):
+    """(realized stretch, unrealized stretch) of the curve, for two line layers.
+
+    The split is at the LAST point that is fully realized: everything from there
+    on is drawn dashed, because an open position's contribution is a live mark and
+    not money. The two stretches overlap on that one point so the dashes continue
+    the line instead of starting after a gap. The $0 anchor is never open, so
+    there is always a split point.
+
+    An open day sitting in the MIDDLE of the history (an old position still
+    running) leaves the dashed stretch covering everything after it. That is the
+    honest reading: once one day's step is a mark, every cumulative total past it
+    is a mark too."""
+    last_real = 0
+    for i, p in enumerate(curve):
+        if not p.get("open"):
+            last_real = i
+    return curve[:last_real + 1], curve[last_real:]
+
+
 def earnings_chart(curve: list, color: str):
     """Cumulative-P&L line (x = weather day, y = dollars) with a dashed rule at
     break-even, on a transparent background so it follows the palette.
+
+    Open positions are on the line, marked to the live bid on the day their own
+    market resolves — drawn as a DASHED stretch with hollow points, so what is
+    banked and what is only a mark are never the same line.
 
     Tap or click a point to pin its readout: touch devices never fire the hover
     events Vega tooltips need, the same reason the consensus and equity charts
@@ -681,23 +707,42 @@ def earnings_chart(curve: list, color: str):
     df["date"] = pd.to_datetime(df["date"])
     labels = df.assign(label=df.apply(
         lambda r: f"{pd.to_datetime(r['date']).strftime('%b %-d')}\n"
-                  f"{_money(r['total'])}", axis=1))
-    enc = alt.Chart(df).encode(
-        # Day granularity, explicitly: over a three-day span Vega otherwise picks
-        # hourly ticks and labels a daily line '12 PM', '06 PM' — times at which
-        # nothing on this chart ever happens.
-        x=alt.X("date:T", title=None,
-                axis=alt.Axis(format="%b %-d",
-                              tickCount={"interval": "day", "step": 1})),
-        y=alt.Y("total:Q", title="Cumulative P&L ($)",
-                scale=alt.Scale(zero=False)))
-    line = enc.mark_line(strokeWidth=2.5, color=color)
+                  f"{_money(r['total'])}"
+                  + (f"\n{_money(r['unrealized'])} open" if r["open"] else ""),
+        axis=1))
+    # Day granularity, explicitly: over a three-day span Vega otherwise picks
+    # hourly ticks and labels a daily line '12 PM', '06 PM' — times at which
+    # nothing on this chart ever happens.
+    x = alt.X("date:T", title=None,
+              axis=alt.Axis(format="%b %-d",
+                            tickCount={"interval": "day", "step": 1}))
+    y = alt.Y("total:Q", title="Cumulative P&L ($)",
+              scale=alt.Scale(zero=False))
+    realized, unrealized = (pd.DataFrame(part) for part in line_parts(curve))
+    layers = []
+    for part, dash in ((realized, None), (unrealized, [5, 4])):
+        if len(part) < 2:            # a single point draws no segment
+            continue
+        part = part.assign(date=pd.to_datetime(part["date"]))
+        mark = dict(strokeWidth=2.5, color=color)
+        layers.append(alt.Chart(part).mark_line(
+            **(mark if dash is None else dict(mark, strokeDash=dash))
+        ).encode(x=x, y=y))
+
     pick = alt.selection_point(on="click", nearest=True, fields=["date"],
                                empty=False, clear="dblclick")
-    dots = enc.mark_point(filled=True, opacity=1, color=color).encode(
+    # Hollow for a day whose step is still a live mark, solid for banked money —
+    # `fill` is encodable where mark_point's `filled` is not, which is what makes
+    # the two kinds of point distinguishable in one layer.
+    dots = alt.Chart(df).mark_point(filled=False, opacity=1,
+                                    strokeWidth=2.5).encode(
+        x=x, y=y, stroke=alt.value(color),
+        fill=alt.condition("datum.open", alt.value("transparent"),
+                           alt.value(color)),
         size=alt.condition(pick, alt.value(150), alt.value(60)),
         tooltip=[alt.Tooltip("date:T", title="day"),
-                 alt.Tooltip("total:Q", title="P&L", format="$.2f")],
+                 alt.Tooltip("total:Q", title="P&L", format="$.2f"),
+                 alt.Tooltip("unrealized:Q", title="open", format="$.2f")],
     ).add_params(pick)
     pinned = alt.Chart(labels).mark_text(
         align="left", baseline="top", x=6, y=4, fontSize=13, fontWeight="bold",
@@ -705,7 +750,7 @@ def earnings_chart(curve: list, color: str):
     ).encode(text="label:N").transform_filter(pick)
     rule = alt.Chart(pd.DataFrame({"y": [0.0]})).mark_rule(
         strokeDash=[4, 4], opacity=0.5).encode(y="y:Q")
-    return ((rule + line + dots + pinned)
+    return (alt.layer(rule, *layers, dots, pinned)
             .properties(height=260, background="transparent")
             .configure_view(fill=None, strokeWidth=0))
 

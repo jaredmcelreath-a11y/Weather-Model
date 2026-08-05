@@ -71,6 +71,15 @@ summary(rows) -> dict
   branch and the fee accounting. Duplicating any of that would create a second
   P&L truth to keep in sync. It then filters to screen tickers and attaches
   `current_value` to open rows from the `mark` callable.
+- `earnings_curve` counts OPEN positions too, marked to the live bid, on the day
+  their own market resolves — a bracket bought for tomorrow sits on tomorrow
+  rather than bulging today's point. Each point carries `unrealized` and `open`,
+  which is what lets the chart draw that stretch dashed with hollow points
+  (`screen_view.line_parts` splits at the last fully-realized point; the two
+  stretches share it so the dashes continue the line). Once one day's step is a
+  mark, every cumulative total past it is a mark too, so the dashed stretch runs
+  to the end. An open position whose ticker carries no readable date falls back to
+  today; one with no live bid contributes no point at all.
 - `earnings_curve` is cumulative P&L from **$0**, one point per **weather day**
   parsed from the ticker (`bet_history._ticker_date`) — bucketing by settlement
   time plots each day's result a day late, since these markets settle ~1-2am the

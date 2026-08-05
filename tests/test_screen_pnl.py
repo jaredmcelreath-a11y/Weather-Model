@@ -96,10 +96,17 @@ def _settled_row(ticker, pnl, staked=3.0):
             "qty": 10, "entry": 0.3, "settled_ts": None}
 
 
+def _open_row(ticker, entry=0.30, mark=0.45, qty=10, staked=3.0):
+    return {"ticker": ticker, "status": "open", "pnl": None, "staked": staked,
+            "qty": qty, "entry": entry, "current_value": mark,
+            "settled_ts": None}
+
+
 def test_curve_starts_from_zero_not_a_bankroll():
     rows = [_settled_row(DEN_HIGH, 7.0)]
     curve = screen_pnl.earnings_curve(rows, date(2026, 8, 4))
-    assert curve[0] == {"date": date(2026, 8, 2), "total": 0.0}   # anchor
+    assert curve[0] == {"date": date(2026, 8, 2), "total": 0.0,   # anchor
+                        "unrealized": 0.0, "open": False}
     assert curve[-1]["total"] == pytest.approx(7.0)
 
 
@@ -126,26 +133,51 @@ def test_curve_runs_cumulatively_across_days():
     assert [round(p["total"], 2) for p in curve] == [0.0, 7.0, 5.0]
 
 
-def test_open_positions_extend_the_curve_with_a_live_point():
-    rows = [_settled_row(DEN_HIGH, 7.0),
-            {"ticker": PHIL_HIGH, "status": "open", "pnl": None, "staked": 3.0,
-             "qty": 10, "entry": 0.30, "current_value": 0.45, "settled_ts": None}]
+def test_an_open_position_plots_on_the_day_its_own_market_resolves():
+    # NOT on today: a bracket bought for a later day belongs on that day, or the
+    # line bulges wherever you happen to be standing.
+    rows = [_settled_row(DEN_HIGH, 7.0),                 # weather day Aug 3
+            _open_row(PHIL_HIGH, entry=0.30, mark=0.45)]  # weather day Aug 4
     curve = screen_pnl.earnings_curve(rows, date(2026, 8, 6))
-    assert curve[-1]["date"] == date(2026, 8, 6)
+    assert [p["date"] for p in curve] == [date(2026, 8, 2), date(2026, 8, 3),
+                                          date(2026, 8, 4)]
     assert curve[-1]["total"] == pytest.approx(8.5)      # 7.0 + 10*(0.45-0.30)
 
 
-def test_open_mtm_folds_into_a_same_day_point_instead_of_duplicating_it():
-    """Selling a contract about today's weather realizes a point dated today too;
-    appending would draw a second point at the same date."""
+def test_an_open_day_is_flagged_with_how_much_of_it_is_a_mark():
+    # What lets the chart draw that stretch dashed rather than implying the money
+    # is banked.
+    rows = [_settled_row(DEN_HIGH, 7.0), _open_row(PHIL_HIGH, 0.30, 0.45)]
+    realized, live = screen_pnl.earnings_curve(rows, date(2026, 8, 6))[1:]
+    assert (realized["open"], realized["unrealized"]) == (False, 0.0)
+    assert (live["open"], live["unrealized"]) == (True, pytest.approx(1.5))
+
+
+def test_an_open_position_for_a_future_day_extends_the_line_to_that_day():
+    rows = [_settled_row(DEN_HIGH, 7.0),
+            _open_row("KXHIGHPHIL-26AUG09-T90", 0.30, 0.40)]
+    curve = screen_pnl.earnings_curve(rows, date(2026, 8, 6))
+    assert curve[-1]["date"] == date(2026, 8, 9)
+    assert curve[-1]["open"] is True
+
+
+def test_an_open_position_with_an_unreadable_ticker_falls_back_to_today():
+    rows = [_open_row("NOT-A-DATE", 0.30, 0.45)]
+    curve = screen_pnl.earnings_curve(rows, date(2026, 8, 6))
+    assert curve[-1]["date"] == date(2026, 8, 6)
+
+
+def test_a_realized_and_an_open_trade_on_one_day_make_a_single_point():
+    """Two positions about the same weather day are one step on the line, and the
+    step counts as open because part of it is still a mark."""
     today = date(2026, 8, 4)
     rows = [_settled_row(DEN_LOW, 4.0),                 # weather day Aug 4
-            {"ticker": "KXHIGHPHIL-26AUG04-T90", "status": "open", "pnl": None,
-             "staked": 3.0, "qty": 10, "entry": 0.30, "current_value": 0.45,
-             "settled_ts": None}]
+            _open_row("KXHIGHPHIL-26AUG04-T90", 0.30, 0.45)]
     curve = screen_pnl.earnings_curve(rows, today)
     assert [p["date"] for p in curve] == [date(2026, 8, 3), today]
     assert curve[-1]["total"] == pytest.approx(5.5)
+    assert (curve[-1]["open"], curve[-1]["unrealized"]) == (True,
+                                                            pytest.approx(1.5))
 
 
 def test_curve_of_nothing_is_empty():
@@ -153,11 +185,11 @@ def test_curve_of_nothing_is_empty():
 
 
 def test_an_open_position_with_no_mark_still_yields_a_curve():
-    rows = [_settled_row(DEN_HIGH, 7.0),
-            {"ticker": PHIL_HIGH, "status": "open", "pnl": None, "staked": 3.0,
-             "qty": 10, "entry": 0.30, "current_value": None, "settled_ts": None}]
+    # No live bid means no number to plot; the realized history must survive it.
+    rows = [_settled_row(DEN_HIGH, 7.0), _open_row(PHIL_HIGH, 0.30, None)]
     curve = screen_pnl.earnings_curve(rows, date(2026, 8, 6))
     assert curve[-1]["total"] == pytest.approx(7.0)
+    assert curve[-1]["open"] is False
 
 
 # ---- summary --------------------------------------------------------------

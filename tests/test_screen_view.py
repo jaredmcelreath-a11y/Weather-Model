@@ -317,7 +317,7 @@ def test_earnings_caption_flags_the_live_point_and_the_unrealized_part():
         [_trade(), _trade(ticker="KXHIGHDEN-26AUG03-T95", status="settled",
                           pnl=2.20, now=None)])
     caption = screen_view.earnings_caption(summary)
-    assert "last point is live" in caption
+    assert "dashed stretch is live" in caption
     # Dollar signs are escaped: st.caption is markdown, and a PAIR of them renders
     # the text between as inline LaTeX (the caption became one italic equation).
     assert r"+\$0.60 unrealized" in caption
@@ -328,6 +328,53 @@ def test_earnings_caption_flags_the_live_point_and_the_unrealized_part():
 def test_earnings_caption_says_when_nothing_is_realized_yet():
     caption = screen_view.earnings_caption(screen_pnl.summary([_trade()]))
     assert "Nothing has settled yet" in caption
+
+
+def _pt(day, total, unrealized=0.0):
+    return {"date": date(2026, 8, day), "total": total,
+            "unrealized": unrealized, "open": unrealized != 0.0}
+
+
+def test_line_parts_split_where_the_money_stops_being_banked():
+    curve = [_pt(2, 0.0), _pt(3, 2.2), _pt(4, 3.5, 1.3), _pt(5, 4.0, 0.5)]
+    realized, unrealized = screen_view.line_parts(curve)
+    assert [p["date"].day for p in realized] == [2, 3]
+    # The stretches share the Aug 3 point so the dashes continue the line rather
+    # than starting after a gap.
+    assert [p["date"].day for p in unrealized] == [3, 4, 5]
+
+
+def test_line_parts_of_an_all_realized_curve_draw_nothing_dashed():
+    curve = [_pt(2, 0.0), _pt(3, 2.2)]
+    realized, unrealized = screen_view.line_parts(curve)
+    assert len(realized) == 2
+    assert len(unrealized) == 1              # one point draws no segment
+
+
+def test_line_parts_treat_everything_after_a_mid_history_open_day_as_a_mark():
+    # Once one day's step is a live mark, every cumulative total past it is one.
+    curve = [_pt(2, 0.0), _pt(3, 1.0, 1.0), _pt(4, 3.0)]
+    realized, unrealized = screen_view.line_parts(curve)
+    assert [p["date"].day for p in realized] == [2, 3, 4]
+    assert len(unrealized) == 1
+
+
+def test_earnings_chart_draws_the_open_stretch_dashed_and_hollow():
+    curve = [_pt(2, 0.0), _pt(3, 2.2), _pt(4, 3.5, 1.3)]
+    spec = screen_view.earnings_chart(curve, "#51cf66").to_dict()
+    dashes = [l["mark"].get("strokeDash") for l in spec["layer"]
+              if l["mark"]["type"] == "line"]
+    assert dashes == [None, [5, 4]]          # realized solid, then the mark
+    dots = next(l for l in spec["layer"] if l["mark"]["type"] == "point")
+    # Hollow on an open day: `fill` is encodable where mark_point's `filled` is not.
+    assert dots["encoding"]["fill"]["condition"]["test"] == "datum.open"
+    assert dots["encoding"]["fill"]["condition"]["value"] == "transparent"
+
+
+def test_earnings_caption_says_the_dashed_part_is_not_banked():
+    summary = screen_pnl.summary([_trade()])
+    assert "dashed stretch is live, not banked" in \
+        screen_view.earnings_caption(summary)
 
 
 def test_earnings_chart_plots_dollars_against_the_weather_day():
