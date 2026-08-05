@@ -162,10 +162,14 @@ def test_open_unrealized_and_live_curve_point():
         if r["status"] == "open":
             r["current_value"] = 0.60                 # entry 0.40, qty 5 -> +$1.00 unreal
     assert round(bh.open_unrealized(rows), 2) == 1.00
-    # realized Jun 22 (weather-day) balance = 15.80; live point today (Jun 24) adds +1.00 -> 16.80
+    # Realized Jun 22 (weather day) balance = 15.80; the open JUN23 bracket's +1.00
+    # mark lands on ITS OWN weather day (Jun 23), not on today (Jun 24) — the Daily
+    # table has always dated it that way, and the chart now agrees.
     curve = bh.equity_curve_live(rows, date(2026, 6, 24))
-    assert curve[-1]["date"] == date(2026, 6, 24)
+    assert curve[-1]["date"] == date(2026, 6, 23)
     assert round(curve[-1]["total"], 2) == 16.80
+    assert curve[-1]["open"] is True                  # drawn dashed: not banked
+    assert curve[-2]["open"] is False                 # the settled Jun 22 step
 
 
 def test_equity_curve_live_no_today_point_without_open_exposure():

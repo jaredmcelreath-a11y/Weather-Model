@@ -56,25 +56,54 @@ def equity_chart(curve, color):
     bankroll, on a transparent background so it follows the palette, with a dashed
     break-even rule at the starting bankroll. Tap/click a point to pin its readout —
     mobile-friendly, since touch devices don't fire the hover events Vega tooltips need
-    (same tap-to-pin pattern as the consensus chart)."""
-    df = pd.DataFrame(curve)
+    (same tap-to-pin pattern as the consensus chart).
+
+    Open positions are marked to market on the day their own market resolves, and
+    that stretch is drawn DASHED with hollow points — banked money and a live mark
+    should not be the same line. The readout states what a day added, not just the
+    running total, so it can be checked against the Daily tab and the trade table.
+    """
+    df = pd.DataFrame(bet_history.with_steps(curve))
     # Naive datetimes parse as LOCAL midnight in the browser; bare date strings
     # parse as UTC and render a day early for US viewers.
     df["date"] = pd.to_datetime(df["date"])
     labels = df.assign(label=df.apply(
-        lambda r: f"{pd.to_datetime(r['date']).strftime('%b %-d')}\n${r['total']:.2f}",
-        axis=1))
-    enc = alt.Chart(df).encode(
-        x=alt.X("date:T", title=None),
-        y=alt.Y("total:Q", title="Trading Total ($)", scale=alt.Scale(zero=False)))
-    line = enc.mark_line(strokeWidth=2.5, color=color)
+        lambda r: f"{pd.to_datetime(r['date']).strftime('%b %-d')}\n"
+                  f"{_fmt_pnl(r['step'])} that day\n${r['total']:.2f} total"
+                  + (f"\n{_fmt_pnl(r['unrealized'])} still open" if r["open"]
+                     else ""), axis=1))
+    # Day granularity, explicitly: over a few days Vega otherwise picks hourly
+    # ticks and labels a daily line '12 PM', at which nothing here happens.
+    x = alt.X("date:T", title=None,
+              axis=alt.Axis(format="%b %-d",
+                            tickCount={"interval": "day", "step": 1}))
+    y = alt.Y("total:Q", title="Trading Total ($)", scale=alt.Scale(zero=False))
+    realized, unrealized = (pd.DataFrame(part) for part
+                            in bet_history.line_parts(df.to_dict("records")))
+    lines = []
+    for part, dash in ((realized, None), (unrealized, [5, 4])):
+        if len(part) < 2:                 # a single point draws no segment
+            continue
+        part = part.assign(date=pd.to_datetime(part["date"]))
+        mark = dict(strokeWidth=2.5, color=color)
+        lines.append(alt.Chart(part).mark_line(
+            **(mark if dash is None else dict(mark, strokeDash=dash))
+        ).encode(x=x, y=y))
 
     pick = alt.selection_point(on="click", nearest=True, fields=["date"],
                                empty=False, clear="dblclick")
-    dots = enc.mark_point(filled=True, opacity=1, color=color).encode(
+    # Hollow where the day's step is still a live mark: `fill` is encodable where
+    # mark_point's `filled` is not.
+    dots = alt.Chart(df).mark_point(filled=False, opacity=1,
+                                    strokeWidth=2.5).encode(
+        x=x, y=y, stroke=alt.value(color),
+        fill=alt.condition("datum.open", alt.value("transparent"),
+                           alt.value(color)),
         size=alt.condition(pick, alt.value(150), alt.value(60)),
         tooltip=[alt.Tooltip("date:T", title="date"),
-                 alt.Tooltip("total:Q", title="total", format="$.2f")],
+                 alt.Tooltip("step:Q", title="that day", format="$.2f"),
+                 alt.Tooltip("total:Q", title="total", format="$.2f"),
+                 alt.Tooltip("unrealized:Q", title="still open", format="$.2f")],
     ).add_params(pick)
     # Pinned readout for the tapped point, anchored top-left so it never clips off the
     # right edge; one line per field (lineBreak) keeps the full readout in view.
@@ -85,12 +114,162 @@ def equity_chart(curve, color):
 
     rule = alt.Chart(pd.DataFrame({"y": [bet_history.STARTING_BANKROLL]})).mark_rule(
         strokeDash=[4, 4], opacity=0.5).encode(y="y:Q")
-    return ((rule + line + dots + pinned).properties(height=260, background="transparent")
+    return (alt.layer(rule, *lines, dots, pinned)
+            .properties(height=260, background="transparent")
             .configure_view(fill=None, strokeWidth=0))
 
 
 def _fmt_pnl(v):
     return "—" if v is None else (f"+${v:,.2f}" if v >= 0 else f"−${abs(v):,.2f}")
+
+
+TRADE_COLUMNS = ["Day", "City", "Contract", "Side", "Entry", "Exit", "Qty",
+                 "Volume", "Model @ Bet", "Settled", "% Gain", "P&L"]
+
+RECON_COLUMNS = ["Day", "Contract", "Bought", "Qty", "Entry", "Exit", "Gross",
+                 "Fees", "Net"]
+
+
+def _trade_cells(r):
+    """One bet as its display row. Cells may carry HTML — `market_view._html_table`
+    renders them raw, which is how an open position's terracotta `~` values work."""
+    volume = r["qty"] * r["entry"] if r["entry"] is not None else None
+    # Exit: realized sell/settlement price when closed; for an OPEN position, its
+    # current market value (marked to market).
+    exit_val = r.get("current_value") if r["status"] == "open" else r["exit"]
+    # P&L: realized once closed; for an OPEN position, the LIVE unrealized P&L
+    # (qty × (now − entry)) as a terracotta placeholder until it settles/sells.
+    if r["status"] == "open":
+        cv, en, qy = r.get("current_value"), r["entry"], r["qty"]
+        u = qy * (cv - en) if (cv is not None and en is not None) else None
+        pnl_cell = ("—" if u is None else
+                    f'<span style="color:#C97B5E;font-weight:600">'
+                    f'~{"+" if u >= 0 else "−"}${abs(u):,.2f}</span>')
+    else:
+        pnl_cell = _fmt_pnl(r["pnl"])
+    station = bet_history.ticker_station(r["ticker"])
+    return {
+        "Day": day_label(r),
+        "City": city_view.display_name(station) if station else "—",
+        "Contract": r["label"], "Side": r["side"].capitalize(),
+        "Entry": market_view.cents(r["entry"]),
+        "Exit": market_view.cents(exit_val),
+        "Qty": f"{r['qty']:.2f}",
+        "Volume": _fmt_usd(volume),
+        "Model @ Bet": _model_cell(r),
+        "Settled": ("Open" if r["status"] == "open"
+                    else "Sold" if r["status"] == "closed"
+                    else r["result"].capitalize()),
+        "% Gain": _pct_gain_cell(r),
+        "P&L": pnl_cell,
+    }
+
+
+def day_label(r, today=None) -> str:
+    """The day this bet is filed under: its market's own climate day, which is
+    exactly where the equity curve and the Daily tab place it.
+
+    NOT the fill timestamp this column used to show. That was a different quantity
+    under a similar label — a bracket bought Monday for Tuesday's market read
+    'Monday' while every total counted it on Tuesday — and it was rendered in UTC,
+    so an evening fill (7pm CDT = 00:00Z) already read a day late."""
+    day = bet_history.row_day(r, today)
+    if day is None:
+        return r["first_ts"].strftime("%b %-d") if r.get("first_ts") else "—"
+    return day.strftime("%b %-d")
+
+
+def _day_subtotal(label: str, rows: list) -> dict:
+    """A day's own total, as a row of the same table — the number the chart draws as
+    that day's step and the Daily tab shows as that day's gain. Bold rather than
+    class-tinted: `_html_table` renders cells raw but has no per-row hook."""
+    graded = [r for r in rows if bet_history._pnl_mtm(r) is not None]
+    total = sum(bet_history._pnl_mtm(r) for r in graded)
+    staked = sum(r["staked"] for r in graded)
+    volume = sum(r["qty"] * r["entry"] for r in rows if r["entry"] is not None)
+    n_open = sum(1 for r in rows if r["status"] == "open")
+    money = _fmt_pnl(total)
+    pct = f"{100.0 * total / staked:+.1f}%" if staked else "—"
+    tilde = "~" if n_open else ""
+    # Every column is present and blank by default: a DataFrame built with a fixed
+    # column list fills a missing key with NaN, which _html_table renders as the
+    # literal 'nan' across half the row.
+    return {
+        **{c: "" for c in TRADE_COLUMNS},
+        "Day": f"<b>{label} total</b>",
+        "Contract": f"<b>{len(rows)} bet{'' if len(rows) == 1 else 's'}"
+                    + (f", {n_open} open" if n_open else "") + "</b>",
+        "Volume": f"<b>{_fmt_usd(volume)}</b>",
+        "% Gain": f"<b>{tilde}{pct}</b>",
+        "P&L": f"<b>{tilde}{money}</b>",
+    }
+
+
+def trade_table_rows(rows: list, today=None) -> list:
+    """Every bet as a display row, grouped by the day it is filed under, each day's
+    block followed by its subtotal.
+
+    Ordered by MARKET DAY (newest first), then fill time within the day — not by
+    fill time alone, which is what `build_rows` hands over. Once rows are dated by
+    market day those are different orderings, and a bracket bought a day early
+    lands outside its own group, where a reader summing the block silently drops
+    it."""
+    ordered = sorted(rows, reverse=True,
+                     key=lambda r: (bet_history.row_day(r, today) or date.min,
+                                    r["first_ts"]))
+    out, block, day = [], [], None
+    for r in ordered:
+        label = day_label(r, today)
+        if day is not None and label != day:
+            out.append(_day_subtotal(day, block))
+            block = []
+        day, block = label, block + [r]
+        out.append(_trade_cells(r))
+    if block:
+        out.append(_day_subtotal(day, block))
+    return out
+
+
+def reconciliation_rows(days: list) -> list:
+    """Each day's step decomposed into the bets behind it: gross → fees → net.
+
+    `Gross` is what the Entry and Exit prices alone imply — the figure a hand-count
+    produces — and `Fees` is Kalshi's cut, which comes out of every P&L and appears
+    nowhere else on this page. The day row sums each money column and states the
+    chart's own step beside it, flagged when the two disagree."""
+    out = []
+    for day in days:
+        label = day["day"].strftime("%b %-d") if day["day"] else "undated"
+        for t in day["trades"]:
+            bought = t["first_ts"]
+            out.append({
+                "Day": label,
+                "Contract": t["label"] or (t["ticker"] or ""),
+                "Bought": bought.strftime("%b %-d %H:%MZ") if bought else "—",
+                "Qty": f"{float(t['qty'] or 0):.2f}",
+                "Entry": market_view.cents(t["entry"]),
+                "Exit": market_view.cents(t["exit"]),
+                "Gross": _fmt_pnl(t["gross"]),
+                "Fees": "—" if not t["fee"] else f"−${t['fee']:,.2f}",
+                "Net": _fmt_pnl(t["net"]) + ("" if t["realized"] else " (open)"),
+            })
+        mismatch = (day["step"] is not None
+                    and abs(day["step"] - day["subtotal"]) > 0.005)
+        if day["step"] is None:
+            check = "not on the chart — undatable ticker"
+        elif mismatch:
+            check = f"chart step {_fmt_pnl(day['step'])} ≠ this total"
+        else:
+            check = f"chart step {_fmt_pnl(day['step'])} ✓"
+        out.append({
+            **{c: "" for c in RECON_COLUMNS},
+            "Day": f"<b>{label} total</b>",
+            "Contract": f"<b>{check}</b>",
+            "Gross": f"<b>{_fmt_pnl(sum(t['gross'] for t in day['trades']))}</b>",
+            "Fees": "—" if not day["fees"] else f"<b>−${day['fees']:,.2f}</b>",
+            "Net": f"<b>{_fmt_pnl(day['subtotal'])}</b>",
+        })
+    return out
 
 
 def _fmt_usd(v):
@@ -201,50 +380,24 @@ def render():
         st.altair_chart(equity_chart(curve, market_view._chart_colors()["kalshi"]),
                         use_container_width=True)
         st.caption(f"Trading performance: your ${bet_history.STARTING_BANKROLL:,.2f} "
-                   "starting bankroll plus realized P&L on settled bets, and a final "
-                   "**live** point that adds open positions' current unrealized P&L — so "
-                   "the last point moves with the market. Not your account value (it "
-                   "excludes deposits, withdrawals, and fees); see **Portfolio** above for "
-                   "your live Kalshi total.")
+                   "starting bankroll plus P&L by the day each market is **about** "
+                   "(they settle ~1-2am the next morning). The **dashed** stretch is "
+                   "live, not banked — open positions marked to the current bid, each "
+                   "on the day its own market resolves, so it moves with the market. "
+                   "Tap a point for what that day added. Not your account value (it "
+                   "excludes deposits, withdrawals, and fees); see **Portfolio** above "
+                   "for your live Kalshi total.")
     else:
-        st.caption("The equity curve appears once a bet settles.")
+        st.caption("The equity curve appears once a bet settles or you sell.")
 
-    disp = []
-    for r in rows:
-        model = _model_cell(r)
-        volume = r["qty"] * r["entry"] if r["entry"] is not None else None
-        # Exit: realized sell/settlement price when closed; for an OPEN position, its
-        # current market value (marked to market).
-        exit_val = r.get("current_value") if r["status"] == "open" else r["exit"]
-        # P&L: realized once closed; for an OPEN position, the LIVE unrealized P&L
-        # (qty × (now − entry)) as a terracotta placeholder until it settles/sells.
-        if r["status"] == "open":
-            cv, en, qy = r.get("current_value"), r["entry"], r["qty"]
-            u = qy * (cv - en) if (cv is not None and en is not None) else None
-            pnl_cell = ("—" if u is None else
-                        f'<span style="color:#C97B5E;font-weight:600">'
-                        f'~{"+" if u >= 0 else "−"}${abs(u):,.2f}</span>')
-        else:
-            pnl_cell = _fmt_pnl(r["pnl"])
-        station = bet_history.ticker_station(r["ticker"])
-        disp.append({
-            "Date": r["first_ts"].strftime("%b %-d"),
-            "City": city_view.display_name(station) if station else "—",
-            "Contract": r["label"], "Side": r["side"].capitalize(),
-            "Entry": market_view.cents(r["entry"]),
-            "Exit": market_view.cents(exit_val),
-            "Qty": f"{r['qty']:.2f}",
-            "Volume": _fmt_usd(volume),
-            "Model @ Bet": model,
-            "Settled": ("Open" if r["status"] == "open"
-                        else "Sold" if r["status"] == "closed"
-                        else r["result"].capitalize()),
-            "% Gain": _pct_gain_cell(r),
-            "P&L": pnl_cell,
-        })
     with st.expander("Trade History", expanded=True):
-        market_view._html_table(pd.DataFrame(disp))
-        st.caption("Model @ Bet = the model's probability for the side you took, "
+        market_view._html_table(pd.DataFrame(
+            trade_table_rows(rows, date.today()), columns=TRADE_COLUMNS))
+        st.caption("**Day** is the market's own climate day — where the chart plots "
+                   "the bet and where the Daily tab counts it — not when you bought "
+                   "(see the breakdown below for fill times). Each day ends in its "
+                   "own total, which is that day's step on the line above. Model @ "
+                   "Bet = the model's probability for the side you took, "
                    "reconstructed from the nearest logged snapshot to your fill (— if "
                    "none). % Gain = the bet's profit ÷ what you staked. Exit = your "
                    "sell/settlement price, or the current market value for an open "
@@ -252,6 +405,20 @@ def render():
                    "positions show their live unrealized P&L and % Gain in terracotta "
                    "(the `~` values) until they settle or you sell. Read-only view of your "
                    "Kalshi account; prices in ¢, amounts in $.")
+
+    days = bet_history.day_breakdown(rows, date.today())
+    if days:
+        with st.expander("Where each day's number comes from"):
+            st.caption(
+                "One line per bet: **Gross** is what the Entry and Exit prices "
+                "alone imply — the figure a hand-count gives — and **Fees** is "
+                "Kalshi's cut, which comes out of every P&L but appears nowhere "
+                "else on this page. **Net** is Gross − Fees, and a day's Net is "
+                "the step the chart draws. `Bought` is the fill time in UTC, "
+                "which is why an evening bet can look like the next day."
+            )
+            market_view._html_table(pd.DataFrame(reconciliation_rows(days),
+                                                 columns=RECON_COLUMNS))
 
     # Performance by period — realized gain per day / week / month (the spreadsheet's
     # Daily & Weekly tables, plus a Monthly one with the same columns).

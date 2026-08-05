@@ -15,6 +15,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+import bet_history
 import market_view
 import scan_cities
 import scan_log
@@ -812,38 +813,11 @@ def _render_track_record(all_rows: list) -> None:
                                     screen_score.base_rate(settled)))
 
 
-def with_steps(curve: list) -> list:
-    """`curve` with each point's own DAY's gain added as `step`.
-
-    The line only ever showed a running total, so a reader comparing it against
-    the trade table had to subtract two points by eye to learn what a day
-    contributed — and then found a number the table's rows did not obviously add
-    up to. The readout states the step outright."""
-    out, prev = [], 0.0
-    for point in curve:
-        out.append({**point, "step": round(point["total"] - prev, 4)})
-        prev = point["total"]
-    return out
-
-
-def line_parts(curve: list):
-    """(realized stretch, unrealized stretch) of the curve, for two line layers.
-
-    The split is at the LAST point that is fully realized: everything from there
-    on is drawn dashed, because an open position's contribution is a live mark and
-    not money. The two stretches overlap on that one point so the dashes continue
-    the line instead of starting after a gap. The $0 anchor is never open, so
-    there is always a split point.
-
-    An open day sitting in the MIDDLE of the history (an old position still
-    running) leaves the dashed stretch covering everything after it. That is the
-    honest reading: once one day's step is a mark, every cumulative total past it
-    is a mark too."""
-    last_real = 0
-    for i, p in enumerate(curve):
-        if not p.get("open"):
-            last_real = i
-    return curve[:last_real + 1], curve[last_real:]
+# The curve helpers live in bet_history: the History page draws the same shape
+# from the same code, differing only in whether the line starts at the bankroll
+# or at $0.
+with_steps = bet_history.with_steps
+line_parts = bet_history.line_parts
 
 
 def earnings_chart(curve: list, color: str):
