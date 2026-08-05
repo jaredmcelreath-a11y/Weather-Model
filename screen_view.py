@@ -477,6 +477,51 @@ def _candidate_row(r: dict, live: dict, fresh: set) -> dict:
     }
 
 
+def track_record_caption(summary: dict, base) -> str:
+    """One line on how the screen's flagged fades have actually settled.
+
+    The base rate is always in the sentence. 83% of all brackets settle NO, so
+    a hit rate quoted alone would flatter this screen enormously while proving
+    nothing — what matters is the win rate against what the market CHARGED for
+    the fade. Below MIN_SAMPLE the numbers are shown but the verdict is
+    withheld, rather than letting three lucky rows read as a strategy."""
+    if not summary.get("n"):
+        return ("Track record: nothing has settled yet — flags resolve the "
+                "morning after their climate day.")
+    hit, implied = summary["hit_rate"], summary["mean_implied"]
+    edge = summary["edge"]
+    reference = "" if base is None else (
+        f" All brackets settle NO {base:.1%} of the time, so only the edge "
+        f"counts.")
+    if not summary.get("enough"):
+        return (f"Track record: {summary['n']} settled so far — too thin for a "
+                f"verdict, no conclusion drawn.{reference}")
+    return (f"Track record: {summary['n']} settled, won {hit:.1%} against a "
+            f"{implied:.1%} price — edge {edge:+.1%} (±{summary['se']:.1%}), "
+            f"{_money(summary['total_pnl'])} per contract staked.{reference}")
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _settled_rows(days: int) -> list:
+    """Kalshi's own settlement results, cached 15 min: a bracket settles once
+    and the log only grows, so this does not need re-fetching per rerun."""
+    return scan_log.load_recent(scan_log.SETTLED_PATH, days=days)
+
+
+def _render_track_record(all_rows: list) -> None:
+    """Whether the flags have been worth acting on. Never crashes the page: a
+    missing settlement log means no track record, not a broken screen."""
+    import screen_score
+    try:
+        settled = _settled_rows(7)
+    except Exception as e:            # noqa: BLE001 - a page must not crash
+        st.caption(f"Track record unavailable ({type(e).__name__}: {e}).")
+        return
+    records = screen_score.score(all_rows, settled)
+    st.caption(track_record_caption(screen_score.summarize(records),
+                                    screen_score.base_rate(settled)))
+
+
 def _render_positions(all_rows: list) -> None:
     """What you actually hold in brackets this screen has flagged.
 
@@ -546,4 +591,5 @@ def render() -> None:
         st.info("No candidates in the latest firing.")
     if hidden:
         st.caption(hidden_notice(hidden))
+    _render_track_record(all_rows)
     _render_positions(all_rows)

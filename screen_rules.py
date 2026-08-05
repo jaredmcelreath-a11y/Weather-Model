@@ -85,6 +85,13 @@ def _candidate(row: dict, kind: str, reference: float, gap: float,
         "strike_type": row.get("strike_type"),
         "label": row.get("label"),
         "price": price,
+        # Carried for screen_score, not for screening. `price` is the YES ASK,
+        # so it cannot say what FADING cost: buying NO sells against the bid.
+        # Without the bid the scoring falls back to 1 - ask, which is cheaper
+        # than reality and biases the measured edge in this screen's own
+        # favour. Volume says whether that fill was ever realistic.
+        "yes_bid": row.get("yes_bid"),
+        "volume": row.get("volume"),
         "forecast": reference,
         "gap": gap,
         "kind": kind,

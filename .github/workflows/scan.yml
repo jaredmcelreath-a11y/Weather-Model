@@ -45,7 +45,7 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: "snapshot | settle | report | screen"
+        description: "snapshot | settle | report | screen | score"
         required: true
         default: "snapshot"
 
@@ -125,6 +125,8 @@ jobs:
         run: |
           if [ "$COMMAND" = "screen" ]; then
             python screen.py run
+          elif [ "$COMMAND" = "score" ]; then
+            python screen_score.py report
           else
             python scanner.py "$COMMAND"
           fi

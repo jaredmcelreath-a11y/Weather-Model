@@ -93,3 +93,21 @@ def test_an_effectively_settled_bracket_is_never_a_candidate():
     assert sr.forecast_candidate(_row(72, 73, ask=sr.SETTLED_PRICE),
                                  66.0, _TS) is None
     assert sr.dead_candidate(_row(72, 73, ask=0.99), 66.0, _TS) is None
+
+
+# ---- Fields the outcome scoring needs --------------------------------------
+
+def test_a_candidate_carries_the_bid_and_volume_for_later_scoring():
+    # `price` is the YES ASK, so it cannot say what fading actually cost:
+    # buying NO sells against the BID. Without the bid, screen_score has to
+    # fall back to 1 - ask, which is cheaper than reality and biases the
+    # measured edge in the screen's own favour. Volume says whether the fill
+    # was ever realistic. Both are already on the snapshot row -- free.
+    row = {"ticker": "KXLOWTDEN-26AUG03-B72.5", "series": "KXLOWTDEN",
+           "variable": "low", "strike_type": "between", "floor": 72, "cap": 73,
+           "yes_bid": 0.31, "yes_ask": 0.35, "volume": 250.0,
+           "hours_to_close": 9.0, "label": "72° to 73°"}
+    got = sr.forecast_candidate(row, 66.0, _TS)
+    assert got["price"] == 0.35            # unchanged: what backing YES costs
+    assert got["yes_bid"] == 0.31          # what fading it actually sells into
+    assert got["volume"] == 250.0

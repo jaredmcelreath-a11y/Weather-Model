@@ -413,3 +413,32 @@ def test_a_row_logged_before_the_storm_field_reads_as_a_dash():
 def test_the_storm_column_sits_next_to_the_gap_it_qualifies():
     cols = screen_view._COLUMNS
     assert cols[cols.index("Gap") + 1] == "Storm"
+
+
+# ---- Track record block ----------------------------------------------------
+
+def test_track_record_caption_states_the_edge_against_the_price():
+    summary = {"n": 40, "wins": 30, "hit_rate": 0.75, "mean_implied": 0.68,
+               "edge": 0.07, "ev_per_contract": 0.07, "total_pnl": 2.80,
+               "se": 0.0685, "enough": True, "exact_n": 40}
+    text = screen_view.track_record_caption(summary, base=0.834)
+    assert "40" in text and "75.0%" in text and "68.0%" in text
+    assert "+7.0%" in text                      # the edge, signed
+    assert "83.4%" in text                      # the base rate, always present
+
+
+def test_a_thin_track_record_declines_a_verdict():
+    summary = {"n": 3, "wins": 3, "hit_rate": 1.0, "mean_implied": 0.7,
+               "edge": 0.3, "ev_per_contract": 0.3, "total_pnl": 0.9,
+               "se": 0.0, "enough": False, "exact_n": 0}
+    text = screen_view.track_record_caption(summary, base=0.834)
+    assert "too thin" in text.lower() or "no verdict" in text.lower()
+    assert "100" not in text.split("—")[0]      # no triumphant headline number
+
+
+def test_no_settled_candidates_yet_says_so():
+    empty = {"n": 0, "wins": 0, "hit_rate": None, "mean_implied": None,
+             "edge": None, "ev_per_contract": None, "total_pnl": 0.0,
+             "se": None, "enough": False, "exact_n": 0}
+    assert "nothing has settled" in screen_view.track_record_caption(
+        empty, base=None).lower()
