@@ -82,9 +82,16 @@ def row_pnl(row: dict):
     return bet_history._pnl_mtm(row)
 
 
-def _weather_day(row: dict):
+def weather_day(row: dict):
     """The day a row's market is ABOUT, from its ticker; its settlement date as a
-    fallback, and None when neither is readable."""
+    fallback, and None when neither is readable.
+
+    THE one date a trade is filed under. The curve buckets by it and the table
+    displays it, because the alternative — the table showing the FILL date while
+    the chart plotted the market day — made the two unreconcilable: a bracket
+    bought Aug 3 for the Aug 4 market sat in one group and was counted in the
+    other. (The fill date was in UTC as well, so an evening trade read a day
+    late.)"""
     parsed = bet_history._ticker_date(row.get("ticker"))
     if parsed:
         return date.fromisoformat(parsed)
@@ -116,7 +123,7 @@ def earnings_curve(rows: list, today) -> list:
         pnl = row_pnl(r)
         if pnl is None:                       # open with no mark yet -> no point
             continue
-        day = _weather_day(r) or (None if realized else today)
+        day = weather_day(r) or (None if realized else today)
         if day is None:
             continue
         bucket = daily.setdefault(day, [0.0, 0.0])       # [realized, unrealized]
