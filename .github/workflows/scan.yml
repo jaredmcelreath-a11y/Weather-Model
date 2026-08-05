@@ -102,15 +102,40 @@ jobs:
           SCAN_GH_TOKEN: ${{ secrets.SCAN_GH_TOKEN }}
         run: python screen.py run
 
-      # Settlement runs only on the 12:00Z firing: US city markets close ~06:00Z,
+      # Settlement runs once a day around 12:00Z: US city markets close ~06:00Z,
       # so by noon the prior climate day has finalized.
+      #
+      # Accepts the DISPATCH clock as well as the 12:00Z cron, because
+      # scan_settled is the input to screen_score and was the last thing here
+      # still depending on GitHub's scheduler. Measured 2026-08-04: that cron
+      # delivered the settlement step at 14:23Z, 2h23m late, at ~62% reliability.
+      # A miss is recoverable — settlement_pass asks Kalshi for status=settled
+      # and skips tickers already on file, so the next run backfills — but only
+      # while Kalshi still lists the market, so lateness is not free.
+      #
+      # The dispatch arrives at :00 and :30, so the minute test picks exactly one
+      # per day. Re-running is harmless anyway (the pass is idempotent); the test
+      # just avoids paying 40 Kalshi calls twice. %-H/%-M rather than %H/%M:
+      # bash aborts on "08: value too great for base" in arithmetic and string
+      # comparison against "08" would silently never match.
       - name: Record settlements
-        if: github.event_name == 'schedule' && github.event.schedule == '0 12 * * *'
+        if: >-
+          (github.event_name == 'schedule'
+           && github.event.schedule == '0 12 * * *')
+          || github.event_name == 'repository_dispatch'
         env:
           SCAN_GH_REPO: ${{ github.repository }}
           SCAN_GH_BRANCH: scan-data
           SCAN_GH_TOKEN: ${{ secrets.SCAN_GH_TOKEN }}
-        run: python scanner.py settle
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = "repository_dispatch" ]; then
+            H=$(date -u +%-H); M=$(date -u +%-M)
+            if [ "$H" != "12" ] || [ "$M" -ge 30 ]; then
+              echo "${H}:${M}Z — not the settlement slot, skipping"; exit 0
+            fi
+          fi
+          python scanner.py settle
 
       # The screen is a separate entry point, so a dispatch of "screen" must not
       # be handed to scanner.py -- without this branch the Screen page could only
