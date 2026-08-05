@@ -767,3 +767,41 @@ def test_a_days_subtotals_reconcile_with_every_step_on_the_line():
 
 def _money(v):
     return f"+${v:,.2f}" if v >= 0 else f"−${abs(v):,.2f}"
+
+
+# ---- On-page reconciliation -------------------------------------------------
+
+def test_reconciliation_shows_gross_fees_and_net_per_trade():
+    rows = [dict(_t("KXHIGHTMIN-26AUG04-T88", "settled", pnl=2.16), fee=0.16)]
+    days = screen_pnl.day_breakdown(rows, date(2026, 8, 5))
+    row = screen_view.reconciliation_rows(days)[0]
+    # +$2.32 of price move, 16c to Kalshi, +$2.16 in your account.
+    assert (row["Gross"], row["Fees"], row["Net"]) == ("+$2.32", "−$0.16",
+                                                       "+$2.16")
+
+
+def test_reconciliation_subtotal_sums_each_column_and_checks_the_chart():
+    rows = [dict(_t("KXHIGHTMIN-26AUG04-T88", "settled", pnl=2.16), fee=0.16),
+            dict(_t("KXHIGHTDC-26AUG04-T96", "settled", pnl=-0.16), fee=0.09)]
+    days = screen_pnl.day_breakdown(rows, date(2026, 8, 5))
+    sub = next(r for r in screen_view.reconciliation_rows(days)
+               if r.get("_class") == "ssub")
+    assert sub["Gross"] == "+$2.25"          # 2.32 + (-0.07)
+    assert sub["Fees"] == "−$0.25"
+    assert sub["Net"] == "+$2.00"
+    assert sub["Bracket"] == "chart step +$2.00 ✓"
+
+
+def test_reconciliation_names_a_day_the_chart_cannot_place():
+    rows = [dict(_t("NOT-A-DATE", "settled", pnl=0.42))]
+    sub = next(r for r in screen_view.reconciliation_rows(
+        screen_pnl.day_breakdown(rows, date(2026, 8, 5)))
+        if r.get("_class") == "ssub")
+    assert "not on the chart" in sub["Bracket"]
+
+
+def test_reconciliation_marks_an_open_trade_as_open():
+    rows = [_t("KXLOWTNYC-26AUG05-B72", "open", mark=0.44, entry=0.31)]
+    row = screen_view.reconciliation_rows(
+        screen_pnl.day_breakdown(rows, date(2026, 8, 6)))[0]
+    assert row["Net"].endswith("(open)")
