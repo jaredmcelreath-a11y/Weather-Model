@@ -111,3 +111,54 @@ def test_a_candidate_carries_the_bid_and_volume_for_later_scoring():
     assert got["price"] == 0.35            # unchanged: what backing YES costs
     assert got["yes_bid"] == 0.31          # what fading it actually sells into
     assert got["volume"] == 250.0
+
+
+# ---- Lead-adjusted strength ------------------------------------------------
+# The flat 4F bar treats a 30-hour gap like a 3-hour one, but measured error
+# growth says otherwise. Only the RATIO of day-ahead to same-day error is used
+# (high 1.87/0.70 = 2.7x, low 1.97/1.70 = 1.16x) — error growth with lead is a
+# general property of forecasting, while the absolute level varies by city, and
+# claiming a per-city sigma is the season-readiness phantom-edge bug.
+
+def test_a_same_day_bracket_is_measured_against_the_plain_bar():
+    assert sr.lead_multiplier(6.0, "high") == 1.0
+    assert sr.lead_multiplier(12.0, "low") == 1.0
+
+
+def test_a_day_ahead_high_must_clear_far_more():
+    # Highs decay fastest with lead: 2.7x the same-day requirement.
+    assert round(sr.lead_multiplier(36.0, "high"), 2) == 2.67
+
+
+def test_a_day_ahead_low_barely_moves():
+    # Same-day lows are already convective-noisy, so the day-ahead penalty is
+    # small. The asymmetry is the point — do not average the two.
+    assert round(sr.lead_multiplier(36.0, "low"), 2) == 1.16
+
+
+def test_the_multiplier_interpolates_rather_than_stepping():
+    # A row must not jump in strength the moment it crosses a boundary.
+    mid = sr.lead_multiplier(24.0, "high")
+    assert 1.0 < mid < 2.67
+    assert sr.lead_multiplier(18.0, "high") < mid < sr.lead_multiplier(30.0, "high")
+
+
+def test_the_multiplier_is_clamped_beyond_the_measured_range():
+    assert sr.lead_multiplier(200.0, "high") == sr.lead_multiplier(36.0, "high")
+    assert sr.lead_multiplier(0.0, "high") == 1.0
+
+
+def test_strength_is_the_gap_over_the_bar_for_its_lead():
+    # 6F at 3 hours out: 1.5x the 4F bar.
+    row = {"gap": 6.0, "hours_to_close": 3.0, "variable": "high"}
+    assert round(sr.strength(row), 2) == 1.5
+
+
+def test_the_same_gap_is_much_weaker_a_day_ahead():
+    near = sr.strength({"gap": 6.0, "hours_to_close": 3.0, "variable": "high"})
+    far = sr.strength({"gap": 6.0, "hours_to_close": 36.0, "variable": "high"})
+    assert far < 0.6 < 1.5 <= near        # 6F day-ahead does not clear the bar
+
+def test_strength_needs_a_gap_and_a_lead():
+    assert sr.strength({"gap": None, "hours_to_close": 3.0}) is None
+    assert sr.strength({"gap": 6.0, "hours_to_close": None}) is None

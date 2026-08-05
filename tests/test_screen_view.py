@@ -425,8 +425,10 @@ def test_a_row_logged_before_the_storm_field_reads_as_a_dash():
 
 
 def test_the_storm_column_sits_next_to_the_gap_it_qualifies():
+    # Gap, then the two things that qualify it: how strong it is for its lead,
+    # and whether convection makes the reference itself untrustworthy.
     cols = screen_view._COLUMNS
-    assert cols[cols.index("Gap") + 1] == "Storm"
+    assert cols[cols.index("Gap") + 2] == "Storm"
 
 
 # ---- Track record block ----------------------------------------------------
@@ -485,3 +487,33 @@ def test_both_gates_count_separately():
     visible, low, high = screen_view.tradeable_now(rows, live)
     assert [r["ticker"] for r in visible] == ["good"]
     assert (low, high) == (1, 1)
+
+
+# ---- Strength column -------------------------------------------------------
+
+def test_strength_renders_as_a_multiple_of_the_bar():
+    row = dict(_c("t", "x", 0.3, 6.0), variable="high", hours_to_close=3.0)
+    assert screen_view.strength_of(row) == "1.5×"
+
+
+def test_a_day_ahead_row_reads_below_the_bar():
+    row = dict(_c("t", "x", 0.3, 6.0), variable="high", hours_to_close=36.0)
+    assert screen_view.strength_of(row) == "0.6×"
+
+
+def test_strength_is_a_dash_when_it_cannot_be_computed():
+    assert screen_view.strength_of({"gap": None}) == "—"
+
+
+def test_the_strength_column_sits_beside_the_gap_it_scales():
+    cols = screen_view._COLUMNS
+    assert cols[cols.index("Gap") + 1] == "Str"
+
+
+def test_rows_are_still_ordered_by_urgency_not_strength():
+    # Deliberate: a bracket three hours out needs a decision now, however weak,
+    # and a strong one thirty hours out can wait for the next firing.
+    rows = [dict(_c("t", "strong-far", 0.3, 12.0), hours_to_close=30.0),
+            dict(_c("t", "weak-soon", 0.3, 4.0), hours_to_close=2.0)]
+    assert [r["ticker"] for r in screen_view.display_rows(rows)] == [
+        "weak-soon", "strong-far"]

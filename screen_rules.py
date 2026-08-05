@@ -24,6 +24,59 @@ MIN_CANDIDATE_GAP_F = 4.0
 SETTLED_PRICE = 0.97
 
 
+# How much worse a forecast is a full day out than on the day itself, measured
+# by scoring.per_lead_sigma() at KDFW: high 1.87/0.70, low 1.97/1.70. Only the
+# RATIO is used, applied to every city -- error GROWTH with lead is a general
+# property of forecasting, while the absolute error level is what varies from
+# station to station. Claiming a per-city sigma is exactly the season-readiness
+# phantom-edge bug, where an invented number produced a live "0% -> BUY NO +85".
+#
+# The asymmetry is real and must not be averaged away: a high decays 2.7x with
+# lead while a low barely moves, because same-day lows are already convectively
+# noisy and have less room to get worse.
+LEAD_SIGMA_RATIO = {"high": 1.87 / 0.70, "low": 1.97 / 1.70}
+
+# hours_to_close counts to the END of the climate day, so today's markets sit
+# below 24 and tomorrow's above it. The extreme forms around mid-day, which puts
+# a genuinely same-day forecast near 12h out and a full day-ahead one near 36h.
+# Interpolating between them centres the transition on 24h without a cliff that
+# would make a row jump in strength the moment it crossed.
+_SAME_DAY_HOURS = 12.0
+_DAY_AHEAD_HOURS = 36.0
+
+
+def lead_multiplier(hours_to_close, variable: str) -> float:
+    """How much bigger a gap must be at this lead to mean the same thing."""
+    ratio = LEAD_SIGMA_RATIO.get(variable)
+    if hours_to_close is None or ratio is None:
+        return 1.0
+    hours = float(hours_to_close)
+    if hours <= _SAME_DAY_HOURS:
+        return 1.0
+    if hours >= _DAY_AHEAD_HOURS:
+        return ratio
+    span = (hours - _SAME_DAY_HOURS) / (_DAY_AHEAD_HOURS - _SAME_DAY_HOURS)
+    return 1.0 + span * (ratio - 1.0)
+
+
+def required_gap(hours_to_close, variable: str) -> float:
+    """The gap this row would need to be as convincing as a same-day 4F one."""
+    return MIN_CANDIDATE_GAP_F * lead_multiplier(hours_to_close, variable)
+
+
+def strength(row: dict):
+    """Multiples of the lead-adjusted bar this row's gap clears, or None.
+
+    1.0 means it exactly meets the standard the flat threshold sets for a
+    same-day bracket; below 1.0 it only qualified because the threshold ignores
+    lead. Deliberately NOT a probability -- see the module docstring."""
+    gap, hours = row.get("gap"), row.get("hours_to_close")
+    if gap is None or hours is None:
+        return None
+    bar = required_gap(hours, row.get("variable"))
+    return None if not bar else round(float(gap) / bar, 2)
+
+
 def _tradeable_price(row: dict):
     """The bracket's price when it is worth harvesting at all, else None."""
     price = price_of(row)

@@ -16,6 +16,7 @@ import streamlit as st
 import market_view
 import scan_cities
 import scan_log
+import screen_rules
 from sources import kalshi
 
 # Hours before the market's close by which each variable's extreme has typically
@@ -80,6 +81,12 @@ _TIPS = {
               "(often a market that has since closed).",
     "Gap": "Degrees F from the reference to the nearest edge of the bracket. A "
            "distance, NOT a probability — there is no per-city calibration here.",
+    "Str": "How many multiples of the lead-adjusted bar the gap clears. The "
+           "flat 4°F threshold ignores forecast lead, but measured error growth "
+           "puts a day-ahead HIGH at 2.7× the same-day figure (a low at only "
+           "1.16×). Below 1.0× the row qualified only because the threshold is "
+           "lead-blind. Uses the error-growth RATIO alone — there is no "
+           "per-city calibration here.",
     "Storm": "Chance of THUNDERSTORMS over the hours that can still move this "
              "extreme, from the same NWS forecast as Ref. A high's window ends "
              "at the forecast peak — no later storm can raise it; a low's runs "
@@ -319,6 +326,18 @@ def position_rows(positions: list, screened: dict) -> list:
     return out
 
 
+def strength_of(row: dict) -> str:
+    """How many multiples of the lead-adjusted bar this row's gap clears.
+
+    The flat 4F threshold means very different things at different leads —
+    measured error growth puts a day-ahead HIGH at 2.7x the same-day figure —
+    so a row can qualify purely because the threshold ignores lead. Below 1.0
+    is exactly that row. Shown rather than filtered: the candidate log keeps
+    them so screen_score can eventually say whether they ever win."""
+    value = screen_rules.strength(row)
+    return "—" if value is None else f"{value:.1f}×"
+
+
 def storm_of(row: dict) -> str:
     """Thunderstorm chance as a whole percent, or an em dash.
 
@@ -476,7 +495,7 @@ def _table(columns: list, rows: list) -> str:
 # therefore the least informative cell on the row. Hrs sits further right than
 # its importance suggests because rows are already SORTED by it — the ordering
 # carries the urgency, the column just confirms it.
-_COLUMNS = ["City", "Var", "Bracket", "Price", "NO Now", "Gap", "Storm",
+_COLUMNS = ["City", "Var", "Bracket", "Price", "NO Now", "Gap", "Str", "Storm",
             "Settled", "Ref", "Hrs", "Side"]
 
 _POSITION_COLUMNS = ["City", "Contract", "Side", "Qty", "Entry", "Now",
@@ -493,6 +512,7 @@ def _candidate_row(r: dict, live: dict, fresh: set) -> dict:
         "Price": "" if price is None else f"{float(price):.2f}",
         "NO Now": _pct(live.get(r.get("ticker"))),
         "Gap": r.get("gap"),
+        "Str": strength_of(r),
         "Storm": storm_of(r),
         "Settled": settled_of(r),
         "Ref": r.get("forecast"),
