@@ -133,6 +133,11 @@ def _position_row(ticker: str, group: list[dict], settle: dict | None,
         "first_ts": min(f["ts"] for f in group),
         "status": status, "result": result, "settled_ts": settled_ts,
         "pnl": pnl, "staked": total_buy,
+        # Kalshi's own fees on this position (per fill, plus the settlement's).
+        # Already subtracted from `pnl` — carried separately so a view can show
+        # gross-from-prices against net, which is otherwise a silent gap between
+        # what the Entry/Exit columns imply and what the P&L column says.
+        "fee": total_fee,
     }
 
 

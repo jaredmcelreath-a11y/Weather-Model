@@ -466,6 +466,77 @@ def table_rows(trades: list, screened: dict) -> list:
     return out
 
 
+_RECON_COLUMNS = ["Day", "Bracket", "Bought", "Qty", "Entry", "Exit", "Gross",
+                  "Fees", "Net"]
+
+
+def reconciliation_rows(days: list) -> list:
+    """Every day's step decomposed into the trades that produce it, gross → fees →
+    net, with the day's own total beneath each block.
+
+    The answer to "these two numbers disagree". `Gross` is what the Entry/Exit
+    prices alone imply — what a hand-count produces — and `Fees` is Kalshi's cut,
+    which appears nowhere else on the page but comes straight out of every P&L. A
+    day the chart could not place says so instead of quietly differing."""
+    out = []
+    for day in days:
+        label = day["day"].strftime("%b %-d") if day["day"] else "undated"
+        for t in day["trades"]:
+            bought = t["first_ts"]
+            out.append({
+                "Day": label,
+                "Bracket": (t["ticker"] or "").split("-", 1)[-1],
+                "Bought": bought.strftime("%b %-d %H:%MZ") if bought else "—",
+                "Qty": f"{float(t['qty'] or 0):.2f}",
+                "Entry": market_view.cents(t["entry"]),
+                "Exit": market_view.cents(t["exit"]),
+                "Gross": _money(t["gross"]),
+                "Fees": "—" if not t["fee"] else f"−${t['fee']:,.2f}",
+                "Net": _money(t["net"]) + ("" if t["realized"] else " (open)"),
+            })
+        mismatch = (day["step"] is not None
+                    and abs(day["step"] - day["subtotal"]) > 0.005)
+        if day["step"] is None:
+            check = "not on the chart — undatable ticker"
+        elif mismatch:
+            check = f"chart step {_money(day['step'])} ≠ this total"
+        else:
+            check = f"chart step {_money(day['step'])} ✓"
+        out.append({
+            "_class": "ssub",
+            "Day": f"{label} total",
+            # Every money column on this row is the column's own sum, so the
+            # arithmetic reads down the page; the chart's step sits beside it as
+            # the cross-check rather than displacing one of the sums.
+            "Bracket": check,
+            "Gross": _money(sum(t["gross"] for t in day["trades"])),
+            "Fees": "—" if not day["fees"] else f"−${day['fees']:,.2f}",
+            "Net": _money(day["subtotal"]),
+        })
+    return out
+
+
+def _render_reconciliation(trades: list) -> None:
+    """Collapsed by default: the page's own arithmetic, for when a number is
+    doubted. It stays on the page rather than living in a debugging session,
+    because the same question came up twice and both times the evidence had to be
+    reconstructed by hand."""
+    days = screen_pnl.day_breakdown(trades, date.today())
+    if not days:
+        return
+    with st.expander("Where each day's number comes from"):
+        st.caption(
+            "One line per trade: **Gross** is what the Entry and Exit prices "
+            "alone imply — the figure a hand-count gives — and **Fees** is "
+            "Kalshi's cut, which comes out of every P&L but appears nowhere "
+            "else on this page. **Net** is Gross − Fees, and a day's Net is the "
+            "step the chart draws. `Bought` is the fill time in UTC, which is "
+            "why an evening trade can look like the next day."
+        )
+        st.markdown(_table(_RECON_COLUMNS, reconciliation_rows(days)),
+                    unsafe_allow_html=True)
+
+
 def earnings_caption(summary: dict) -> str:
     """One line under the chart: what the line is, and what is not yet real.
 
@@ -935,6 +1006,7 @@ def _render_history(all_rows: list) -> None:
     st.caption(earnings_caption(summary))
     st.markdown(_table(_TRADE_COLUMNS, table_rows(trades, screened),
                        _TRADE_TIPS), unsafe_allow_html=True)
+    _render_reconciliation(trades)
 
 
 def render() -> None:

@@ -228,3 +228,45 @@ def test_median_trade_return_ignores_the_wipeout_tail():
             _settled_row(PHIL_HIGH, -6.0, staked=6.0)]      # −100%
     s = screen_pnl.summary(rows)
     assert s["median_trade_return"] == pytest.approx(10.0)
+
+
+# ---- Per-day reconciliation -------------------------------------------------
+# Two rounds of "the chart says X, the table says Y" were argued from memory
+# instead of data. This is the instrumentation that ends that: for every day, the
+# step the chart draws, the trades behind it, and each trade's gross-from-prices
+# against the fees Kalshi took.
+
+def test_day_breakdown_pairs_every_step_with_the_trades_behind_it():
+    rows = [_settled_row(DEN_HIGH, 0.83),                     # Aug 3
+            _settled_row(DEN_LOW, 0.05),                      # Aug 4
+            dict(_settled_row("KXHIGHPHIL-26AUG04-T90", -0.16))]
+    days = screen_pnl.day_breakdown(rows, date(2026, 8, 5))
+    assert [d["day"] for d in days] == [date(2026, 8, 4), date(2026, 8, 3)]
+    aug4 = days[0]
+    assert aug4["step"] == pytest.approx(-0.11)
+    assert aug4["subtotal"] == pytest.approx(-0.11)     # must equal the step
+    assert len(aug4["trades"]) == 2
+
+
+def test_day_breakdown_separates_the_fees_from_the_price_move():
+    # The gap a hand-count hits: +$0.05 of price move, 16c of fees, −$0.11 net.
+    rows = [dict(_settled_row(DEN_LOW, -0.11), fee=0.16)]
+    trade = screen_pnl.day_breakdown(rows, date(2026, 8, 5))[0]["trades"][0]
+    assert trade["gross"] == pytest.approx(0.05)
+    assert (trade["fee"], trade["net"]) == (pytest.approx(0.16),
+                                            pytest.approx(-0.11))
+
+
+def test_day_breakdown_marks_an_open_trade_as_unrealized():
+    rows = [_open_row(PHIL_HIGH, 0.30, 0.45)]
+    trade = screen_pnl.day_breakdown(rows, date(2026, 8, 6))[0]["trades"][0]
+    assert trade["realized"] is False
+    assert trade["net"] == pytest.approx(1.5)
+
+
+def test_day_breakdown_flags_a_trade_the_chart_cannot_place():
+    # A realized row whose ticker carries no date is absent from the curve; the
+    # breakdown must say so rather than quietly disagreeing with the line.
+    rows = [dict(_settled_row("NOT-A-DATE", 0.42))]
+    days = screen_pnl.day_breakdown(rows, date(2026, 8, 6))
+    assert days[0]["on_chart"] is False

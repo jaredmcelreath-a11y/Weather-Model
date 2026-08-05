@@ -140,6 +140,58 @@ def earnings_curve(rows: list, today) -> list:
     return curve
 
 
+def day_breakdown(rows: list, today) -> list:
+    """Every day's number with the trades behind it — newest day first.
+
+    Instrumentation, not decoration. Twice a reported "the chart says −11¢ but the
+    table says +5¢" was argued from arithmetic done by eye, and neither round had
+    the one thing that settles it: each trade's gross price move, the fees Kalshi
+    actually took, and whether the curve could place the trade at all.
+
+    Per day: `step` (what the chart draws), `subtotal` (the trades summed — equal
+    to `step` unless something is wrong), `on_chart` (False when the curve had to
+    drop the day, i.e. a realized trade whose ticker carries no date), and per
+    trade `gross` = net + fee, so a hand-count from Entry/Exit prices has
+    somewhere to land."""
+    curve = {p["date"]: p for p in earnings_curve(rows, today)}
+    by_day: dict = {}
+    for r in rows:
+        net = row_pnl(r)
+        if net is None:
+            continue
+        realized = r["status"] in ("settled", "closed")
+        day = weather_day(r) or (None if realized else today)
+        fee = r.get("fee") or 0.0
+        by_day.setdefault(day, []).append({
+            "ticker": r.get("ticker"), "status": r.get("status"),
+            "realized": realized, "qty": r.get("qty"), "entry": r.get("entry"),
+            "exit": r.get("current_value") if not realized else r.get("exit"),
+            "staked": r.get("staked"), "fee": fee, "net": net,
+            # What the prices alone imply, before Kalshi's cut: the number a
+            # hand-count from the Entry/Exit columns produces.
+            "gross": round(net + fee, 4),
+            "first_ts": r.get("first_ts"),
+        })
+    out = []
+    for day in sorted(by_day, key=lambda d: (d is not None, d), reverse=True):
+        trades = by_day[day]
+        point = curve.get(day)
+        prior = [p for p in curve.values() if day and p["date"] < day]
+        step = None
+        if point is not None:
+            base = max(prior, key=lambda p: p["date"])["total"] if prior else 0.0
+            step = round(point["total"] - base, 4)
+        out.append({
+            "day": day,
+            "on_chart": point is not None,
+            "step": step,
+            "subtotal": round(sum(t["net"] for t in trades), 4),
+            "fees": round(sum(t["fee"] for t in trades), 4),
+            "trades": sorted(trades, key=lambda t: t["first_ts"] or today),
+        })
+    return out
+
+
 def open_unrealized(rows: list) -> float:
     """Live unrealized P&L of open positions: qty × (mark − entry). Rows without a
     mark are skipped, not counted as flat."""
