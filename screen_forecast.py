@@ -63,6 +63,47 @@ def _day_periods(periods: list, day: date, tzname: str) -> list:
     return out
 
 
+def forecast_at(periods: list, when: datetime):
+    """The hourly forecast temperature linearly interpolated to `when`.
+
+    Interpolated rather than snapped to the last whole hour: snapping makes the
+    value a step function that jumps at the top of each hour while the
+    observation it is compared against has not yet updated, which is the
+    sawtooth `model.py` documents for the KDFW anchor.
+
+    Flat outside the payload's range. NWS hourly carries exactly one past hour
+    (verified 2026-08-06 at FFC, MTR and OKX), so a stale anchor at a
+    slow-reporting station can sit before the first period; extrapolating that
+    last ~hour flat beats abstaining. None when no period is usable."""
+    points = []
+    for p in periods or []:
+        temp = p.get("temperature")
+        if temp is None:
+            continue
+        try:
+            start = datetime.fromisoformat(str(p.get("startTime")))
+        except (TypeError, ValueError):
+            continue
+        if start.utcoffset() is None:
+            continue
+        points.append((start, float(temp)))
+    if not points:
+        return None
+    points.sort(key=lambda pair: pair[0])
+    before = [pt for pt in points if pt[0] <= when]
+    after = [pt for pt in points if pt[0] > when]
+    if not before:
+        return after[0][1]
+    if not after:
+        return before[-1][1]
+    (t0, v0), (t1, v1) = before[-1], after[0]
+    span = (t1 - t0).total_seconds()
+    if span <= 0:
+        return v0
+    frac = (when - t0).total_seconds() / span
+    return round(v0 + (v1 - v0) * frac, 2)
+
+
 def daily_extremes(periods: list, day: date, tzname: str) -> dict:
     """{'high': f, 'low': f} over the LST climate day, or Nones when absent."""
     temps = [float(p["temperature"])

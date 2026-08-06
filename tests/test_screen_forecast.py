@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import screen_forecast as sf
 
@@ -179,3 +179,46 @@ def test_a_low_whose_minimum_has_passed_still_has_a_window():
     periods = [_hour(5, 74, 10, STORMY), _hour(21, 78, 90, STORMY)]
     now = datetime(2026, 8, 5, 0, tzinfo=timezone.utc)       # 18:00 LST
     assert sf.storm_chance(periods, DAY, TZ, "low", now) == 90
+
+
+_MDT = timezone(timedelta(hours=-6))
+
+_FC_PERIODS = [
+    {"startTime": "2026-08-06T12:00:00-06:00", "temperature": 70},
+    {"startTime": "2026-08-06T13:00:00-06:00", "temperature": 74},
+]
+
+
+def test_forecast_interpolates_between_the_bracketing_hours():
+    # Snapping to the last whole hour makes this a step function that jumps at
+    # the top of each hour while the observation anchor has not yet updated --
+    # the sawtooth model.py:211 documents at KDFW.
+    when = datetime(2026, 8, 6, 12, 30, tzinfo=_MDT)
+    assert sf.forecast_at(_FC_PERIODS, when) == 72.0
+
+
+def test_forecast_exactly_on_an_hour_is_that_hour():
+    when = datetime(2026, 8, 6, 13, 0, tzinfo=_MDT)
+    assert sf.forecast_at(_FC_PERIODS, when) == 74.0
+
+
+def test_forecast_before_the_earliest_period_is_flat():
+    # NWS hourly returns exactly one past hour, so a stale anchor at a slow
+    # station can fall before the payload starts. Extrapolate flat rather than
+    # abstain -- it is at most ~1 hour back.
+    when = datetime(2026, 8, 6, 11, 15, tzinfo=_MDT)
+    assert sf.forecast_at(_FC_PERIODS, when) == 70.0
+
+
+def test_forecast_after_the_last_period_is_flat():
+    when = datetime(2026, 8, 6, 15, 0, tzinfo=_MDT)
+    assert sf.forecast_at(_FC_PERIODS, when) == 74.0
+
+
+def test_forecast_with_no_usable_period_is_none():
+    when = datetime(2026, 8, 6, 12, 30, tzinfo=_MDT)
+    assert sf.forecast_at([], when) is None
+    assert sf.forecast_at([{"startTime": "garbage", "temperature": 70}], when) is None
+    assert sf.forecast_at(
+        [{"startTime": "2026-08-06T12:00:00-06:00", "temperature": None}],
+        when) is None
