@@ -9,6 +9,7 @@ horizontal scroll on a phone.
 from __future__ import annotations
 
 import html
+import math
 from datetime import date, datetime, timedelta, timezone
 
 import altair as alt
@@ -97,6 +98,13 @@ _TIPS = {
              "to midnight, because an evening downdraft can still crash it. "
              "Read it as a caution on how much to trust Gap, not as a "
              "probability the bracket is wrong. '—' means no such hours left.",
+    "Drift": "How the NWS forecast is verifying against the station right now, "
+             "applied to Ref. '75→72' means the forecast is running 3°F hot at "
+             "this hour, so if that error persists the real extreme is nearer "
+             "72. A conditional, not a forecast — it assumes the current error "
+             "holds until the extreme forms, which it may not. Gap and Str are "
+             "NOT adjusted by it. '—' means no recent observation, or the "
+             "extreme has already formed.",
     "Settled": "Whether that day's extreme has typically already formed, from "
                "the hours left and the variable. 'dead' rows are always Yes. "
                "Based on normal diurnal timing, not a lock detector.",
@@ -581,6 +589,22 @@ def storm_of(row: dict) -> str:
     return "—" if value is None else f"{int(value)}%"
 
 
+def drift_of(row: dict) -> str:
+    """The reference, and where it lands if the forecast's current error holds.
+
+    Both sides are rounded half-up to whole degrees because that is the basis
+    Kalshi settles on -- which is why a row can read '72→72' beside a Ref column
+    showing 71.6. The unrounded number stays visible in that column.
+
+    '—' covers three cases that all mean "nothing to say": a row logged before
+    this field existed, a dead row (whose Ref is realized fact, not a forecast),
+    and a live row with no usable observation to anchor against."""
+    ref, implied = row.get("forecast"), row.get("drift_ref")
+    if ref is None or implied is None:
+        return "—"
+    return f"{math.floor(float(ref) + 0.5)}→{math.floor(float(implied) + 0.5)}"
+
+
 def settled_of(row: dict) -> str:
     """'Yes' when that day's extreme has already formed, else 'No'."""
     if row.get("kind") == "dead":
@@ -738,7 +762,7 @@ def _table(columns: list, rows: list, tips: dict = None) -> str:
 # its importance suggests because rows are already SORTED by it — the ordering
 # carries the urgency, the column just confirms it.
 _COLUMNS = ["City", "Var", "Bracket", "Price", "NO Now", "Gap", "Str", "Storm",
-            "Settled", "Ref", "Hrs", "Side"]
+            "Settled", "Drift", "Ref", "Hrs", "Side"]
 
 # Same mobile logic as above, different priority: on a HISTORY table the outcome
 # and the money are the point, so Result, P&L and % Gain sit ahead of the
@@ -762,6 +786,7 @@ def _candidate_row(r: dict, live: dict, fresh: set) -> dict:
         "Str": strength_of(r),
         "Storm": storm_of(r),
         "Settled": settled_of(r),
+        "Drift": drift_of(r),
         "Ref": r.get("forecast"),
         "Hrs": r.get("hours_to_close"),
         "Side": side_of(r),
