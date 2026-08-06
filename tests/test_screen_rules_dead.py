@@ -79,6 +79,38 @@ def test_a_less_tail_is_dead_at_the_boundary_the_strike_hides():
     assert got is not None and got["gap"] == 1.0
 
 
+def test_a_whole_celsius_bound_spans_the_celsius_step():
+    # 71.6F is 22C exactly -- all a whole-degC station resolves. The true
+    # temperature is anywhere in [21.5, 22.5)C, i.e. 70.7F to just under 72.5F,
+    # so the climate report could round it to 71 OR to 72.
+    assert sr.settled_range(71.6) == (71, 72)
+
+
+def test_a_finer_bound_settles_to_a_single_degree():
+    # 66.0F is 18.9C -- a reading no whole-degC station could produce, so it
+    # carries tenths precision and only one whole-degF value is possible.
+    assert sr.settled_range(66.0) == (66, 66)
+
+
+def test_a_realized_low_that_could_still_settle_inside_the_bracket_is_not_dead():
+    # Atlanta 2026-08-06: the realized minimum read 71.6F (22C) and the screen
+    # called "72 to 73" dead while Kalshi had it at 91% YES. It settles on the
+    # whole-degF climate report, where 71.6 rounds to 72 -- inside the bracket.
+    assert sr.dead_candidate(_row(72, 73, "low"), 71.6, _TS) is None
+
+
+def test_a_realized_high_that_could_still_settle_inside_the_bracket_is_not_dead():
+    # Mirror: 89.6F is 32C, so the settled high could still be 89.
+    assert sr.dead_candidate(_row(88, 89, "high"), 89.6, _TS) is None
+
+
+def test_a_bracket_clear_of_the_settlement_band_is_still_dead():
+    # The allowance is one degC step, not a blanket -- 74-75 remains impossible
+    # against a 71.6F minimum however the report rounds it.
+    got = sr.dead_candidate(_row(74, 75, "low"), 71.6, _TS)
+    assert got is not None and got["gap"] == 2.4
+
+
 def test_a_less_tail_can_never_be_dead_for_a_low():
     # "below 76" stays winnable however low the day goes.
     assert sr.dead_candidate(_row(None, 76, "low", strike="less"), 66.0, _TS) is None
