@@ -15,6 +15,8 @@ Two independent screens, both returning candidate dicts of the same shape:
 """
 from __future__ import annotations
 
+import math
+
 MIN_CANDIDATE_PRICE = 0.10
 MIN_CANDIDATE_GAP_F = 4.0
 # At or above this the market has effectively resolved the bracket: there is no
@@ -201,6 +203,52 @@ def c_to_f(celsius):
     return round(float(celsius) * 9.0 / 5.0 + 32.0, 1)
 
 
+# What an observation actually pins down about the number that SETTLES.
+#
+# Kalshi settles on the NWS climate report, which states whole degrees F, while
+# observations arrive in Celsius -- and many stations report only WHOLE Celsius
+# (verified 2026-08-06: every KATL reading that day was an integer degC, while
+# KNYC reports tenths). A whole-degC reading of 22 means the true temperature is
+# somewhere in [21.5, 22.5)C, i.e. 70.7F to just under 72.5F, which the report
+# can round to 71 or to 72.
+#
+# Comparing a raw reading against a strike ignores both effects and manufactures
+# certainty the observation does not carry. On 2026-08-06 that called Atlanta's
+# "72 to 73" low DEAD off a realized 71.6F -- a bracket Kalshi had at 91% YES,
+# because 71.6F rounds to a settled 72, inside the bracket. This screen is the
+# one that claims hard evidence, so it has to reason on the settling basis.
+_WHOLE_C_TOLERANCE = 0.05       # recovering degC from 1-decimal degF is exact
+                                # to ~0.03, so this cannot misread tenths
+_WHOLE_C_HALF_STEP_F = 0.9      # half a degC, all a whole-degC report resolves
+_TENTHS_C_HALF_STEP_F = 0.1     # a tenths-degC report, rounded into degF
+
+
+def _reading_slack_f(temp_f: float) -> float:
+    """How far the true temperature can sit from this reading, in F.
+
+    A reading that lands exactly on the whole-Celsius grid is treated as a
+    whole-Celsius report, which is the conservative reading of it: a station
+    sending tenths that happens to hit 22.0 loses nothing but a hair of the
+    screen's reach, while assuming precision a whole-degC station does not have
+    is what produces a false 'dead'."""
+    celsius = (float(temp_f) - 32.0) * 5.0 / 9.0
+    on_grid = abs(celsius - round(celsius)) < _WHOLE_C_TOLERANCE
+    return _WHOLE_C_HALF_STEP_F if on_grid else _TENTHS_C_HALF_STEP_F
+
+
+def settled_range(temp_f) -> tuple:
+    """The (lowest, highest) whole-degF values the climate report could state
+    for this reading, inclusive.
+
+    Half-up rounding over the reading's own uncertainty band. The band is
+    half-open at the top -- 72.5F rounds to 73, so a band ending exactly there
+    stops at 72 -- which `ceil(x - 0.5)` gets right and `floor(x + 0.5)` does
+    not."""
+    slack = _reading_slack_f(temp_f)
+    return (math.floor(float(temp_f) - slack + 0.5),
+            math.ceil(float(temp_f) + slack - 0.5))
+
+
 def realized_extreme(temps_f: list, variable: str,
                      min_support: int = MIN_OBS_SUPPORT):
     """The day's realized extreme so far, or None when unestablished.
@@ -227,7 +275,10 @@ def dead_candidate(row: dict, bound, now_iso: str):
 
     For a LOW, `bound` is the realized minimum and any bracket entirely ABOVE it
     is dead. For a HIGH, `bound` is the realized maximum and any bracket
-    entirely BELOW it is dead."""
+    entirely BELOW it is dead.
+
+    Compared against the whole-degF values `bound` could SETTLE at, never
+    against the raw reading -- see settled_range()."""
     if bound is None:
         return None
     price = _tradeable_price(row)
@@ -235,15 +286,17 @@ def dead_candidate(row: dict, bound, now_iso: str):
         return None
     variable = row.get("variable")
     lo, hi = winning_range(row)
+    lowest_settled, highest_settled = settled_range(bound)
     if variable == "low":
         # The settled low can only fall further, so a bracket whose LOWEST
-        # winning temperature already sits above the realized minimum is lost.
-        # An unbounded-below tail ("76 or below") never is.
-        if lo is None or lo <= bound:
+        # winning temperature already sits above every value the realized
+        # minimum could settle at is lost. An unbounded-below tail ("76 or
+        # below") never is.
+        if lo is None or lo <= highest_settled:
             return None
         gap = round(lo - float(bound), 2)
     elif variable == "high":
-        if hi is None or hi >= bound:
+        if hi is None or hi >= lowest_settled:
             return None
         gap = round(float(bound) - hi, 2)
     else:
