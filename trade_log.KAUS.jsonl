@@ -1342,3 +1342,4 @@
 {"ts": "2026-08-06T11:01:57.524022+00:00", "kind": "exit", "ticker": "KXHIGHAUS-26AUG05-B100.5", "side": "yes", "count": 1, "variable": "high", "reason": "settled won (high 100)", "exit_price": 1.0, "pnl": 0.22, "mode": "shadow"}
 {"ts": "2026-08-06T11:11:27.343762+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26AUG06-B100.5"}
 {"ts": "2026-08-06T11:21:31.913038+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26AUG06-B100.5"}
+{"ts": "2026-08-06T11:21:33.196114+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26AUG06-B75.5", "reason": "yes price 0.97 outside [0.1,0.92)", "mode": "shadow"}
