@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 import config
-from config import (BIN_HIGH, BIN_LOW, CACHE_TTL_SECONDS, CALM_WIND_MAX,
+from config import (ANCHOR_DECAY_HOURS, BIN_HIGH, BIN_LOW, CACHE_TTL_SECONDS, CALM_WIND_MAX,
                     CLEAR_CLOUD_MAX, FRONT_RAW_MIN_FRAC, FRONT_SCAN_FROM_HOUR,
                     FRONT_SIGMA_MIN,
                     FRONT_UNDERCUT_MARGIN, HIGH_BUMPY_STD, HIGH_LOCK_DROP,
@@ -249,8 +249,23 @@ def _member_extreme(times, temps, day, variable, now, observed, obs_now=None,
         return max(day_vals) if variable == "high" else min(day_vals)
 
     # Anchor the remaining forecast to the current observation.
+    #
+    # The high fades the shift with how far ahead the hour is (see
+    # ANCHOR_DECAY_HOURS): a member's error *now* says a lot about the next hour
+    # and little about a peak 7h out. Applied flat, a morning gap — which is
+    # mostly boundary-layer timing, not a level shift — was riding all the way
+    # onto the afternoon max and printing the same-day high 1.6-3.1°F cold at the
+    # 9am capture. Near-term hours keep essentially the full offset, so the
+    # afternoon still follows reality down off the peak. The low keeps the rigid
+    # 1:1 shift (unbiased already, and its front guard reads distant anchored
+    # post-noon projections).
     offset = (obs_now - fc_now) if (obs_now is not None and fc_now is not None) else 0.0
-    remaining = [(t, v + offset) for t, v in remaining]
+    if offset and variable == "high":
+        remaining = [(t, v + offset * math.exp(
+            -max((t - now).total_seconds() / 3600.0, 0.0) / ANCHOR_DECAY_HOURS))
+            for t, v in remaining]
+    else:
+        remaining = [(t, v + offset) for t, v in remaining]
 
     # Extreme already passed: the realized value is the answer; ignore the
     # forecast's projected further rise/fall. Exception — the low's front

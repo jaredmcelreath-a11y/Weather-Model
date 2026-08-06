@@ -156,6 +156,29 @@ PEAK_LOCK_DROP = 2.0
 # min — the dawn minimum is behind us; the margin clears obs/rounding jitter.
 LOW_LOCK_RISE = 0.8
 
+# --- Nowcast anchor decay (the high) ---
+# `_member_extreme` shifts a member's remaining forecast by its current error
+# `(obs_now - fc_now)`. Applied 1:1 that says "this member is N° off now, so it is
+# N° off at the peak" — which the data contradicts: at the 9am same-day capture the
+# offset averaged -2.4°F (KDFW) / -3.0°F (KAUS) while the *raw* model peaks were
+# near-unbiased (+0.2 / -0.8), so the morning gap was being stamped onto an
+# afternoon peak 7h away and the published high undershot by 1.6-3.1°F. A morning
+# gap is mostly boundary-layer *timing* (how fast the mixed layer grows), which
+# doesn't persist to the daily max; our own error is back to ~0 by evening.
+#
+# So the shift decays exp(-Δt / ANCHOR_DECAY_HOURS) with the forecast hour's
+# distance from `now`: full strength near-term (what makes the afternoon follow
+# reality down after the peak), faded to ~0.17 at 7h. Fitted 2026-08-06 on the 29
+# scored 9am captures (KDFW 19 + KAUS 10): pooled RMSE 2.49 -> 1.06 and pooled bias
+# -2.11 -> +0.03 at 4h; the optimum is flat over 4-5h and the two cities pull in
+# opposite directions (KDFW longer, KAUS shorter), so one pooled constant is used
+# rather than per-city values that 10 Austin days can't support.
+#
+# The LOW deliberately keeps the rigid 1:1 shift: its error is already unbiased and
+# its front guard reads distant anchored post-noon projections to catch an evening
+# cold front, which decay would mute.
+ANCHOR_DECAY_HOURS = 4.0
+
 # Symmetric early lock for the high: the afternoon maximum forms a few hours after
 # solar noon, so once we're past (solar noon + HIGH_LOCK_NOON_OFFSET_HOURS) and the
 # temp has eased HIGH_LOCK_DROP °F off a real (post-trough) peak, the high is in —
