@@ -1378,3 +1378,4 @@
 {"ts": "2026-08-06T14:02:00.130615+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26AUG06-B75.5", "reason": "market already settled (yes 0.98/0.99)", "mode": "shadow"}
 {"ts": "2026-08-06T14:21:40.533706+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26AUG06-B100.5"}
 {"ts": "2026-08-06T14:32:01.003068+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26AUG06-B100.5"}
+{"ts": "2026-08-06T14:32:02.978069+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26AUG06-B75.5", "reason": "market already settled (yes 0.98/0.99)", "mode": "shadow"}
