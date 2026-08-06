@@ -189,8 +189,47 @@ def _anchor_obs_now(recent):
     return sum(w) / len(w)
 
 
+def _anchor_window(pairs):
+    """(value, effective timestamp) for the live anchor, from [(time, temp), ...].
+
+    The value is `_anchor_obs_now`'s mean; the timestamp is the mean of the same
+    readings' times — for a linear ramp, the mean of a window equals the value at
+    the middle of it. That instant is well behind the clock: ~5 min of averaging
+    on top of NWS's publication lag (measured 14.4 min at KDFW on 2026-08-06, ~20
+    min in total). Differencing the anchor against the forecast at `now` instead
+    of at this instant compares two different times, which on a +3F/hr morning
+    ramp reads as a ~1F cold error on every member, every day.
+    """
+    w = pairs[-4:]
+    val = _anchor_obs_now([v for _, v in w])
+    when = datetime.fromtimestamp(
+        sum(t.timestamp() for t, _ in w) / len(w), TZ)
+    return val, when
+
+
+def _interp_at(pairs, when):
+    """A member's forecast linearly interpolated to `when` from ascending
+    [(time, temp), ...]; falls back to the nearest available bound at the ends of
+    the forecast window. Interpolating (rather than snapping to the last whole
+    hour) keeps the offset continuous — snapping made it a step function that
+    jumped at the top of each hour while the observation anchor hadn't updated
+    yet, the sawtooth dip once visible on the consensus at :00-:01."""
+    lo = hi = None
+    for t, v in pairs:
+        if t <= when:
+            lo = (t, v)
+        elif hi is None:
+            hi = (t, v)
+    if lo is not None and hi is not None and hi[0] > lo[0]:
+        frac = (when - lo[0]).total_seconds() / (hi[0] - lo[0]).total_seconds()
+        return lo[1] + (hi[1] - lo[1]) * frac
+    if lo is not None:
+        return lo[1]
+    return hi[1] if hi is not None else None
+
+
 def _member_extreme(times, temps, day, variable, now, observed, obs_now=None,
-                    locked=False):
+                    locked=False, obs_now_at=None):
     """One member's contribution to the high/low sample for `day`.
 
     For today, blends the realized extreme with the member's forecast over the
@@ -207,37 +246,22 @@ def _member_extreme(times, temps, day, variable, now, observed, obs_now=None,
     projected new low instead, so an evening cold front reopens the locked low.
     """
     start, end = local_day_bounds(day)
-    day_vals, remaining = [], []   # remaining: (local time, temp) pairs after `now`
-    # Bracket the forecast around `now` so the anchor can be interpolated to the
-    # exact time. Snapping fc_now to the last whole hour made it a step function
-    # that jumped at the top of each hour while the observation anchor hadn't yet
-    # updated — collapsing the offset and dropping the projected extreme (the
-    # sawtooth dip visible on the consensus at :00-:01 during the morning climb).
-    lo_t = lo_v = hi_t = hi_v = None
-    for t, v in zip(times, temps):
-        if v is None:
-            continue
-        t = t.astimezone(TZ)
-        if not (start <= t < end):
-            continue
-        day_vals.append(v)
-        if now is not None:
-            if t > now:
-                remaining.append((t, v))
-                if hi_t is None:            # first forecast hour after now
-                    hi_t, hi_v = t, v
-            else:
-                lo_t, lo_v = t, v           # ascending -> latest hour <= now
-    if not day_vals:
+    day_pairs = sorted((t.astimezone(TZ), v) for t, v in zip(times, temps)
+                       if v is not None and start <= t.astimezone(TZ) < end)
+    if not day_pairs:
         return None
+    day_vals = [v for _, v in day_pairs]
+    remaining = [(t, v) for t, v in day_pairs if now is not None and t > now]
 
-    # Forecast interpolated to `now` (linear between the bracketing hours); falls
-    # back to whichever bound exists at the ends of the forecast window.
-    if lo_v is not None and hi_v is not None and hi_t > lo_t:
-        frac = (now - lo_t).total_seconds() / (hi_t - lo_t).total_seconds()
-        fc_now = lo_v + (hi_v - lo_v) * frac
-    else:
-        fc_now = lo_v if lo_v is not None else hi_v
+    # The forecast is compared to the anchor at the ANCHOR's instant, not at
+    # `now`: `obs_now` is a mean of already-lagged readings, so it describes a
+    # temperature from ~20 min ago (see `_anchor_window`). Differencing it against
+    # the forecast for `now` charges the member with the temperature change over
+    # that gap — a systematic cold error while warming, warm while cooling.
+    # Clamped to `now` so clock skew can never extrapolate the forecast forward.
+    anchor_at = now if obs_now_at is None or (
+        now is not None and obs_now_at > now) else obs_now_at
+    fc_now = _interp_at(day_pairs, anchor_at) if anchor_at is not None else None
 
     is_today = now is not None and start <= now < end
     if not is_today:
@@ -350,7 +374,7 @@ def _sample_weights(series, weights):
 
 
 def _collect_samples(series, day, variable, now, observed, bias, obs_now=None,
-                     weights=None, locked=False):
+                     weights=None, locked=False, obs_now_at=None):
     """(values, weights) lists of daily extremes for `day`.
 
     Bias correction applies only to pure forecasts (skipped while anchoring to a
@@ -364,7 +388,7 @@ def _collect_samples(series, day, variable, now, observed, bias, obs_now=None,
     vals, ws = [], []
     for label, (times, temps) in series.items():
         val = _member_extreme(times, temps, day, variable, now, observed, obs_now,
-                              locked=locked)
+                              locked=locked, obs_now_at=obs_now_at)
         if val is None or not math.isfinite(val):
             continue
         if not anchoring:
@@ -453,15 +477,21 @@ def _apply_hard_bound(probs, variable, observed):
 
 
 def _latest_obs(times, temps, day, now):
-    """Most recent observed temperature at or before `now` within `day`."""
+    """(value, time) of the most recent observation at or before `now` within
+    `day` — (None, None) if there is none.
+
+    The timestamp matters: on the hourly basis this is the routine :53 METAR, so
+    it can be most of an hour behind `now`. Anchoring on it while differencing
+    against the forecast for `now` charges the member with the temperature change
+    over that gap (see `_member_extreme`)."""
     start, end = local_day_bounds(day)
-    latest = None
+    latest = (None, None)
     for t, v in zip(times, temps):
         if v is None:
             continue
         t = t.astimezone(TZ)
         if start <= t <= now and t < end:
-            latest = v  # ascending -> ends on the most recent
+            latest = (v, t)  # ascending -> ends on the most recent
     return latest
 
 
@@ -574,7 +604,8 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     obs_max, obs_min = observed_so_far(obs_times, obs_temps, day, now) \
         if now is not None else (None, None)
     observed = obs_max if variable == "high" else obs_min
-    obs_now = _latest_obs(obs_times, obs_temps, day, now) if now is not None else None
+    obs_now, obs_now_at = _latest_obs(obs_times, obs_temps, day, now) \
+        if now is not None else (None, None)
 
     # 'bumpy' (set from the sub-hourly feed below) makes the high's blunt 2°F
     # peak-lock wait for a second confirming reading on a convective afternoon.
@@ -634,10 +665,13 @@ def predict_variable(series, obs_series, day, variable, now, calib,
         # anchor only updated once an hour, which — against the now-interpolated
         # forecast — left a residual intraday ramp; the continuous anchor flattens it.
         d_start, d_end = local_day_bounds(day)
-        recent = [v for t, v in zip(cont_times, cont_temps)
-                  if v is not None and d_start <= t.astimezone(TZ) <= now < d_end]
-        if recent:
-            obs_now = _anchor_obs_now(recent)
+        recent_pairs = [(t.astimezone(TZ), v) for t, v in zip(cont_times, cont_temps)
+                        if v is not None and d_start <= t.astimezone(TZ) <= now < d_end]
+        recent = [v for _, v in recent_pairs]
+        if recent_pairs:
+            # `_anchor_window` also reports the instant the anchor describes, so
+            # the forecast is differenced at that time rather than at `now`.
+            obs_now, obs_now_at = _anchor_window(recent_pairs)
         # Bumpy afternoon = the recent sub-hourly readings are swinging (convective
         # clouds) — the signature that a single hourly dip may not be the real peak.
         if len(recent) >= 4:
@@ -651,7 +685,8 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     # samples carry the realized floor/ceiling and forecast anchored to obs_now.
     var_weights = (calib or {}).get("weights", {}).get(variable)
     samples, weights = _collect_samples(series, day, variable, now, observed, bias,
-                                        obs_now, var_weights, locked=locked)
+                                        obs_now, var_weights, locked=locked,
+                                        obs_now_at=obs_now_at)
     if not samples or not fullday:
         return None
 
