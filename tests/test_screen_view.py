@@ -808,3 +808,37 @@ def test_reconciliation_marks_an_open_trade_as_open():
     row = screen_view.reconciliation_rows(
         screen_pnl.day_breakdown(rows, date(2026, 8, 6)))[0]
     assert row["Net"].endswith("(open)")
+
+
+def test_the_drift_cell_shows_the_reference_and_where_it_lands():
+    assert screen_view.drift_of({"forecast": 75.0, "drift_ref": 72.4}) == "75→72"
+
+
+def test_the_drift_cell_rounds_half_up_to_the_settlement_basis():
+    # Kalshi settles on whole degrees F, so the arrow speaks in them. Python's
+    # own "%.0f" is half-EVEN and would render 72.5 as 72.
+    assert screen_view.drift_of({"forecast": 71.6, "drift_ref": 71.6}) == "72→72"
+    assert screen_view.drift_of({"forecast": 72.5, "drift_ref": 72.5}) == "73→73"
+
+
+def test_a_row_without_drift_reads_as_a_dash():
+    # Rows logged before this feature existed, and dead rows, both land here.
+    assert screen_view.drift_of({"forecast": 75.0}) == "—"
+    assert screen_view.drift_of({"forecast": 75.0, "drift_ref": None}) == "—"
+    assert screen_view.drift_of({}) == "—"
+
+
+def test_the_drift_column_sits_immediately_before_the_reference():
+    assert "Drift" in screen_view._COLUMNS
+    assert screen_view._COLUMNS.index("Drift") == screen_view._COLUMNS.index("Ref") - 1
+
+
+def test_every_candidate_column_has_a_cell():
+    row = screen_view._candidate_row({"series": "KXLOWTDEN", "variable": "low",
+                             "ticker": "T", "label": "72° to 73°",
+                             "floor": 72, "cap": 73, "strike_type": "between",
+                             "forecast": 75.0, "drift_ref": 72.4, "gap": 4.0,
+                             "hours_to_close": 11.0, "price": 0.35},
+                            {}, set())
+    for column in screen_view._COLUMNS:
+        assert column in row

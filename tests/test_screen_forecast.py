@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import screen_forecast as sf
 
@@ -179,3 +179,129 @@ def test_a_low_whose_minimum_has_passed_still_has_a_window():
     periods = [_hour(5, 74, 10, STORMY), _hour(21, 78, 90, STORMY)]
     now = datetime(2026, 8, 5, 0, tzinfo=timezone.utc)       # 18:00 LST
     assert sf.storm_chance(periods, DAY, TZ, "low", now) == 90
+
+
+_MDT = timezone(timedelta(hours=-6))
+
+_FC_PERIODS = [
+    {"startTime": "2026-08-06T12:00:00-06:00", "temperature": 70},
+    {"startTime": "2026-08-06T13:00:00-06:00", "temperature": 74},
+]
+
+
+def test_forecast_interpolates_between_the_bracketing_hours():
+    # Snapping to the last whole hour makes this a step function that jumps at
+    # the top of each hour while the observation anchor has not yet updated --
+    # the sawtooth model.py:211 documents at KDFW.
+    when = datetime(2026, 8, 6, 12, 30, tzinfo=_MDT)
+    assert sf.forecast_at(_FC_PERIODS, when) == 72.0
+
+
+def test_forecast_exactly_on_an_hour_is_that_hour():
+    when = datetime(2026, 8, 6, 13, 0, tzinfo=_MDT)
+    assert sf.forecast_at(_FC_PERIODS, when) == 74.0
+
+
+def test_forecast_before_the_earliest_period_is_flat():
+    # NWS hourly returns exactly one past hour, so a stale anchor at a slow
+    # station can fall before the payload starts. Extrapolate flat rather than
+    # abstain -- it is at most ~1 hour back.
+    when = datetime(2026, 8, 6, 11, 15, tzinfo=_MDT)
+    assert sf.forecast_at(_FC_PERIODS, when) == 70.0
+
+
+def test_forecast_after_the_last_period_is_flat():
+    when = datetime(2026, 8, 6, 15, 0, tzinfo=_MDT)
+    assert sf.forecast_at(_FC_PERIODS, when) == 74.0
+
+
+def test_forecast_with_no_usable_period_is_none():
+    when = datetime(2026, 8, 6, 12, 30, tzinfo=_MDT)
+    assert sf.forecast_at([], when) is None
+    assert sf.forecast_at([{"startTime": "garbage", "temperature": 70}], when) is None
+    assert sf.forecast_at(
+        [{"startTime": "2026-08-06T12:00:00-06:00", "temperature": None}],
+        when) is None
+
+
+_ANCHOR_NOW = datetime(2026, 8, 6, 12, 0, tzinfo=_MDT)
+
+
+def _reading(minutes_ago, temp):
+    return (_ANCHOR_NOW - timedelta(minutes=minutes_ago), temp)
+
+
+def test_the_anchor_averages_the_readings_in_the_window():
+    # A single whole-degC reading jitters by up to 1.8F between samples, and the
+    # drift shifts the whole remaining forecast 1:1 -- so a lone reading swings
+    # the implied Ref while the temperature is flat.
+    readings = [_reading(20, 68.0), _reading(10, 70.0), _reading(5, 72.0)]
+    temp, at = sf.observed_anchor(readings, _ANCHOR_NOW)
+    assert temp == 70.0
+    # The timestamp is the mean of the contributing readings: 35/3 min ago.
+    assert abs((_ANCHOR_NOW - at).total_seconds() - 700.0) < 1.0
+
+
+def test_the_anchor_ignores_readings_outside_the_window():
+    readings = [_reading(90, 50.0), _reading(10, 70.0)]
+    temp, _ = sf.observed_anchor(readings, _ANCHOR_NOW)
+    assert temp == 70.0
+
+
+def test_a_slow_station_falls_back_to_its_newest_reading():
+    # KDEN reports hourly and KNYC every ~31 min (measured 2026-08-06), so
+    # nothing lands in the 30-minute window. Abstaining there would blank those
+    # cities permanently rather than occasionally.
+    temp, at = sf.observed_anchor([_reading(55, 66.0)], _ANCHOR_NOW)
+    assert temp == 66.0
+    assert (_ANCHOR_NOW - at).total_seconds() == 55 * 60
+
+
+def test_an_anchor_past_the_age_cap_abstains():
+    assert sf.observed_anchor([_reading(71, 66.0)], _ANCHOR_NOW) == (None, None)
+
+
+def test_an_anchor_with_nothing_to_read_abstains():
+    assert sf.observed_anchor([], _ANCHOR_NOW) == (None, None)
+    assert sf.observed_anchor(None, _ANCHOR_NOW) == (None, None)
+    assert sf.observed_anchor([(None, 70.0)], _ANCHOR_NOW) == (None, None)
+    assert sf.observed_anchor([_reading(5, None)], _ANCHOR_NOW) == (None, None)
+
+
+_DRIFT_PERIODS = [
+    {"startTime": "2026-08-06T11:00:00-06:00", "temperature": 68},
+    {"startTime": "2026-08-06T12:00:00-06:00", "temperature": 71},
+    {"startTime": "2026-08-06T13:00:00-06:00", "temperature": 73},
+]
+
+
+# Readings 10 and 5 minutes back put the anchor at 11:52:30, NOT at `now` --
+# which is the whole point of the anchor carrying its own timestamp. The ramp
+# interpolates to 70.625 there, and every expectation below is measured from
+# that, not from the 12:00 value of 71.
+def test_a_station_warmer_than_the_forecast_drifts_positive():
+    # Positive means the forecast is running COLD.
+    readings = [_reading(10, 74.0), _reading(5, 74.0)]
+    assert sf.forecast_drift(_DRIFT_PERIODS, readings, _ANCHOR_NOW) == 3.38
+
+
+def test_a_forecast_running_hot_drifts_negative():
+    # The San Francisco case of 2026-08-06: the grid ran ~3F above KSFO all
+    # morning while Str quoted a 4F gap off the unadjusted number.
+    readings = [_reading(10, 68.0), _reading(5, 68.0)]
+    assert sf.forecast_drift(_DRIFT_PERIODS, readings, _ANCHOR_NOW) == -2.62
+
+
+def test_drift_is_measured_against_the_anchors_own_hour():
+    # A 55-minute-old reading compared against the forecast for NOW would
+    # manufacture drift out of the diurnal ramp alone. At 11:05 the forecast is
+    # 68.25, so a 68.25 reading is no drift at all -- against the 12:00 value of
+    # 71 it would have read -2.75.
+    assert sf.forecast_drift(_DRIFT_PERIODS, [_reading(55, 68.25)],
+                             _ANCHOR_NOW) == 0.0
+
+
+def test_drift_abstains_when_either_input_does():
+    readings = [_reading(10, 68.0)]
+    assert sf.forecast_drift(_DRIFT_PERIODS, [], _ANCHOR_NOW) is None
+    assert sf.forecast_drift([], readings, _ANCHOR_NOW) is None

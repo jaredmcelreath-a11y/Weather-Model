@@ -58,8 +58,12 @@ def _real_deps() -> Deps:
     )
 
 
-def _observed_temps_f(features, tzname, day):
-    """Fahrenheit readings inside the LST climate day."""
+def _observed_readings(features, tzname, day):
+    """[(timestamp, F)] for readings inside the LST climate day.
+
+    The timestamp kept is the reading's OWN aware time, not the LST-shifted one
+    used to pick the day: the drift anchor compares it against `now` and against
+    forecast period times, which are both real instants."""
     offset = timedelta(hours=screen_forecast.lst_offset_hours(tzname))
     out = []
     for f in features or []:
@@ -76,7 +80,7 @@ def _observed_temps_f(features, tzname, day):
             continue
         lst = stamp - utc_offset + offset
         if lst.date() == day:
-            out.append(temp)
+            out.append((stamp, temp))
     return out
 
 
@@ -122,14 +126,15 @@ def screen_pass(now: datetime, deps: Deps) -> dict:
             start = datetime(day.year, day.month, day.day, tzinfo=timezone.utc) \
                 - timedelta(hours=screen_forecast.lst_offset_hours(tzname))
             in_progress = start <= now < start + timedelta(days=1)
-            realized = []
+            readings = []
             if in_progress:
                 try:
                     station = deps.station_for(resolved.get("stations_url"))
                     features = deps.fetch_obs(station, start, now) if station else []
-                    realized = _observed_temps_f(features, tzname, day)
+                    readings = _observed_readings(features, tzname, day)
                 except Exception as e:    # noqa: BLE001 - degrade to forecast
                     print(f"[screen] {series}: observations skipped ({e})")
+            realized = [temp for _, temp in readings]
 
             extremes = screen_forecast.daily_extremes(periods, day, tzname)
             forecast = screen_forecast.fold_realized(
@@ -139,10 +144,24 @@ def screen_pass(now: datetime, deps: Deps) -> dict:
             # that forecast is least reliable. Free — the same payload.
             storm = screen_forecast.storm_chance(
                 periods, day, tzname, variable, now)
+            # Likewise free, and likewise never a screening input: how wrong the
+            # forecast is against the station right now, applied to the forecast
+            # HALF of the reference and re-folded. Shifting `forecast` directly
+            # would move a realized extreme that has already happened — a high
+            # that peaked at 95 does not become 92 because the forecast is
+            # running 3° hot now.
+            drift = screen_forecast.forecast_drift(periods, readings, now) \
+                if in_progress else None
+            drift_ref = None
+            if drift is not None and extremes.get(variable) is not None:
+                drift_ref = screen_forecast.fold_realized(
+                    extremes[variable] + drift, realized, variable)
             for r in day_rows:
                 hit = screen_rules.forecast_candidate(r, forecast, now_iso)
                 if hit:
                     hit["storm"] = storm
+                    hit["drift"] = drift
+                    hit["drift_ref"] = drift_ref
                     candidates.append(hit)
 
             if not in_progress:
@@ -152,6 +171,8 @@ def screen_pass(now: datetime, deps: Deps) -> dict:
                 hit = screen_rules.dead_candidate(r, bound, now_iso)
                 if hit:
                     hit["storm"] = storm
+                    # A dead row's Ref is the realized bound, not a forecast.
+                    hit["drift"] = hit["drift_ref"] = None
                     candidates.append(hit)
 
     written = deps.append_rows(scan_log.CANDIDATES_PATH, candidates)

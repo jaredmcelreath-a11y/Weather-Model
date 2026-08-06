@@ -153,7 +153,10 @@ measured follow-up, not a guess made now.
 - no forecast period brackets the anchor time,
 - the day has no forecast extreme for this variable,
 - the observation fetch failed (`screen_pass` already degrades to
-  forecast-only on that path).
+  forecast-only on that path),
+- the row is a `dead` candidate — its `Ref` is the realized bound, a fact, so
+  there is no forecast drifting, and an arrow whose left-hand number was not the
+  `Ref` on display would be a visible inconsistency.
 
 **This will blank New York and Denver a meaningful fraction of the time.**
 Accepted deliberately: a context column that is honestly empty beats one that is
@@ -175,7 +178,9 @@ explicit age cap, and interpolation to the anchor's own time.
 
 ## Storage
 
-Two new floats on the candidate row written by `screen_rules._candidate`:
+Two new floats attached in `screen.py`'s day loop, the same way `storm` already
+is — `screen_rules._candidate` is not touched, because these are context, not
+screening inputs:
 
 - `drift` — signed °F, the forecast's current error against the station.
 - `drift_ref` — the implied reference after re-folding.
