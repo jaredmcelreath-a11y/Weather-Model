@@ -143,6 +143,26 @@ def observed_anchor(readings: list, now: datetime) -> tuple:
     return (round(temp, 2), base + timedelta(seconds=mean_offset))
 
 
+def forecast_drift(periods: list, readings: list, now: datetime):
+    """How wrong the hourly forecast currently is at this station, in F.
+
+    Positive: the station is warmer than the forecast said, i.e. the forecast is
+    running cold. Negative: it is running hot.
+
+    Measured against the forecast interpolated to the ANCHOR'S OWN timestamp,
+    not to `now`. Station cadence is not uniform, and comparing an hour-old
+    Denver reading against the forecast for now would manufacture drift out of
+    the diurnal ramp; against what the forecast said for that hour it is apples
+    to apples, and staleness costs recency rather than correctness."""
+    anchor, at = observed_anchor(readings, now)
+    if anchor is None:
+        return None
+    expected = forecast_at(periods, at)
+    if expected is None:
+        return None
+    return round(anchor - expected, 2)
+
+
 def daily_extremes(periods: list, day: date, tzname: str) -> dict:
     """{'high': f, 'low': f} over the LST climate day, or Nones when absent."""
     temps = [float(p["temperature"])

@@ -266,3 +266,42 @@ def test_an_anchor_with_nothing_to_read_abstains():
     assert sf.observed_anchor(None, _ANCHOR_NOW) == (None, None)
     assert sf.observed_anchor([(None, 70.0)], _ANCHOR_NOW) == (None, None)
     assert sf.observed_anchor([_reading(5, None)], _ANCHOR_NOW) == (None, None)
+
+
+_DRIFT_PERIODS = [
+    {"startTime": "2026-08-06T11:00:00-06:00", "temperature": 68},
+    {"startTime": "2026-08-06T12:00:00-06:00", "temperature": 71},
+    {"startTime": "2026-08-06T13:00:00-06:00", "temperature": 73},
+]
+
+
+# Readings 10 and 5 minutes back put the anchor at 11:52:30, NOT at `now` --
+# which is the whole point of the anchor carrying its own timestamp. The ramp
+# interpolates to 70.625 there, and every expectation below is measured from
+# that, not from the 12:00 value of 71.
+def test_a_station_warmer_than_the_forecast_drifts_positive():
+    # Positive means the forecast is running COLD.
+    readings = [_reading(10, 74.0), _reading(5, 74.0)]
+    assert sf.forecast_drift(_DRIFT_PERIODS, readings, _ANCHOR_NOW) == 3.38
+
+
+def test_a_forecast_running_hot_drifts_negative():
+    # The San Francisco case of 2026-08-06: the grid ran ~3F above KSFO all
+    # morning while Str quoted a 4F gap off the unadjusted number.
+    readings = [_reading(10, 68.0), _reading(5, 68.0)]
+    assert sf.forecast_drift(_DRIFT_PERIODS, readings, _ANCHOR_NOW) == -2.62
+
+
+def test_drift_is_measured_against_the_anchors_own_hour():
+    # A 55-minute-old reading compared against the forecast for NOW would
+    # manufacture drift out of the diurnal ramp alone. At 11:05 the forecast is
+    # 68.25, so a 68.25 reading is no drift at all -- against the 12:00 value of
+    # 71 it would have read -2.75.
+    assert sf.forecast_drift(_DRIFT_PERIODS, [_reading(55, 68.25)],
+                             _ANCHOR_NOW) == 0.0
+
+
+def test_drift_abstains_when_either_input_does():
+    readings = [_reading(10, 68.0)]
+    assert sf.forecast_drift(_DRIFT_PERIODS, [], _ANCHOR_NOW) is None
+    assert sf.forecast_drift([], readings, _ANCHOR_NOW) is None
