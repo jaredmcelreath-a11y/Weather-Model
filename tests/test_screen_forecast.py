@@ -222,3 +222,47 @@ def test_forecast_with_no_usable_period_is_none():
     assert sf.forecast_at(
         [{"startTime": "2026-08-06T12:00:00-06:00", "temperature": None}],
         when) is None
+
+
+_ANCHOR_NOW = datetime(2026, 8, 6, 12, 0, tzinfo=_MDT)
+
+
+def _reading(minutes_ago, temp):
+    return (_ANCHOR_NOW - timedelta(minutes=minutes_ago), temp)
+
+
+def test_the_anchor_averages_the_readings_in_the_window():
+    # A single whole-degC reading jitters by up to 1.8F between samples, and the
+    # drift shifts the whole remaining forecast 1:1 -- so a lone reading swings
+    # the implied Ref while the temperature is flat.
+    readings = [_reading(20, 68.0), _reading(10, 70.0), _reading(5, 72.0)]
+    temp, at = sf.observed_anchor(readings, _ANCHOR_NOW)
+    assert temp == 70.0
+    # The timestamp is the mean of the contributing readings: 35/3 min ago.
+    assert abs((_ANCHOR_NOW - at).total_seconds() - 700.0) < 1.0
+
+
+def test_the_anchor_ignores_readings_outside_the_window():
+    readings = [_reading(90, 50.0), _reading(10, 70.0)]
+    temp, _ = sf.observed_anchor(readings, _ANCHOR_NOW)
+    assert temp == 70.0
+
+
+def test_a_slow_station_falls_back_to_its_newest_reading():
+    # KDEN reports hourly and KNYC every ~31 min (measured 2026-08-06), so
+    # nothing lands in the 30-minute window. Abstaining there would blank those
+    # cities permanently rather than occasionally.
+    temp, at = sf.observed_anchor([_reading(55, 66.0)], _ANCHOR_NOW)
+    assert temp == 66.0
+    assert (_ANCHOR_NOW - at).total_seconds() == 55 * 60
+
+
+def test_an_anchor_past_the_age_cap_abstains():
+    assert sf.observed_anchor([_reading(71, 66.0)], _ANCHOR_NOW) == (None, None)
+
+
+def test_an_anchor_with_nothing_to_read_abstains():
+    assert sf.observed_anchor([], _ANCHOR_NOW) == (None, None)
+    assert sf.observed_anchor(None, _ANCHOR_NOW) == (None, None)
+    assert sf.observed_anchor([(None, 70.0)], _ANCHOR_NOW) == (None, None)
+    assert sf.observed_anchor([_reading(5, None)], _ANCHOR_NOW) == (None, None)

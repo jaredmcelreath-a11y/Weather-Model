@@ -104,6 +104,45 @@ def forecast_at(periods: list, when: datetime):
     return round(v0 + (v1 - v0) * frac, 2)
 
 
+# How far back the drift anchor averages, and how stale a reading may be before
+# it says nothing about now. Station cadence is NOT uniform -- measured
+# 2026-08-06: 5 min at KATL/KSFO/KMIA/KLAS, 31 min at KNYC, 60 min at KDEN, with
+# newest readings up to 67 min old. A fixed "last N readings" anchor (the KDFW
+# rule, written for a 5-minute feed) would silently span four hours at Denver.
+ANCHOR_WINDOW_MIN = 30
+MAX_ANCHOR_AGE_MIN = 70
+
+
+def observed_anchor(readings: list, now: datetime) -> tuple:
+    """(temperature, timestamp) for the station's current reading, or
+    (None, None).
+
+    The mean of the readings inside ANCHOR_WINDOW_MIN, paired with the mean of
+    their own timestamps. Averaging rather than taking the newest reading damps
+    the whole-degC jitter that would otherwise swing the implied reference while
+    the temperature is flat.
+
+    A station too slow to put anything in the window falls back to its single
+    newest reading, provided it is inside MAX_ANCHOR_AGE_MIN. Pairing the value
+    with the time it was actually taken is what lets the caller compare it
+    against the forecast for THAT hour rather than for now."""
+    usable = [(t, v) for t, v in (readings or [])
+              if t is not None and v is not None and t <= now]
+    if not usable:
+        return (None, None)
+    window = [(t, v) for t, v in usable
+              if (now - t).total_seconds() <= ANCHOR_WINDOW_MIN * 60]
+    if not window:
+        newest = max(usable, key=lambda pair: pair[0])
+        if (now - newest[0]).total_seconds() > MAX_ANCHOR_AGE_MIN * 60:
+            return (None, None)
+        window = [newest]
+    temp = sum(float(v) for _, v in window) / len(window)
+    base = min(t for t, _ in window)
+    mean_offset = sum((t - base).total_seconds() for t, _ in window) / len(window)
+    return (round(temp, 2), base + timedelta(seconds=mean_offset))
+
+
 def daily_extremes(periods: list, day: date, tzname: str) -> dict:
     """{'high': f, 'low': f} over the LST climate day, or Nones when absent."""
     temps = [float(p["temperature"])
