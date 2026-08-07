@@ -35,3 +35,12 @@ def test_cli_box_value_shows_high_low_and_issued():
 
 def test_cli_box_none_when_no_report():
     assert hourly_view.cli_report_box(None) is None
+
+def test_cli_report_box_renders_the_issued_time_in_the_given_zone():
+    # The parser stamps `issued` in the project default zone; a Pacific or
+    # Eastern city must not read its report time as Central.
+    cli = {"high_f": 91, "low_f": 79,
+           "issued": datetime(2026, 8, 7, 21, 41, tzinfo=ZoneInfo("UTC"))}
+    value, issued = hourly_view.cli_report_box(cli, tz=ZoneInfo("America/New_York"))
+    assert value == "91° / 79°"
+    assert issued == "5:41 PM"

@@ -101,7 +101,7 @@ def test_day_tables_highlow_none_when_all_temps_missing():
 
 def test_radar_html_contains_source_map_and_controls():
     import hourly_view
-    html = hourly_view._radar_html()
+    html = hourly_view._radar_html(lat=32.90, lon=-97.04)
     # RainViewer client-side source + dark base map + Leaflet + a play/pause hook.
     assert "api.rainviewer.com/public/weather-maps.json" in html
     assert "leaflet" in html.lower()
@@ -113,7 +113,7 @@ def test_radar_html_contains_source_map_and_controls():
 
 def test_radar_html_has_time_slider():
     import hourly_view
-    html = hourly_view._radar_html()
+    html = hourly_view._radar_html(lat=32.90, lon=-97.04)
     assert 'type="range"' in html
     assert 'id="slider"' in html
     # zoom control moved to top-right so it doesn't overlap the top-left slider
@@ -131,7 +131,7 @@ def test_radar_html_honors_custom_center_and_zoom():
 def test_radar_html_defaults_to_charcoal_palette():
     import hourly_view
     import market_view
-    html = hourly_view._radar_html()
+    html = hourly_view._radar_html(lat=32.90, lon=-97.04)
     ch = market_view.THEMES["Charcoal"]
     # charcoal background + green accent replace the old cool-black/amber
     assert ch["bg"] in html
@@ -144,7 +144,7 @@ def test_radar_html_uses_supplied_palette():
     pal = {"bg": "#010203", "surface": "#040506", "ink": "#0a0b0c",
            "muted": "#0d0e0f", "accent": "#123456", "accent_strong": "#654321",
            "border": "rgba(9,8,7,0.2)"}
-    html = hourly_view._radar_html(palette=pal)
+    html = hourly_view._radar_html(lat=32.90, lon=-97.04, palette=pal)
     assert "#010203" in html and "#123456" in html and "#654321" in html
 
 
@@ -158,12 +158,62 @@ def test_render_degrades_when_loader_raises(monkeypatch):
     # Loader failure must not raise out of render — the page warns instead.
     def boom():
         raise RuntimeError("twc down")
-    monkeypatch.setattr(hourly_view, "_current", lambda station=None: None)
+    monkeypatch.setattr(hourly_view, "_current", lambda city: None)
     hourly_view.render(boom)  # should not raise
 
 
-def test_render_accepts_station(monkeypatch):
+def test_render_accepts_a_modeled_city(monkeypatch):
+    import hourly_cities
     import hourly_view
-    # Austin: no PWS, empty rows — render must accept station and not raise.
-    monkeypatch.setattr(hourly_view, "_current", lambda station=None: None)
-    hourly_view.render(lambda: ([], None), cli_report=None, station="KAUS")
+    # Austin: no PWS, empty rows — render must accept a city and not raise.
+    monkeypatch.setattr(hourly_view, "_current", lambda city: None)
+    hourly_view.render(lambda: ([], None), cli_report=None,
+                       city=hourly_cities.city("AUS"))
+
+
+def test_current_reads_the_citys_station_and_converts_to_its_zone(monkeypatch):
+    import hourly_cities
+    import hourly_view
+    from sources import nws_observations
+
+    seen = {}
+
+    def fake_latest(station_id, **kw):
+        seen["station"] = station_id
+        return {"temp": 86.0,
+                "time": datetime(2026, 8, 7, 18, 53, tzinfo=ZoneInfo("UTC"))}
+
+    monkeypatch.setattr(nws_observations, "latest", fake_latest)
+    got = hourly_view._current(hourly_cities.city("LAX"))
+    assert seen["station"] == "KLAX"
+    # 18:53Z is 11:53 in Los Angeles, not 13:53 Central.
+    assert (got["time"].hour, got["time"].minute) == (11, 53)
+
+
+def test_current_is_none_when_the_station_has_nothing(monkeypatch):
+    import hourly_cities
+    import hourly_view
+    from sources import nws_observations
+    monkeypatch.setattr(nws_observations, "latest", lambda *a, **k: None)
+    assert hourly_view._current(hourly_cities.city("ATL")) is None
+
+
+def test_render_accepts_a_reference_city(monkeypatch):
+    import hourly_cities
+    import hourly_view
+    # Miami: no PWS, no rows — render must not raise and must not touch config.
+    monkeypatch.setattr(hourly_view, "_current", lambda city: None)
+    hourly_view.render(lambda: ([], None), cli_report=None,
+                       city=hourly_cities.city("MIA"))
+
+
+def test_render_centers_the_radar_on_the_city(monkeypatch):
+    import hourly_cities
+    import hourly_view
+    seen = {}
+    monkeypatch.setattr(hourly_view, "_current", lambda city: None)
+    monkeypatch.setattr(hourly_view, "_radar_html",
+                        lambda lat, lon, palette=None: seen.update(lat=lat, lon=lon) or "")
+    rows = [_row(datetime(2026, 8, 7, 13, tzinfo=ZoneInfo("America/Denver")))]
+    hourly_view.render(lambda: (rows, None), city=hourly_cities.city("DEN"))
+    assert (round(seen["lat"], 2), round(seen["lon"], 2)) == (39.86, -104.67)

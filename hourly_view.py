@@ -1,7 +1,11 @@
-"""Hourly page — mirrors Wunderground's KDFW hourly forecast (The Weather
-Company feed), styled to match the rest of the dashboard. A temperature chart on
-top, the detailed hourly table below, and two current-temp tiles: the official
-KDFW airport reading plus the Euless PWS as a fast "live" reference."""
+"""Hourly page — mirrors Wunderground's hourly forecast (The Weather Company
+feed) for any city Kalshi lists temperature contracts on, styled to match the
+rest of the dashboard. A temperature chart on top, the detailed hourly table
+below, and the selected city's official current temperature — plus, for Dallas,
+the Euless PWS as a fast "live" reference.
+
+Every displayed time is in the selected city's own zone: the page spans four US
+timezones, so nothing here may fall back to the project default."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -13,17 +17,10 @@ import streamlit as st
 import streamlit.components.v1 as components
 from streamlit_autorefresh import st_autorefresh
 
-import config
+import hourly_cities
 import market_view
-from config import TIMEZONE
-
-TZ = ZoneInfo(TIMEZONE)
 
 _EM = "—"
-
-# KDFW airport — the radar's default center (same point as the wunderground geocode).
-KDFW_LAT = 32.90
-KDFW_LON = -97.04
 
 
 def fmt_temp(v) -> str:
@@ -62,18 +59,15 @@ def chart_frame(rows: list[dict]) -> list[dict]:
     return out
 
 
-def _current(station: str = config.DEFAULT_STATION) -> dict | None:
-    """Official current temp for the station = latest 5-minute ASOS reading
-    (display only, no settlement logic), matching the Forecast page's source."""
-    try:
-        from sources import nws_observations
-        data = nws_observations.fetch(continuous=True, station=station)
-        times, temps = data.get("obs_continuous") or data["obs"]
-        if temps:
-            return {"temp": temps[-1], "time": times[-1]}
-    except Exception:
+def _current(city) -> dict | None:
+    """Official current temp for the city = its station's newest reading
+    (display only, no settlement logic), converted to the city's own zone."""
+    from sources import nws_observations
+    got = nws_observations.latest(city.station)
+    if not got:
         return None
-    return None
+    return {"temp": got["temp"],
+            "time": got["time"].astimezone(ZoneInfo(city.timezone))}
 
 
 def _temp_chart(rows: list[dict], series_colors=None):
@@ -231,7 +225,7 @@ _RADAR_TEMPLATE = """<!doctype html>
 </body></html>"""
 
 
-def _radar_html(lat: float = KDFW_LAT, lon: float = KDFW_LON, zoom: int = 7,
+def _radar_html(lat: float, lon: float, zoom: int = 7,
                 palette: dict | None = None) -> str:
     """Self-contained dark Leaflet radar (RainViewer past loop + ~30 min nowcast),
     fetched client-side so the Python page never depends on RainViewer being up.
@@ -251,29 +245,37 @@ def _radar_html(lat: float = KDFW_LAT, lon: float = KDFW_LON, zoom: int = 7,
             .replace("__ACCENT__", p["accent"]))
 
 
-def cli_report_box(cli):
+def cli_report_box(cli, tz=None):
     """(value, issued_caption) for the NWS climate-report box, or None.
 
-    `cli` is today's parsed CLIDFW report (nws_cli.fetch_latest_cli) or None."""
+    `cli` is the city's parsed CLI report (nws_cli.fetch_latest_for) or None;
+    `tz` is the city's zone, since the parser stamps `issued` in the project
+    default and a Pacific city must not read its report time as Central."""
     if not cli:
         return None
     value = f'{cli["high_f"]:g}° / {cli["low_f"]:g}°'
-    issued = cli["issued"].strftime("%-I:%M %p")
-    return value, issued
+    issued = cli["issued"]
+    if tz is not None:
+        issued = issued.astimezone(tz)
+    return value, issued.strftime("%-I:%M %p")
 
 
-def render(load_hourly, cli_report=None, station: str = config.DEFAULT_STATION):
-    """Draw the Hourly page. `load_hourly` is the cached () -> (rows, pws) callable
-    where `rows` is wunderground.hourly() and `pws` is wunderground.pws_current().
-    `cli_report` is today's parsed CLI report (or None) for the climate box."""
-    s = config.station(station)
+def render(load_hourly, cli_report=None, city=None):
+    """Draw the Hourly page. `load_hourly` is the cached () -> (rows, pws)
+    callable where `rows` is wunderground.hourly_at() and `pws` is
+    wunderground.pws_current() (None for every city but Dallas). `cli_report` is
+    the city's parsed CLI report (or None). `city` is an hourly_cities.HourlyCity;
+    None means the default city."""
+    c = city or hourly_cities.city(hourly_cities.DEFAULT_KEY)
+    tz = ZoneInfo(c.timezone)
     market_view._theme_controls()  # sidebar Settings (theme picker) + injects theme
     theme = market_view._seed_theme()
     st_autorefresh(interval=60_000, key="refresh_hourly")
-    st.title(f"{s.name} Hourly")
-    st.caption(f"Tracking Wunderground's {s.id} hourly forecast (The Weather Company).")
+    st.title(f"{c.name} Hourly")
+    st.caption(f"Tracking Wunderground's {c.station} hourly forecast "
+               "(The Weather Company).")
 
-    cur = _current(station)
+    cur = _current(c)
     rows, pws = [], None
     try:
         rows, pws = load_hourly()
@@ -284,14 +286,14 @@ def render(load_hourly, cli_report=None, station: str = config.DEFAULT_STATION):
     cur_val = f"{cur['temp']:.0f}°F" if cur else _EM
     cur_cap = cur["time"].strftime("%-I:%M %p") if cur else None
     official_card = market_view.metric_card(
-        f"{s.id} (official)", cur_val,
-        help_text=f"Latest {s.id} airport ASOS reading — the official station the "
-        "model and Kalshi settle on.")
-    # Only KDFW has a configured live PWS (Euless). Other stations show just the
+        f"{c.station} (official)", cur_val,
+        help_text=f"Latest {c.station} ASOS reading — the official station this "
+        "city's Kalshi market settles on.")
+    # Only KDFW has a configured live PWS (Euless). Other cities show just the
     # official reading in a single full-width box rather than a dead '—' card.
     if pws is not None:
         pws_val = f"{pws['temp']:.0f}°F" if pws.get("temp") is not None else _EM
-        pws_cap = pws["obs_time"].astimezone(TZ).strftime("%-I:%M %p")
+        pws_cap = pws["obs_time"].astimezone(tz).strftime("%-I:%M %p")
         # Wrap in a metrics2_ container so the boxes and their tap tooltips get the
         # shared mobile treatment (2-per-row ≤640px; tooltip as a fixed bottom sheet
         # that never clips off-screen). See the metrics2_ CSS in market_view.
@@ -305,21 +307,21 @@ def render(load_hourly, cli_report=None, station: str = config.DEFAULT_STATION):
                                      "can differ by a degree or two."),
             unsafe_allow_html=True)
         if cur_cap or pws_cap:
-            st.caption(f"{s.id} as of {cur_cap or _EM} · PWS as of {pws_cap or _EM}")
+            st.caption(f"{c.station} as of {cur_cap or _EM} · PWS as of {pws_cap or _EM}")
     else:
         st.markdown(official_card, unsafe_allow_html=True)
         if cur_cap:
-            st.caption(f"{s.id} as of {cur_cap}")
+            st.caption(f"{c.station} as of {cur_cap}")
 
-    # Official NWS climate report box, under the two live-reading boxes. Only
-    # appears once today's afternoon CLIDFW is issued (~4:41 PM) — it reports the
-    # day's now-settled high/low, the basis Kalshi resolves on.
-    cli_box = cli_report_box(cli_report)
+    # Official NWS climate report box, under the live-reading boxes. Only appears
+    # once today's afternoon CLI is issued — it reports the day's now-settled
+    # high/low, the basis Kalshi resolves on.
+    cli_box = cli_report_box(cli_report, tz)
     if cli_box:
         value, issued = cli_box
         st.markdown(
             market_view.metric_card("NWS Climate Report", value,
-                                     help_text=f"Official NWS CLI{s.cli_location} daily "
+                                     help_text=f"Official NWS CLI{c.cli_location} daily "
                                      "climate report — today's settled high / low, the "
                                      "basis Kalshi resolves on. Issued mid-afternoon."),
             unsafe_allow_html=True)
@@ -329,7 +331,7 @@ def render(load_hourly, cli_report=None, station: str = config.DEFAULT_STATION):
         return
     st.altair_chart(_temp_chart(rows, market_view._series_colors()),
                     use_container_width=True)
-    today = datetime.now(TZ).date()
+    today = datetime.now(tz).date()
     for t in _day_tables(rows, today):
         hi = f"{t['high']:.0f}°" if t["high"] is not None else _EM
         lo = f"{t['low']:.0f}°" if t["low"] is not None else _EM
@@ -346,4 +348,4 @@ def render(load_hourly, cli_report=None, station: str = config.DEFAULT_STATION):
     st.caption("Past ~2 h of storm movement, continuing into RainViewer's "
                "~30-minute forecast nowcast. Tap ⏸ to pause.")
     palette = market_view.THEMES.get(theme, market_view.THEMES[market_view.DEFAULT_THEME])
-    components.html(_radar_html(lat=s.lat, lon=s.lon, palette=palette), height=460)
+    components.html(_radar_html(lat=c.lat, lon=c.lon, palette=palette), height=460)
