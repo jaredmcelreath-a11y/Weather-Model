@@ -11,44 +11,46 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from config import TIMEZONE
-from sources.common import get_json
-
-TZ = ZoneInfo(TIMEZONE)
-
 import config
+from sources.common import get_json
 
 # The WU web app's shared TWC key. Unofficial; replace if it ever stops working.
 WEB_API_KEY = "e1f10a1e78da46f5b10a1e78da96f525"
 
-KDFW_GEOCODE = "32.90,-97.04"      # KDFW airport (what WU's /hourly/KDFW resolves to)
 PWS_STATION_ID = "KTXEULES41"      # Euless backyard PWS — a fast "live" reference
 
 _HOURLY_URL = "https://api.weather.com/v3/wx/forecast/hourly/2day"
 _PWS_URL = "https://api.weather.com/v2/pws/observations/current"
 
 
-def _geocode(station: str = config.DEFAULT_STATION) -> str:
-    s = config.station(station)
-    return f"{s.lat},{s.lon}"
-
-
 def hourly(station: str = config.DEFAULT_STATION) -> list[dict]:
-    """The next ~48h of TWC hourly forecast for the station as per-hour dicts.
+    """The next ~48h of TWC hourly forecast for a configured station."""
+    s = config.station(station)
+    return hourly_at(s.lat, s.lon, s.timezone)
+
+
+def hourly_at(lat: float, lon: float, tz: str) -> list[dict]:
+    """The next ~48h of TWC hourly forecast for a coordinate, as per-hour dicts
+    stamped in `tz`.
 
     TWC returns parallel arrays (one entry per hour); zip them into rows with the
-    six fields the Hourly page shows plus a tz-aware local `time`. Empty feed ->
+    fields the Hourly page shows plus a tz-aware local `time`. Empty feed ->
     empty list. Short cache so it tracks WU without hammering the endpoint.
+
+    The timezone is a parameter, not the module default, because the Hourly page
+    spans four US zones: stamping a Miami or Los Angeles feed in Central would
+    silently shift every hour of it.
     """
+    zone = ZoneInfo(tz)
     data = get_json(_HOURLY_URL, {
-        "geocode": _geocode(station), "format": "json", "units": "e",
+        "geocode": f"{lat},{lon}", "format": "json", "units": "e",
         "language": "en-US", "apiKey": WEB_API_KEY,
     }, ttl=300)
     epochs = data.get("validTimeUtc") or []
     rows = []
     for i, epoch in enumerate(epochs):
         rows.append({
-            "time": datetime.fromtimestamp(epoch, TZ),
+            "time": datetime.fromtimestamp(epoch, zone),
             "temp": _at(data, "temperature", i),
             "feels": _at(data, "temperatureFeelsLike", i),
             "dew": _at(data, "temperatureDewPoint", i),
