@@ -22,6 +22,8 @@ import scan_cities
 import scan_log
 import screen_pnl
 import screen_rules
+from screen_rules import (MAX_LIVE_NO_PRICE, MIN_LIVE_NO_PRICE,  # noqa: F401
+                          no_ask_of)
 from sources import kalshi
 
 # Hours before the market's close by which each variable's extreme has typically
@@ -35,27 +37,18 @@ from sources import kalshi
 # is the only hard evidence here.
 _SETTLED_BELOW_HOURS = {"low": 17.0, "high": 8.0}
 
-# Below this live NO ask there is nothing left to fade: NO at 0.09 means the
-# market has YES at ~0.91, i.e. it has already resolved the bracket, and the
-# disagreement is the screen's reference being wrong rather than the price.
-#
-# screen_rules gates the price too (MIN_CANDIDATE_PRICE / SETTLED_PRICE), but
-# both act on the YES price AT FIRING, which the Price column shows and which is
-# up to an hour stale by the time this page renders. A bracket logged at 0.82
-# that has since drifted to 0.91 YES passes every firing-time gate and still
-# reaches the table as a lost fade. This is the only gate on the price the trade
-# would actually happen at.
-MIN_LIVE_NO_PRICE = 0.20
-
-# And above this there is nothing left to win: buying NO at 0.93 risks 93c to
-# make 7c, which needs a ~93% strike rate merely to break even. The market has
-# already AGREED with the fade and priced the disagreement away — the opposite
-# failure to the floor above, where it says the fade is simply wrong.
-#
-# Both gates matter more than they look: the first outcome scoring run put the
-# mean cost of a flagged fade at 84.7%, i.e. the screen has been selecting
-# near-favourites where 83.4% of all brackets settle NO anyway.
-MAX_LIVE_NO_PRICE = 0.90
+# The live NO-price band and its parser live in screen_rules: screen_alert
+# applies the same gates on its 5-minute loop and cannot import this module
+# (Streamlit). Why the band exists, in short — below the floor the market has
+# already resolved the bracket and the screen's REFERENCE is what is wrong, not
+# the price; above the cap the market agrees with the fade and 7c of upside for
+# 93c of risk needs a ~93% strike rate to break even. Both gates matter more
+# than they look: the first outcome scoring run put the mean cost of a flagged
+# fade at 84.7%, i.e. near-favourites, where 83.4% of all brackets settle NO
+# anyway. Unlike screen_rules' firing-time gates (MIN_CANDIDATE_PRICE /
+# SETTLED_PRICE), this one acts on the price the trade would happen at: a
+# bracket logged at 0.82 that has since drifted to 0.91 YES passes every
+# firing-time gate and still reaches the table as a lost fade.
 
 # How often the screen actually fires. Driven by an external cron-job.org
 # repository_dispatch, NOT by the in-repo schedule: GitHub's own scheduler
@@ -155,19 +148,6 @@ def city_of(row: dict) -> str:
 def side_of(row: dict) -> str:
     """The side to buy. Constant today — see _TIPS['Side']."""
     return "NO"
-
-
-def no_ask_of(market: dict):
-    """Dollars to BUY NO on this market right now, or None when unquoted.
-
-    Kalshi's own NO ask when there is one, else the YES bid inverted: buying NO
-    sells against the resting YES bid, so NO ask = 1 - yes bid. Prices arrive as
-    dollar STRINGS ("0.8800"), the gotcha that silently empties a scan pass."""
-    ask = scan_log._dollars(market.get("no_ask_dollars"))
-    if ask is not None:
-        return ask
-    bid = scan_log._dollars(market.get("yes_bid_dollars"))
-    return None if bid is None else round(1.0 - bid, 2)
 
 
 @st.cache_data(ttl=60, show_spinner=False)

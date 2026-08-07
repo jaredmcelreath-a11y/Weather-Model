@@ -119,7 +119,7 @@ def hours_to_close(close_time, now):
     return round((closed - now).total_seconds() / 3600.0, 2)
 
 
-def _dollars(value):
+def dollars(value):
     """Kalshi returns prices and sizes as dollar STRINGS ("0.3300"); cast to
     float. None for absent or unparseable values — mirrors sources.kalshi._f."""
     if value is None:
@@ -128,6 +128,9 @@ def _dollars(value):
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+_dollars = dollars   # pre-existing internal name; keep both pointing at one function
 
 
 def build_snapshot_row(market: dict, series: str, now):

@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import math
 
+import scan_log
+
 MIN_CANDIDATE_PRICE = 0.10
 MIN_CANDIDATE_GAP_F = 4.0
 # At or above this the market has effectively resolved the bracket: there is no
@@ -116,6 +118,37 @@ def price_of(row: dict):
     there is no offer. You cannot trade the midpoint."""
     ask, bid = row.get("yes_ask"), row.get("yes_bid")
     return ask if ask is not None else bid
+
+
+# What the Screen page and the alert loop both consider actionable RIGHT NOW.
+# Below the floor the market has already resolved the bracket against the fade;
+# above the cap it agrees with the fade and there is nothing left to win. Both
+# consumers read these from here: two copies of a band silently drift.
+MIN_LIVE_NO_PRICE = 0.20
+MAX_LIVE_NO_PRICE = 0.90
+
+
+def no_ask_of(market: dict):
+    """Dollars to BUY NO on this market right now, or None when unquoted.
+
+    Kalshi's own NO ask when there is one, else the YES bid inverted: buying NO
+    sells against the resting YES bid, so NO ask = 1 - yes bid. Prices arrive as
+    dollar STRINGS ("0.8800"), the gotcha that silently empties a scan pass."""
+    ask = scan_log.dollars(market.get("no_ask_dollars"))
+    if ask is not None:
+        return ask
+    bid = scan_log.dollars(market.get("yes_bid_dollars"))
+    return None if bid is None else round(1.0 - bid, 2)
+
+
+def within_band(price) -> bool:
+    """Whether a live NO price is worth showing or pushing.
+
+    An unquoted row (None) SURVIVES: an absent quote is thin liquidity or a
+    market that has since closed, not evidence about the fade."""
+    if price is None:
+        return True
+    return MIN_LIVE_NO_PRICE <= float(price) <= MAX_LIVE_NO_PRICE
 
 
 def winning_range(row: dict):
