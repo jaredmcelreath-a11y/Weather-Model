@@ -40,3 +40,47 @@ def test_fetch_requests_full_local_day(monkeypatch):
     # The window must reach back to (at least) local midnight so the morning low
     # of the current settlement day is always covered, regardless of capture time.
     assert start <= midnight
+
+
+def test_latest_takes_a_raw_station_id(monkeypatch):
+    # Reference cities on the Hourly page are not in config.STATIONS, so this
+    # must not route through config.station().
+    seen = {}
+
+    def fake_get_json(url, params=None, **kw):
+        seen["url"] = url
+        seen["params"] = params or {}
+        return _one_feature("2026-08-07T18:53:00+00:00", 30.0)
+
+    monkeypatch.setattr(nws_observations, "get_json", fake_get_json)
+    got = nws_observations.latest("KATL")
+    assert seen["url"] == "https://api.weather.gov/stations/KATL/observations"
+    assert got["temp"] == 86.0
+    assert got["time"].utcoffset().total_seconds() == 0
+
+
+def test_latest_skips_readings_with_no_temperature(monkeypatch):
+    payload = {"features": [
+        {"properties": {"timestamp": "2026-08-07T18:53:00+00:00",
+                        "temperature": {"value": None}}},
+        {"properties": {"timestamp": "2026-08-07T18:48:00+00:00",
+                        "temperature": {"value": 30.0}}},
+    ]}
+    monkeypatch.setattr(nws_observations, "get_json", lambda *a, **k: payload)
+    got = nws_observations.latest("KATL")
+    # The feed is newest-first, so the first usable reading is the answer.
+    assert got["temp"] == 86.0
+    assert got["time"].minute == 48
+
+
+def test_latest_returns_none_on_an_empty_feed(monkeypatch):
+    monkeypatch.setattr(nws_observations, "get_json", lambda *a, **k: {"features": []})
+    assert nws_observations.latest("KATL") is None
+
+
+def test_latest_returns_none_when_the_feed_errors(monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("nws down")
+
+    monkeypatch.setattr(nws_observations, "get_json", boom)
+    assert nws_observations.latest("KATL") is None

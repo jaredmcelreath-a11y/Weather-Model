@@ -98,3 +98,35 @@ def fetch(limit: int = 500, continuous: bool = False, now: datetime | None = Non
     if continuous:
         out["obs_continuous"] = raw
     return out
+
+
+def latest(station_id: str, ttl: int = 60) -> dict | None:
+    """Newest usable reading from any NWS station: {'temp': °F, 'time': aware}.
+
+    Takes a RAW station id rather than a config station code, so it serves the
+    Hourly page's reference cities, which `config` has never heard of — and it
+    returns the timestamp in whatever zone the feed states, leaving the display
+    zone to the caller (a Miami reading must not be stamped Central).
+
+    Display only. Unlike `fetch` it carries no IEM outage fallback (that path
+    resolves its station through `config`) and no settlement logic, so a gap in
+    the feed shows as a missing reading rather than a stale one.
+    """
+    try:
+        data = get_json(
+            f"https://api.weather.gov/stations/{station_id}/observations",
+            {"limit": 10}, ttl=ttl)
+    except Exception:
+        return None
+    for feature in (data.get("features") or []):    # newest-first
+        props = feature.get("properties") or {}
+        temp_c = (props.get("temperature") or {}).get("value")
+        if temp_c is None:
+            continue
+        stamp = (props.get("timestamp") or "").replace("Z", "+00:00")
+        try:
+            when = datetime.fromisoformat(stamp)
+        except ValueError:
+            continue
+        return {"temp": c_to_f(temp_c), "time": when}
+    return None
