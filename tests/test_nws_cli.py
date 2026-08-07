@@ -66,3 +66,41 @@ def test_parse_prior_day_report_carries_prior_date():
 def test_parse_malformed_returns_none():
     assert nws_cli.parse_cli("garbage with no fields", _ISSUED) is None
     assert nws_cli.parse_cli("", _ISSUED) is None
+
+
+def test_list_url_for_a_bare_location():
+    assert nws_cli.list_url_for("ATL") == \
+        "https://api.weather.gov/products/types/CLI/locations/ATL"
+
+
+def test_fetch_latest_for_hits_the_given_location(monkeypatch):
+    # Reference cities have no config station, so the fetch must be addressable
+    # by CLI location alone.
+    seen = []
+
+    def fake_get_json(url, **kw):
+        seen.append(url)
+        if url.endswith("/ATL"):
+            return {"@graph": [{"@id": "https://example.test/product/1"}]}
+        return {"productText": FIXTURE,
+                "issuanceTime": "2026-07-20T21:41:00+00:00"}
+
+    monkeypatch.setattr(nws_cli, "get_json", fake_get_json)
+    got = nws_cli.fetch_latest_for("ATL", ttl=300)
+    assert seen[0].endswith("/locations/ATL")
+    assert (got["high_f"], got["low_f"]) == (100, 80)
+
+
+def test_fetch_latest_cli_still_routes_through_config(monkeypatch):
+    seen = []
+
+    def fake_get_json(url, **kw):
+        seen.append(url)
+        if "/locations/" in url:
+            return {"@graph": [{"@id": "https://example.test/product/1"}]}
+        return {"productText": FIXTURE,
+                "issuanceTime": "2026-07-20T21:41:00+00:00"}
+
+    monkeypatch.setattr(nws_cli, "get_json", fake_get_json)
+    nws_cli.fetch_latest_cli(station="KAUS")
+    assert seen[0].endswith("/locations/AUS")

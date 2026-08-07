@@ -2,6 +2,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import config
 from config import TIMEZONE
 from sources import wunderground
 
@@ -52,7 +53,8 @@ def test_hourly_requests_kdfw_geocode_imperial(monkeypatch):
     wunderground.hourly()
     assert "forecast/hourly" in seen["url"]
     # Geocode is now derived from the station's registry lat/lon (same KDFW point).
-    assert seen["params"]["geocode"] == wunderground._geocode()
+    s = config.station()
+    assert seen["params"]["geocode"] == f"{s.lat},{s.lon}"
     assert seen["params"]["units"] == "e"
     assert seen["params"]["apiKey"] == wunderground.WEB_API_KEY
 
@@ -93,3 +95,33 @@ def test_pws_current_requests_the_euless_station(monkeypatch):
     monkeypatch.setattr(wunderground, "get_json", fake_get_json)
     wunderground.pws_current()
     assert seen["params"]["stationId"] == wunderground.PWS_STATION_ID
+
+
+def test_hourly_at_stamps_rows_in_the_requested_zone(monkeypatch):
+    # 1784350800 == 2026-07-18T05:00Z == 00:00 CDT == 22:00 PDT the day before.
+    monkeypatch.setattr(wunderground, "get_json", lambda url, params, **kw: _HOURLY)
+    rows = wunderground.hourly_at(33.9425, -118.4081, "America/Los_Angeles")
+    first = rows[0]["time"]
+    assert first.utcoffset().total_seconds() == -7 * 3600
+    assert (first.hour, first.day) == (22, 17)
+    # every field still parses the same way
+    assert rows[0]["temp"] == 84 and rows[2]["wind_dir"] == "SW"
+
+
+def test_hourly_at_requests_the_given_coordinate(monkeypatch):
+    seen = {}
+
+    def fake(url, params, **kw):
+        seen.update(params)
+        return _HOURLY
+
+    monkeypatch.setattr(wunderground, "get_json", fake)
+    wunderground.hourly_at(25.7932, -80.2906, "America/New_York")
+    assert seen["geocode"] == "25.7932,-80.2906"
+    assert seen["units"] == "e"
+
+
+def test_hourly_still_stamps_the_station_zone(monkeypatch):
+    monkeypatch.setattr(wunderground, "get_json", lambda url, params, **kw: _HOURLY)
+    rows = wunderground.hourly()
+    assert rows[0]["time"].astimezone(_TZ).hour == 0

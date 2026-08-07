@@ -19,6 +19,7 @@ import city_view
 import config
 import edge_view
 import forecast_log
+import hourly_cities
 import hourly_view
 import journal_view
 import lab_view
@@ -311,24 +312,6 @@ def load_portfolio_value():
         return None
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def load_cli_report(station: str = config.DEFAULT_STATION):
-    """Today's official CLI report (high/low) if NWS has issued it, else None.
-    Gated to the climate day so yesterday's overnight product never shows."""
-    try:
-        from datetime import datetime
-        import settlement
-        from sources import nws_cli
-        from sources.common import TZ
-        now = datetime.now(TZ)
-        cli = nws_cli.fetch_latest_cli(ttl=300, station=station)
-        if cli and cli["report_date"] == settlement.climate_day_of(now, station):
-            return cli
-    except Exception:
-        return None
-    return None
-
-
 def _page(adapter, snapshot_loader, accuracy_loader, record_basis,
           station=config.DEFAULT_STATION):
     snap, calib = snapshot_loader()
@@ -375,20 +358,49 @@ def kalshi_page():
           lambda: load_accuracy_kalshi(station), "cli", station)
 
 
-@st.cache_data(ttl=60, show_spinner="Fetching Wunderground hourly forecast…")
-def load_hourly(station: str = config.DEFAULT_STATION):
-    """Wunderground/TWC hourly forecast + nearby PWS current temp for the Hourly
-    page (per station). 60s TTL matches the page autorefresh; the source layer's
-    own TTLs (300s hourly, 60s PWS) keep this from refetching every cycle. PWS is
-    KDFW-only today, so it returns None for other stations."""
+@st.cache_data(ttl=60, show_spinner="Fetching hourly forecast…")
+def load_hourly_city(key: str):
+    """TWC hourly forecast + nearby PWS current temp for a Hourly-page city.
+    60s TTL matches the page autorefresh; the source layer's own TTLs (300s
+    hourly, 60s PWS) keep this from refetching every cycle. Only Dallas has a
+    configured PWS, so every other city gets None."""
     from sources import wunderground
-    return wunderground.hourly(station=station), wunderground.pws_current(station=station)
+    c = hourly_cities.city(key)
+    pws = wunderground.pws_current(station=c.modeled) if c.modeled else None
+    return wunderground.hourly_at(c.lat, c.lon, c.timezone), pws
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_city_cli(key: str):
+    """Today's official CLI report for a Hourly-page city, else None.
+
+    Gated to the city's own climate day: probing at midday Central, the newest
+    product for the Pacific and Mountain cities is still YESTERDAY's, which
+    ungated would label yesterday's high as today's all morning."""
+    from datetime import datetime, timezone as _utc
+    from sources import nws_cli
+    c = hourly_cities.city(key)
+    try:
+        cli = nws_cli.fetch_latest_for(c.cli_location, ttl=300)
+        if cli and cli["report_date"] == hourly_cities.climate_day(
+                c, datetime.now(_utc.utc)):
+            return cli
+    except Exception:
+        return None
+    return None
 
 
 def hourly_page():
-    station = city_view.city_control("hourly", arity=2)
-    hourly_view.render(lambda: load_hourly(station),
-                       cli_report=load_cli_report(station), station=station)
+    # Deliberately NOT city_view: that control is the sticky Dallas/Austin pick
+    # shared by every modelled page, and selecting Miami here must not follow the
+    # user to Forecast or Journal, which have no data for it.
+    key = st.selectbox("City", hourly_cities.keys(), key="hourly_city",
+                       format_func=hourly_cities.label,
+                       help="Every city Kalshi lists temperature contracts on, "
+                            "with the station its market settles on.")
+    hourly_view.render(lambda: load_hourly_city(key),
+                       cli_report=load_city_cli(key),
+                       city=hourly_cities.city(key))
 
 
 def edge_page():

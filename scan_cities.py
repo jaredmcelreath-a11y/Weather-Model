@@ -97,6 +97,18 @@ def city_name(series: str) -> str:
     return _CITY_NAMES.get(_SERIES_CITY.get(ticker), ticker)
 
 
+def coords_of(key: str):
+    """(lat, lon) for a CITY key like 'ATL' — the same climate-station point
+    `point_for` serves by series. Exposed so the Hourly page's registry can read
+    this table rather than keeping a second copy of it."""
+    return _CITY_COORDS.get((key or "").upper())
+
+
+def name_of(key: str):
+    """Display name for a CITY key like 'ATL', or None if unmapped."""
+    return _CITY_NAMES.get((key or "").upper())
+
+
 def resolve(lat: float, lon: float, fetch=None) -> dict:
     """Timezone and downstream URLs for a point. Cached a day upstream: the
     gridpoint mapping essentially never changes."""
