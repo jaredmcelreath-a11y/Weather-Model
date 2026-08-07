@@ -1,4 +1,4 @@
-"""alerts.maybe_fire_events — triggers, once-per-day gating, independence."""
+"""alerts.maybe_fire_events — the Morning Recap, the only event alert left."""
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -25,26 +25,8 @@ def _patch(monkeypatch, tmp_path, sends, recap="Morning digest"):
                         lambda title, body: sends.append((title, body)) or True)
 
 
-# 3 PM local — past the recap window, so recap fires too unless gated out.
+# 3 PM local — past the recap window, so recap fires unless gated out.
 _PM = datetime(2026, 7, 21, 15, 0, tzinfo=_TZ)
-
-
-def test_storm_fires_on_active_not_watch(monkeypatch, tmp_path):
-    sends = []
-    _patch(monkeypatch, tmp_path, sends, recap="")  # suppress recap
-    alerts.maybe_fire_events(_snap(level="watch"), _PM)
-    assert not any(t == "Storm Watch Active" for t, _ in sends)
-    alerts.maybe_fire_events(_snap(level="active"), _PM)
-    assert any(t == "Storm Watch Active" for t, _ in sends)
-
-
-def test_front_fires_only_when_widened(monkeypatch, tmp_path):
-    sends = []
-    _patch(monkeypatch, tmp_path, sends, recap="")
-    alerts.maybe_fire_events(_snap(front=False), _PM)
-    assert not any(t == "Front Risk" for t, _ in sends)
-    alerts.maybe_fire_events(_snap(front=True), _PM)
-    assert [t for t, _ in sends] == ["Front Risk"]
 
 
 def test_recap_time_gate_and_once_per_day(monkeypatch, tmp_path):
@@ -62,17 +44,18 @@ def test_recap_time_gate_and_once_per_day(monkeypatch, tmp_path):
     assert [t for t, _ in sends].count("Morning Recap") == 2
 
 
-def test_all_three_independent_same_run(monkeypatch, tmp_path):
+def test_storm_and_front_no_longer_push(monkeypatch, tmp_path):
+    # Retired 2026-08-07 in favour of the Screen row alert. An active storm and
+    # a widened front together must produce the recap and nothing else.
     sends = []
     _patch(monkeypatch, tmp_path, sends)
     alerts.maybe_fire_events(_snap(level="active", front=True), _PM)
-    titles = sorted(t for t, _ in sends)
-    assert titles == ["Front Risk", "Morning Recap", "Storm Watch Active"]
+    assert [t for t, _ in sends] == ["Morning Recap"]
 
 
 def test_empty_state_file_does_not_block(monkeypatch, tmp_path):
     sends = []
-    _patch(monkeypatch, tmp_path, sends, recap="")
+    _patch(monkeypatch, tmp_path, sends)
     (tmp_path / "ev.json").write_text("")
-    alerts.maybe_fire_events(_snap(level="active"), _PM)
-    assert [t for t, _ in sends] == ["Storm Watch Active"]
+    alerts.maybe_fire_events(_snap(), _PM)
+    assert [t for t, _ in sends] == ["Morning Recap"]
