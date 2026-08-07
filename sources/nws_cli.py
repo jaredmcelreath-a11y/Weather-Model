@@ -19,10 +19,14 @@ from config import CACHE_TTL_SECONDS
 from sources.common import TZ, get_json
 
 
+def list_url_for(location: str) -> str:
+    """NWS CLI product-list endpoint for a bare product location, e.g. 'ATL'."""
+    return "https://api.weather.gov/products/types/CLI/locations/" + location
+
+
 def list_url(station: str = config.DEFAULT_STATION) -> str:
     """NWS CLI product-list endpoint for `station`'s climate report."""
-    return ("https://api.weather.gov/products/types/CLI/locations/"
-            + config.station(station).cli_location)
+    return list_url_for(config.station(station).cli_location)
 
 _DATE_RE = re.compile(r"CLIMATE SUMMARY FOR ([A-Z]+ \d{1,2} \d{4})")
 # The time column differs by issuing office: NWS Fort Worth (CLIDFW) prints
@@ -61,9 +65,19 @@ def fetch_latest_cli(ttl: int | None = None,
     `ttl` controls the cache freshness of the product list; pass 0 for an
     always-fresh read (the scheduled Action), or a short TTL for the dashboard.
     """
+    return fetch_latest_for(config.station(station).cli_location, ttl)
+
+
+def fetch_latest_for(location: str, ttl: int | None = None) -> dict | None:
+    """Fetch and parse the newest CLI product for a bare product location.
+
+    Addressable by location because the Hourly page shows the climate report for
+    cities this system does not model; the parser already handles every issuing
+    office's time format (verified against all 20 products, 2026-08-07).
+    """
     t = CACHE_TTL_SECONDS if ttl is None else ttl
     try:
-        listing = get_json(list_url(station), ttl=t)
+        listing = get_json(list_url_for(location), ttl=t)
         graph = listing.get("@graph") or []
         if not graph:
             return None
