@@ -10,6 +10,17 @@
       "side": "yes",
       "ts": "2026-08-08T15:41:28.585232-05:00",
       "variable": "high"
+    },
+    "KXLOWTDAL-26AUG08-B80.5": {
+      "cap": 81,
+      "count": 1,
+      "day": "2026-08-08",
+      "entry_ask": 0.17,
+      "floor": 80,
+      "label": "80\u00b0 to 81\u00b0",
+      "side": "yes",
+      "ts": "2026-08-08T15:41:28.585232-05:00",
+      "variable": "low"
     }
   }
 }
