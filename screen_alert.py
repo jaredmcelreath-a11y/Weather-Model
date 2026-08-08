@@ -12,9 +12,14 @@ screen_view, which imports Streamlit and cannot run in a cron.
 """
 from __future__ import annotations
 
+import time
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from typing import Callable
 
+import scan_cities
 import scan_log
+import screen
 import screen_forecast
 import screen_rules
 
@@ -93,3 +98,169 @@ def city_candidates(series: str, day: date, markets: list, realized: list,
         hit["no_price"] = no_price
         out.append(hit)
     return out
+
+
+MAX_BODY_LINES = 10      # a notification longer than this is unreadable
+STATE_KEEP_DAYS = 2
+REQUEST_SPACING_S = 0.5  # the same Kalshi pacing the screen and scanner use
+
+
+@dataclass
+class Deps:
+    read_reference: Callable
+    read_state: Callable
+    write_state: Callable
+    list_markets: Callable
+    fetch_obs: Callable
+    notify: Callable
+    sleep: Callable = time.sleep
+
+
+def _real_deps() -> Deps:
+    import notify as notify_mod
+    from sources import kalshi
+    return Deps(
+        read_reference=lambda: scan_log.read_doc(scan_log.REFERENCE_PATH),
+        read_state=lambda: scan_log.read_doc(scan_log.ALERT_STATE_PATH),
+        write_state=lambda obj: scan_log.write_doc(scan_log.ALERT_STATE_PATH, obj),
+        list_markets=lambda series: kalshi.list_series_markets(series, status="open"),
+        fetch_obs=screen.fetch_observations,
+        notify=notify_mod.send_ntfy,
+    )
+
+
+def _day_key(ticker: str):
+    day = screen_forecast.climate_day_of_ticker(ticker)
+    return None if day is None else day.isoformat()
+
+
+def unseen(candidates: list, state: dict) -> list:
+    """Candidates whose ticker has not been pushed for its own climate day.
+
+    Deduplicates within the pass too: one bracket can be reached twice if a
+    series ever lists it twice, and two notifications for one row is a bug the
+    phone would show."""
+    out, seen = [], set()
+    for c in candidates:
+        ticker = c.get("ticker")
+        key = _day_key(ticker or "")
+        if not ticker or key is None or ticker in seen:
+            continue
+        if ticker in set(state.get(key) or []):
+            continue
+        seen.add(ticker)
+        out.append(c)
+    return out
+
+
+def record(state: dict, candidates: list) -> dict:
+    """Mark these tickers as pushed, under their own climate day."""
+    out = dict(state)
+    for c in candidates:
+        key = _day_key(c.get("ticker") or "")
+        if key is None:
+            continue
+        out[key] = sorted(set(out.get(key) or []) | {c["ticker"]})
+    return out
+
+
+def prune(state: dict, today: date, keep_days: int = STATE_KEEP_DAYS) -> dict:
+    """Drop days older than `keep_days`, and any key that is not a date.
+
+    Kalshi temperature markets close within ~30h of listing, so two days is
+    ample and keeps the file from growing without bound."""
+    cutoff = today - timedelta(days=keep_days)
+    out = {}
+    for key, tickers in (state or {}).items():
+        try:
+            when = date.fromisoformat(str(key))
+        except ValueError:
+            continue
+        if when >= cutoff:
+            out[key] = tickers
+    return out
+
+
+def alert_title(count: int) -> str:
+    return f"{count} new screen row" + ("" if count == 1 else "s")
+
+
+def _line(c: dict) -> str:
+    city = scan_cities.city_name(c.get("series"))
+    label = c.get("label") or c.get("ticker")
+    price = c.get("no_price")
+    shown = "—" if price is None else f"{round(float(price) * 100)}%"
+    reference = c.get("forecast")
+    if c.get("kind") == "dead":
+        word = "max" if c.get("variable") == "high" else "min"
+        tail = f"DEAD ({word} {reference:g} already)"
+    else:
+        tail = f"Ref {reference:g} ({c.get('gap'):g}° gap)"
+    return f"{city} {c.get('variable')} {label} · NO {shown} · {tail}"
+
+
+def alert_body(candidates: list, max_lines: int = MAX_BODY_LINES) -> str:
+    lines = [_line(c) for c in candidates[:max_lines]]
+    extra = len(candidates) - len(lines)
+    if extra > 0:
+        lines.append(f"…and {extra} more")
+    return "\n".join(lines)
+
+
+def check(now: datetime, deps: Deps) -> dict:
+    """One pass: price every mapped city's same-day ladder and push what is new."""
+    reference = deps.read_reference() or {}
+    usable = forecast_is_usable(reference, now)
+    if not usable:
+        age = reference_age_minutes(reference, now)
+        print(f"[screen_alert] reference age {age}min — dead rows only"
+              if age is not None else "[screen_alert] no reference — dead rows only")
+    state = deps.read_state() or {}
+    found, cities = [], 0
+    for series, info in (reference.get("cities") or {}).items():
+        tzname, station = info.get("timezone"), info.get("station")
+        if not tzname:
+            continue
+        day = in_progress_day(now, tzname)
+        try:
+            markets = deps.list_markets(series)
+            deps.sleep(REQUEST_SPACING_S)
+        except Exception as e:            # noqa: BLE001 - one city must not
+            print(f"[screen_alert] {series}: markets skipped ({e})")   # cost the rest
+            continue
+        cities += 1
+        readings = []
+        if station:
+            start, _ = day_window(day, tzname)
+            try:
+                features = deps.fetch_obs(station, start, now)
+                readings = screen.observed_readings(features, tzname, day)
+            except Exception as e:        # noqa: BLE001 - degrade to forecast
+                print(f"[screen_alert] {series}: observations skipped ({e})")
+        extreme = (info.get("days") or {}).get(day.isoformat()) if usable else None
+        found.extend(city_candidates(series, day, markets,
+                                     [t for _, t in readings], now, extreme))
+    fresh = unseen(found, state)
+    if not fresh:
+        return {"cities": cities, "found": len(found), "new": 0}
+    if deps.notify(alert_title(len(fresh)), alert_body(fresh)):
+        # Only after a delivered push: advancing state on a failed POST would
+        # lose the row for good, and this is the alert's entire purpose.
+        deps.write_state(prune(record(state, fresh), now.date()))
+    else:
+        print("[screen_alert] send_ntfy False — state not advanced")
+    return {"cities": cities, "found": len(found), "new": len(fresh)}
+
+
+def main(argv: list, deps: Deps = None, now: datetime = None) -> int:
+    if (argv[0] if argv else "") == "check":
+        deps = deps or _real_deps()
+        print(f"[screen_alert] {check(now or datetime.now(timezone.utc), deps)}")
+        return 0
+    print("usage: screen_alert.py check")
+    return 2
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main(sys.argv[1:]))
