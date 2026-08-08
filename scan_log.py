@@ -27,6 +27,8 @@ from sources.kalshi import parse_kalshi_ts
 SNAPSHOT_PATH = "scan_log.jsonl"
 SETTLED_PATH = "scan_settled.jsonl"
 CANDIDATES_PATH = "scan_candidates.jsonl"
+REFERENCE_PATH = "screen_reference.json"      # screen.py -> screen_alert.py
+ALERT_STATE_PATH = "screen_alert_state.json"  # tickers already pushed, by day
 
 
 class GitHubTransport:
@@ -236,6 +238,31 @@ def load_recent(path: str, days: int = 3, transport=None, now=None) -> list:
     for i in range(days - 1, -1, -1):                    # oldest day first
         out.extend(_read(day_path(path, now - timedelta(days=i)), t))
     return out
+
+
+def read_doc(path: str, transport=None) -> dict:
+    """A whole-file JSON document, or {} when absent, corrupt or not an object.
+
+    The snapshot and candidate logs are append-only JSONL partitions; the
+    screen's reference and the alerter's state are single small documents that
+    are REPLACED on every write, so they get their own pair. Never raises: both
+    readers run in a cron whose job is to stay quietly reliable, and a
+    half-written document must read as "nothing yet"."""
+    got = _t(transport).get(path)
+    if not got:
+        return {}
+    try:
+        obj = json.loads(got[0])
+    except ValueError:
+        return {}
+    return obj if isinstance(obj, dict) else {}
+
+
+def write_doc(path: str, obj: dict, transport=None) -> None:
+    """Replace `path` with `obj`. One GET (for the sha) plus one PUT."""
+    t = _t(transport)
+    got = t.get(path)
+    t.put(path, json.dumps(obj), got[1] if got else None)
 
 
 def append_many(path: str, rows: list, transport=None, now=None) -> int:
