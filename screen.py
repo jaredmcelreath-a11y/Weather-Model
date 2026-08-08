@@ -33,13 +33,16 @@ class Deps:
     append_rows: Callable
     station_for: Callable
     sleep: Callable = time.sleep
+    write_reference: Callable = None
 
 
 def _real_fetch_forecast(url):
     return ((get_json(url, ttl=900) or {}).get("properties") or {}).get("periods") or []
 
 
-def _real_fetch_obs(station, start, end):
+def fetch_observations(station, start, end):
+    """A station's readings over a window. Public because screen_alert reuses it
+    on its 5-minute loop."""
     url = f"https://api.weather.gov/stations/{station}/observations"
     params = {"start": start.isoformat().replace("+00:00", "Z"),
               "end": end.isoformat().replace("+00:00", "Z"), "limit": 500}
@@ -52,18 +55,21 @@ def _real_deps() -> Deps:
         list_markets=kalshi.list_series_markets,
         resolve_point=lambda lat, lon: scan_cities.resolve(lat, lon),
         fetch_forecast=_real_fetch_forecast,
-        fetch_obs=_real_fetch_obs,
+        fetch_obs=fetch_observations,
         append_rows=lambda path, rows: scan_log.append_many(path, rows),
         station_for=lambda url: scan_cities.station_for(url),
+        write_reference=lambda obj: scan_log.write_doc(scan_log.REFERENCE_PATH, obj),
     )
 
 
-def _observed_readings(features, tzname, day):
+def observed_readings(features, tzname, day):
     """[(timestamp, F)] for readings inside the LST climate day.
 
     The timestamp kept is the reading's OWN aware time, not the LST-shifted one
     used to pick the day: the drift anchor compares it against `now` and against
-    forecast period times, which are both real instants."""
+    forecast period times, which are both real instants.
+
+    Public because screen_alert reuses it on its 5-minute loop."""
     offset = timedelta(hours=screen_forecast.lst_offset_hours(tzname))
     out = []
     for f in features or []:
@@ -88,6 +94,7 @@ def screen_pass(now: datetime, deps: Deps) -> dict:
     """Screen every mapped city's ladder once."""
     now_iso = now.isoformat().replace("+00:00", "Z")
     candidates, cities, errors = [], 0, 0
+    reference: dict = {}
     for s in deps.list_series():
         series = s["ticker"]
         point = scan_cities.point_for(series)
@@ -107,6 +114,15 @@ def screen_pass(now: datetime, deps: Deps) -> dict:
             errors += 1
             continue
         cities += 1
+        # Hoisted out of the day loop so the reference carries the station even
+        # on a day that is not in progress: screen_alert fetches its own
+        # observations from it and cannot afford to resolve stations itself.
+        try:
+            station = deps.station_for(resolved.get("stations_url"))
+        except Exception as e:            # noqa: BLE001 - degrade to forecast only
+            print(f"[screen] {series}: station lookup skipped ({e})")
+            station = None
+        reference[series] = {"station": station, "timezone": tzname, "days": {}}
 
         rows = [r for r in (scan_log.build_snapshot_row(m, series, now)
                             for m in markets) if r is not None]
@@ -129,14 +145,16 @@ def screen_pass(now: datetime, deps: Deps) -> dict:
             readings = []
             if in_progress:
                 try:
-                    station = deps.station_for(resolved.get("stations_url"))
                     features = deps.fetch_obs(station, start, now) if station else []
-                    readings = _observed_readings(features, tzname, day)
+                    readings = observed_readings(features, tzname, day)
                 except Exception as e:    # noqa: BLE001 - degrade to forecast
                     print(f"[screen] {series}: observations skipped ({e})")
             realized = [temp for _, temp in readings]
 
             extremes = screen_forecast.daily_extremes(periods, day, tzname)
+            # The UNFOLDED extreme: screen_alert re-folds it against its own,
+            # fresher observations, so folding here would bake in this pass's.
+            reference[series]["days"][day.isoformat()] = extremes.get(variable)
             forecast = screen_forecast.fold_realized(
                 extremes.get(variable), realized, variable)
             # Context for the human, not a screening input: a gap is only as
@@ -176,6 +194,13 @@ def screen_pass(now: datetime, deps: Deps) -> dict:
                     candidates.append(hit)
 
     written = deps.append_rows(scan_log.CANDIDATES_PATH, candidates)
+    # Best-effort and last: the candidate log is the product, and a contents-API
+    # failure here must not cost the pass its rows.
+    if deps.write_reference:
+        try:
+            deps.write_reference({"generated": now_iso, "cities": reference})
+        except Exception as e:            # noqa: BLE001
+            print(f"[screen] reference publish failed ({e})")
     return {"candidates": written or 0, "cities": cities, "errors": errors}
 
 

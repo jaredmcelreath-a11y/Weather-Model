@@ -36,8 +36,6 @@ def test_run_station_threads_station_everywhere(monkeypatch):
 
     monkeypatch.setattr(scheduled_log.model, "snapshot", fake_snapshot)
     monkeypatch.setattr(scheduled_log, "_attach_market", lambda *a, **k: None)
-    monkeypatch.setattr(scheduled_log, "_maybe_alert_cli", lambda *a, **k: None)
-    monkeypatch.setattr(scheduled_log, "_maybe_alert_resolved", lambda *a, **k: None)
     monkeypatch.setattr(scheduled_log, "_publish_det_models", lambda *a, **k: None)
     monkeypatch.setattr(scheduled_log.alerts, "maybe_fire_events", lambda *a, **k: None)
     monkeypatch.setattr(scheduled_log.forecast_log, "record", lambda *a, **k: None)
@@ -54,7 +52,7 @@ def test_run_station_threads_station_everywhere(monkeypatch):
 
 
 def test_alerts_are_station_tagged_for_non_default(monkeypatch, tmp_path):
-    """Austin event alerts get a name-prefixed title and their own state file;
+    """Austin's recap gets a name-prefixed title and its own state file;
     Dallas (default) titles stay unprefixed (byte-identical)."""
     import alerts
     from datetime import datetime
@@ -65,11 +63,10 @@ def test_alerts_are_station_tagged_for_non_default(monkeypatch, tmp_path):
                         lambda title, body: sent.append(title) or True)
     monkeypatch.setattr(alerts, "event_state_path",
                         lambda station=config.DEFAULT_STATION: str(tmp_path / f"ev_{station}.json"))
+    monkeypatch.setattr(alerts, "_build_recap_body", lambda snap: "digest")
     now = datetime(2026, 7, 26, 13, 0, tzinfo=ZoneInfo("America/Chicago"))
-    snap = {"storm": {"level": "active", "pop": 80, "sigma": 3.0,
-                      "upstream": {"active": False}}}
 
-    alerts.maybe_fire_events(dict(snap), now, station="KAUS")
-    alerts.maybe_fire_events(dict(snap), now, station="KDFW")
-    assert "Austin: Storm Watch Active" in sent
-    assert "Storm Watch Active" in sent          # Dallas unprefixed
+    alerts.maybe_fire_events({}, now, station="KAUS")
+    alerts.maybe_fire_events({}, now, station="KDFW")
+    assert "Austin: Morning Recap" in sent
+    assert "Morning Recap" in sent          # Dallas unprefixed

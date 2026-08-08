@@ -19,28 +19,6 @@ def test_save_then_load_roundtrip(tmp_path):
     assert alerts.load_state(p) == {"recap": "2026-07-21"}
 
 
-def test_storm_body_with_upstream_warning():
-    storm = {"level": "active", "sigma": 3.0,
-             "upstream": {"active": True, "county": "Tarrant", "direction": "NW"}}
-    body = alerts.storm_body(storm)
-    assert "Tarrant Co (NW)" in body
-    assert "±3°F" in body
-
-
-def test_storm_body_without_upstream():
-    storm = {"level": "active", "sigma": 2.0,
-             "upstream": {"active": False, "county": None, "direction": None}}
-    body = alerts.storm_body(storm)
-    assert "approach" in body.lower()
-    assert "±2°F" in body
-
-
-def test_front_body_uses_projection_then_consensus():
-    low = {"consensus": 80.0, "front_guard": {"projection": 77.0}}
-    assert "≈77°F" in alerts.front_body(low)
-    assert "≈80°F" in alerts.front_body({"consensus": 80.0})  # no front_guard
-
-
 def test_recap_body_yesterday_and_today():
     setup = {"high": {"consensus": 101.0, "locked": False},
              "low": {"observed": 80.0, "consensus": 80.0, "locked": True}}

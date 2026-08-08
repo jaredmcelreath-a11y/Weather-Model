@@ -100,6 +100,28 @@ Actions minutes (free — the repo is public), 48 commits and ~4.3 MB of PUTs to
 `scan-data`. The in-repo hourly schedule stays on as a free fallback; a
 duplicate firing is harmless, since the page reads only the newest one.
 
+### 6. Screen row alert
+
+A new same-day row on the Screen table pushes to ntfy within ~5 minutes.
+
+**Nothing to set up beyond the secrets you already have** (`SCAN_GH_TOKEN` for
+the scan-data branch, `NTFY_TOPIC` for the push). `log.yml` dispatches a
+`screen-alert` `repository_dispatch` on every one of its 10-minute runs, and
+`screen_alert.yml` checks twice per run, five minutes apart.
+
+The alert re-uses `screen_reference.json`, published by every 30-minute screen
+pass, rather than recomputing the NWS forecast — one check costs ~40 Kalshi and
+~20 NWS requests. If the screen stalls for more than 90 minutes the forecast
+half goes quiet and only `dead` rows alert; that appears in the job log as
+`reference age …min — dead rows only`.
+
+A ticker alerts once per climate day. State lives in `screen_alert_state.json`
+on `scan-data` and is written only when something fires, so quiet checks cost
+no commits.
+
+To silence it entirely, disable the **Screen row alert** workflow in the Actions
+tab — the dispatch step is `continue-on-error`, so nothing else is affected.
+
 ## Notes
 
 - **Actions minutes:** private repos get 2000 free min/month; hourly runs use

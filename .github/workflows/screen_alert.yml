@@ -1,0 +1,52 @@
+name: Screen row alert
+
+# Pushes when a bracket settling TODAY newly appears on the Screen table.
+# Deliberately has NO in-repo `cron:` schedule: GitHub drops high-frequency
+# schedules first (measured 2026-08-04 at 62% delivery for an hourly one), so
+# one here would fire unpredictably and add load without adding reliability.
+# The cadence comes from log.yml's external cron, the one reliable clock in this
+# repo (measured: 100 runs, median gap 10.0 min, max 10.1), which dispatches
+# `screen-alert` on every one of its own dispatch runs. Each run then checks
+# TWICE five minutes apart, turning that 10-minute clock into a 5-minute alert.
+on:
+  repository_dispatch:
+    types: [screen-alert]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: screen-alert
+  cancel-in-progress: false      # a late dispatch must not kill a job mid-sleep
+
+jobs:
+  alert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: Check now
+        env:
+          SCAN_GH_REPO: ${{ github.repository }}
+          SCAN_GH_BRANCH: scan-data
+          SCAN_GH_TOKEN: ${{ secrets.SCAN_GH_TOKEN }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python screen_alert.py check
+
+      # The second half of the 5-minute cadence. Skipped on a manual run, where
+      # sleeping five minutes to repeat the same check helps nobody.
+      - name: Check again five minutes later
+        if: github.event_name == 'repository_dispatch'
+        env:
+          SCAN_GH_REPO: ${{ github.repository }}
+          SCAN_GH_BRANCH: scan-data
+          SCAN_GH_TOKEN: ${{ secrets.SCAN_GH_TOKEN }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: sleep 300 && python screen_alert.py check

@@ -1,9 +1,11 @@
-"""ntfy event alerts fired from the scheduled run: Storm Watch, Front Risk, and
-the Morning Recap digest.
+"""ntfy event alerts fired from the scheduled run: the Morning Recap digest.
 
 Pure message-builders + state I/O live here (unit-testable, no network/Streamlit);
-`maybe_fire_events` orchestrates the once-per-day sends. Kept cron-safe — no
+`maybe_fire_events` orchestrates the once-per-day send. Kept cron-safe — no
 Streamlit import at module top.
+
+Storm Watch and Front Risk were retired 2026-08-07: the phone's alert budget now
+goes to screen_alert, which pushes new same-day Screen rows.
 """
 
 from __future__ import annotations
@@ -16,7 +18,6 @@ from zoneinfo import ZoneInfo
 import config
 import notify
 import paths
-import settlement
 from config import TIMEZONE
 
 _TZ = ZoneInfo(TIMEZONE)
@@ -54,25 +55,6 @@ def load_state(path: str) -> dict:
 def save_state(path: str, state: dict) -> None:
     with open(path, "w") as fh:
         json.dump(state, fh)
-
-
-def storm_body(storm: dict) -> str:
-    """Body for the Storm Watch Active alert."""
-    sigma = storm.get("sigma") or 0.0
-    up = storm.get("upstream") or {}
-    if up.get("active"):
-        return (f"SVR warning {up.get('county')} Co ({up.get('direction')}) · "
-                f"low downside ±{sigma:g}°F")
-    return f"Convective storms on the approach · low downside ±{sigma:g}°F"
-
-
-def front_body(low: dict) -> str:
-    """Body for the Front Risk alert."""
-    fg = low.get("front_guard") or {}
-    proj = fg.get("projection")
-    if proj is None:
-        proj = low.get("consensus")
-    return f"Front may undercut tonight's low · projection ≈{proj:g}°F"
 
 
 def recap_body(setup: dict | None, yesterday: dict | None) -> str:
@@ -131,15 +113,11 @@ def _build_recap_body(snap: dict) -> str:
 
 def maybe_fire_events(snap: dict, now: datetime,
                       station: str = config.DEFAULT_STATION) -> None:
-    """Fire the storm/front/recap alerts, each once per day. Best-effort per
-    alert (one failing never blocks another) and overall."""
+    """Fire the Morning Recap once per day. Best-effort: a failure logs and
+    never blocks the surrounding scheduled run."""
     state_path = event_state_path(station)
     state = load_state(state_path)
     dirty = False
-    try:
-        cday = settlement.climate_day_of(now, station).isoformat()
-    except Exception:
-        cday = None
 
     def _send(key, day, title, body):
         nonlocal dirty
@@ -151,20 +129,6 @@ def maybe_fire_events(snap: dict, now: datetime,
             print(f"Event alert sent: {key}")
         else:
             print(f"Event alert: send_ntfy False for {key}")
-
-    try:
-        storm = snap.get("storm") or {}
-        if storm.get("level") == "active":
-            _send("storm", cday, _title("Storm Watch Active", station), storm_body(storm))
-    except Exception as e:
-        print(f"Event alert skipped (storm): {e}")
-
-    try:
-        low = (snap.get("today") or {}).get("low") or {}
-        if low.get("front_widened"):
-            _send("front", cday, _title("Front Risk", station), front_body(low))
-    except Exception as e:
-        print(f"Event alert skipped (front): {e}")
 
     try:
         local = now.astimezone(_TZ)
