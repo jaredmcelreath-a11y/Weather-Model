@@ -17,9 +17,16 @@ module writes is how that can change on evidence instead of taste.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from typing import Callable
 
+import scan_cities
+import scan_log
 import screen_forecast
+from sources import open_meteo_cities
+
+CONSENSUS_PATH = "city_consensus.json"
 
 # Below this many contributing models there is no consensus worth printing: two
 # models agreeing is not agreement, and the spread of two is a range.
@@ -80,3 +87,120 @@ def consensus(values: list):
     return {"value": round(sum(numbers) / len(numbers), 1),
             "spread": round(max(numbers) - min(numbers), 1),
             "n": len(numbers)}
+
+
+# ---- Building the published document ---------------------------------------
+
+def cities_from_reference(reference: dict) -> list:
+    """One entry per CITY from the reference's 40 series, sorted by code.
+
+    The reference is keyed by series (two per city, one per variable); the
+    consensus is per city, because a city has one coordinate and one fetch.
+    A series with no timezone is one screen.py could not resolve and
+    screen_alert already skips -- so it is skipped identically here."""
+    cities = {}
+    for series, info in (reference.get("cities") or {}).items():
+        tzname = (info or {}).get("timezone")
+        code = scan_cities.city_key(series)
+        point = scan_cities.point_for(series)
+        if not tzname or code is None or point is None:
+            continue
+        variable = scan_log.variable_of_series(series)
+        entry = cities.setdefault(code, {
+            "code": code, "name": scan_cities.name_of(code) or code,
+            "lat": point[0], "lon": point[1], "timezone": tzname,
+            "series": {}, "nws": {}, "realized": {},
+        })
+        entry["series"][variable] = series
+        for day, value in (info.get("days") or {}).items():
+            entry["nws"].setdefault(day, {})[variable] = value
+        for day, value in (info.get("realized") or {}).items():
+            entry["realized"].setdefault(day, {})[variable] = value
+    return [cities[k] for k in sorted(cities)]
+
+
+def target_days(now: datetime, tzname: str) -> list:
+    """The climate day running now in this city, and the one after it.
+
+    Exactly the two days Kalshi lists temperature markets for."""
+    today = screen_forecast.in_progress_day(now, tzname)
+    return [today, today + timedelta(days=1)]
+
+
+def _entry(nws, cons, realized, variable: str) -> dict:
+    """One variable's published block: both forms, plus the model detail.
+
+    Unfolded is what a forecast SAID and is what the log scores. Folded is what
+    can still be true given what has already happened, and is the only form
+    comparable with the page's Ref."""
+    value = None if cons is None else cons["value"]
+    realized_list = [] if realized is None else [realized]
+    return {
+        "nws": nws,
+        "nws_folded": screen_forecast.fold_realized(nws, realized_list, variable),
+        "cons": value,
+        "cons_folded": screen_forecast.fold_realized(value, realized_list,
+                                                     variable),
+        "spread": None if cons is None else cons["spread"],
+        "n": 0 if cons is None else cons["n"],
+    }
+
+
+def build(reference: dict, raw: list, cities: list, now: datetime) -> dict:
+    """The published document: every city, both days, both variables."""
+    out = {}
+    for city, payload in zip(cities, raw or []):
+        offset = screen_forecast.lst_offset_hours(city["timezone"])
+        days = {}
+        for day in target_days(now, city["timezone"]):
+            key = day.isoformat()
+            extremes = model_extremes((payload or {}).get("hourly") or {},
+                                      day, offset)
+            block = {}
+            for variable in ("high", "low"):
+                values = [e[variable] for e in extremes.values()]
+                cons = consensus(values)
+                entry = _entry((city["nws"].get(key) or {}).get(variable),
+                               cons,
+                               (city["realized"].get(key) or {}).get(variable),
+                               variable)
+                entry["models"] = {m: e[variable] for m, e in extremes.items()}
+                block[variable] = entry
+            days[key] = block
+        out[city["code"]] = {"name": city["name"], "timezone": city["timezone"],
+                             "days": days}
+    return {"generated": now.isoformat().replace("+00:00", "Z"), "cities": out}
+
+
+@dataclass
+class Deps:
+    read_reference: Callable
+    fetch: Callable
+    write_doc: Callable
+    append_rows: Callable
+
+
+def _real_deps() -> Deps:
+    return Deps(
+        read_reference=lambda: scan_log.read_doc(scan_log.REFERENCE_PATH),
+        fetch=lambda coords: open_meteo_cities.fetch(coords),
+        write_doc=lambda path, obj: scan_log.write_doc(path, obj),
+        append_rows=lambda path, rows: scan_log.append_many(path, rows),
+    )
+
+
+def run(now: datetime, deps: Deps) -> dict:
+    """One pass: fetch every city at once, publish the document."""
+    reference = deps.read_reference() or {}
+    cities = cities_from_reference(reference)
+    if not cities:
+        print("[city_consensus] no reference on the data branch — skipped")
+        return {"cities": 0, "logged": 0}
+    try:
+        raw = deps.fetch([(c["lat"], c["lon"]) for c in cities])
+    except Exception as e:                # noqa: BLE001 - a dead upstream must
+        print(f"[city_consensus] fetch skipped ({e})")   # not fail the job
+        return {"cities": 0, "logged": 0}
+    doc = build(reference, raw, cities, now)
+    deps.write_doc(CONSENSUS_PATH, doc)
+    return {"cities": len(doc["cities"]), "logged": 0}
