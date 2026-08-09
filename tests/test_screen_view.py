@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
+import scan_cities
 import screen_pnl
 import screen_view
 
@@ -917,3 +918,9 @@ def test_the_day_column_sits_where_a_phone_can_see_it():
 def test_the_day_column_explains_what_red_promises():
     tip = screen_view._TIPS["Day"]
     assert "Tomorrow" in tip and "alert" in tip.lower()
+
+
+def test_city_key_maps_a_series_to_its_city_code():
+    assert scan_cities.city_key("KXLOWTDEN") == "DEN"
+    assert scan_cities.city_key("kxhighny") == "NYC"
+    assert scan_cities.city_key("KXNOTACITY") is None

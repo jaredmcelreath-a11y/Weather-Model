@@ -63,3 +63,37 @@ def test_a_failed_reference_write_does_not_lose_the_candidates():
     deps.write_reference = boom
     got = screen.screen_pass(_NOW, deps)
     assert got["cities"] == 1
+
+
+def _obs(temp_c):
+    """Two readings inside the Aug 7 Denver climate day, in Celsius as NWS
+    sends them. Two, because realized_extreme needs MIN_OBS_SUPPORT of them."""
+    return [{"properties": {"timestamp": "2026-08-07T12:00:00+00:00",
+                            "temperature": {"value": temp_c}}},
+            {"properties": {"timestamp": "2026-08-07T13:00:00+00:00",
+                            "temperature": {"value": temp_c}}}]
+
+
+def test_the_reference_publishes_the_realized_extreme_for_today():
+    # city_consensus folds its models against this rather than refetching 20
+    # cities' observations, so the board and the Models column sit on the same
+    # basis as Ref.
+    published = []
+    deps = _deps(published)
+    deps.fetch_obs = lambda station, start, end: _obs(16.1)      # 61.0 F
+    screen.screen_pass(_NOW, deps)
+    city = published[0]["cities"]["KXLOWTDEN"]
+    assert city["realized"]["2026-08-07"] == 61.0
+
+
+def test_a_day_not_yet_in_progress_has_no_realized_entry():
+    # The market listed for Aug 8 is screened, but nothing has been realized on
+    # it -- an entry of None would read as "measured, and it is nothing".
+    published = []
+    deps = _deps(published)
+    deps.list_markets = lambda series, status=None: [
+        _market("KXLOWTDEN-26AUG07-T71"), _market("KXLOWTDEN-26AUG08-T71")]
+    deps.fetch_obs = lambda station, start, end: _obs(16.1)
+    screen.screen_pass(_NOW, deps)
+    realized = published[0]["cities"]["KXLOWTDEN"].get("realized") or {}
+    assert "2026-08-08" not in realized

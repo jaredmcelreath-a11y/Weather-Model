@@ -109,6 +109,14 @@ def name_of(key: str):
     return _CITY_NAMES.get((key or "").upper())
 
 
+def city_key(series: str):
+    """The CITY key ('DEN') behind a Kalshi series, or None if unmapped.
+
+    The code, not the display name: it is what the consensus log files rows
+    under, and a display name can be reworded without breaking a log."""
+    return _SERIES_CITY.get((series or "").upper())
+
+
 def resolve(lat: float, lon: float, fetch=None) -> dict:
     """Timezone and downstream URLs for a point. Cached a day upstream: the
     gridpoint mapping essentially never changes."""
