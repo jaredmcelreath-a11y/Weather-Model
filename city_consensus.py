@@ -27,6 +27,7 @@ import screen_forecast
 from sources import open_meteo_cities
 
 CONSENSUS_PATH = "city_consensus.json"
+LOG_PATH = "city_consensus.jsonl"
 
 # Below this many contributing models there is no consensus worth printing: two
 # models agreeing is not agreement, and the spread of two is a range.
@@ -172,6 +173,42 @@ def build(reference: dict, raw: list, cities: list, now: datetime) -> dict:
     return {"generated": now.isoformat().replace("+00:00", "Z"), "cities": out}
 
 
+# ---- The hourly forecast log -----------------------------------------------
+
+def should_log(now: datetime) -> bool:
+    """Whether this pass writes a log row.
+
+    Once an hour, not once a pass: 20 cities x 2 variables x 2 days is 80 rows,
+    and append_many rewrites the whole daily partition on every append. Hourly
+    is already finer than the models update -- 6 hours for the globals, 1 for
+    HRRR. Dispatches land at :00 and :30, so this picks exactly one of them.
+
+    In Python rather than a bash minute-test so it can be tested; scan.yml has
+    the shell version of this pattern for settlement and it is untestable."""
+    return now.minute < 30
+
+
+def log_rows(doc: dict, now: datetime) -> list:
+    """One row per city / day / variable that has a consensus.
+
+    UNFOLDED values only: a scorer grades what the forecast said, and folding
+    mixes in what had already happened. A variable with no consensus is omitted
+    rather than logged as Nones -- there is nothing to score, and the empty
+    rows would dilute any later hit rate."""
+    stamp = now.isoformat().replace("+00:00", "Z")
+    rows = []
+    for code, city in (doc.get("cities") or {}).items():
+        for day, block in (city.get("days") or {}).items():
+            for variable, entry in (block or {}).items():
+                if (entry or {}).get("cons") is None:
+                    continue
+                rows.append({"ts": stamp, "city": code, "day": day,
+                             "variable": variable, "nws": entry.get("nws"),
+                             "cons": entry["cons"], "spread": entry.get("spread"),
+                             "n": entry.get("n"), "models": entry.get("models")})
+    return rows
+
+
 @dataclass
 class Deps:
     read_reference: Callable
@@ -203,4 +240,23 @@ def run(now: datetime, deps: Deps) -> dict:
         return {"cities": 0, "logged": 0}
     doc = build(reference, raw, cities, now)
     deps.write_doc(CONSENSUS_PATH, doc)
-    return {"cities": len(doc["cities"]), "logged": 0}
+    logged = 0
+    if should_log(now):
+        rows = log_rows(doc, now)
+        if rows:
+            logged = deps.append_rows(LOG_PATH, rows) or 0
+    return {"cities": len(doc["cities"]), "logged": logged}
+
+
+def main(argv: list, deps: Deps = None, now: datetime = None) -> int:
+    if (argv[0] if argv else "") == "run":
+        deps = deps or _real_deps()
+        print(f"[city_consensus] {run(now or datetime.now(timezone.utc), deps)}")
+        return 0
+    print("usage: city_consensus.py run")
+    return 2
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main(sys.argv[1:]))
