@@ -47,13 +47,9 @@ def forecast_is_usable(reference: dict, now: datetime) -> bool:
     return age is not None and age <= STALE_AFTER_MIN
 
 
-def in_progress_day(now: datetime, tzname: str) -> date:
-    """The climate day running right now in this city.
-
-    Fixed LST, not local time: the climate day ends at 01:00 local during
-    daylight saving, so the local date is a day ahead for that hour."""
-    offset = screen_forecast.lst_offset_hours(tzname)
-    return (now.astimezone(timezone.utc) + timedelta(hours=offset)).date()
+# The climate day running right now in a city. Defined in screen_forecast so
+# the Screen page can mark exactly the rows this loop is able to push.
+in_progress_day = screen_forecast.in_progress_day
 
 
 def day_window(day: date, tzname: str):

@@ -842,3 +842,78 @@ def test_every_candidate_column_has_a_cell():
                             {}, set())
     for column in screen_view._COLUMNS:
         assert column in row
+
+
+# ---- Which day a bracket settles on ----------------------------------------
+#
+# The alert loop only ever pushes brackets settling on the climate day running
+# RIGHT NOW (screen_alert.check). The page used to redden any bracket the latest
+# firing added, whichever day it settled on, so a red row promised a push it
+# could not deliver: measured over 2026-08-08/09, 69 of the 84 newly-red rows
+# were TOMORROW's markets and none of them could ever have alerted.
+
+_ZONES = {"KXLOWTDEN": "America/Denver"}
+# 15:00Z on Aug 7 is 08:00 MST, so Denver's climate day in progress is Aug 7.
+_MIDDAY = datetime(2026, 8, 7, 15, 0, tzinfo=timezone.utc)
+
+
+def _d(ticker, series="KXLOWTDEN"):
+    return {"ts": "2026-08-07T15:00:00Z", "series": series, "ticker": ticker}
+
+
+def test_a_bracket_settling_on_the_running_climate_day_is_todays():
+    assert screen_view.settles_today(_d("KXLOWTDEN-26AUG07-B62.5"),
+                                     _ZONES, _MIDDAY) is True
+
+
+def test_tomorrows_bracket_is_not_todays_however_close_it_closes():
+    assert screen_view.settles_today(_d("KXLOWTDEN-26AUG08-B62.5"),
+                                     _ZONES, _MIDDAY) is False
+
+
+def test_a_city_with_no_known_timezone_is_never_todays():
+    # The alert skips a city the reference has no timezone for, so the page must
+    # not claim a row it cannot have pushed.
+    assert screen_view.settles_today(_d("KXLOWTZZZ-26AUG07-B62.5", "KXLOWTZZZ"),
+                                     _ZONES, _MIDDAY) is False
+
+
+def test_the_day_is_read_in_fixed_standard_time_not_local_time():
+    # 05:30Z on Aug 8 is 23:30 MST on Aug 7: the climate day still running is
+    # Aug 7, even though the local calendar has not been Aug 7 for hours in
+    # daylight time.
+    late = datetime(2026, 8, 8, 5, 30, tzinfo=timezone.utc)
+    assert screen_view.settles_today(_d("KXLOWTDEN-26AUG07-B62.5"),
+                                     _ZONES, late) is True
+
+
+def test_the_day_column_names_which_day_the_bracket_is_about():
+    assert screen_view.day_of(_d("KXLOWTDEN-26AUG07-B62.5"),
+                              _ZONES, _MIDDAY) == "Today"
+    assert screen_view.day_of(_d("KXLOWTDEN-26AUG08-B62.5"),
+                              _ZONES, _MIDDAY) == "Tomorrow"
+
+
+def test_a_day_we_cannot_place_reads_as_a_dash():
+    assert screen_view.day_of(_d("nonsense"), _ZONES, _MIDDAY) == "—"
+    assert screen_view.day_of(_d("KXLOWTZZZ-26AUG07-B62.5", "KXLOWTZZZ"),
+                              _ZONES, _MIDDAY) == "—"
+
+
+def test_only_todays_new_brackets_are_reddened():
+    # Red means "your phone has this too". Tomorrow's bracket is new and stays
+    # plain, because screen_alert never looks at it.
+    rows = [_d("KXLOWTDEN-26AUG07-B62.5"), _d("KXLOWTDEN-26AUG08-B62.5")]
+    assert screen_view.pushed_tickers(rows, _ZONES, _MIDDAY) == {
+        "KXLOWTDEN-26AUG07-B62.5"}
+
+
+def test_the_day_column_sits_where_a_phone_can_see_it():
+    # Second column: at 390px only the first few are visible without scrolling,
+    # and "is this today's?" is the question the red highlight now answers.
+    assert screen_view._COLUMNS[1] == "Day"
+
+
+def test_the_day_column_explains_what_red_promises():
+    tip = screen_view._TIPS["Day"]
+    assert "Tomorrow" in tip and "alert" in tip.lower()

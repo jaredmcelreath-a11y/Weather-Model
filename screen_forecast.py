@@ -5,7 +5,7 @@ here -- only windowing onto the right day.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 _MONTHS = {m.upper(): i for i, m in enumerate(
@@ -41,6 +41,19 @@ def lst_offset_hours(tzname: str) -> int:
     boundary by an hour for half the year."""
     january = datetime(2026, 1, 15, 12, tzinfo=ZoneInfo(tzname))
     return int(january.utcoffset().total_seconds() // 3600)
+
+
+def in_progress_day(now: datetime, tzname: str) -> date:
+    """The climate day running right now in this city.
+
+    Fixed LST, not local time: the climate day ends at 01:00 local during
+    daylight saving, so the local date is a day ahead for that hour.
+
+    Lives here rather than in screen_alert because the Screen page needs the
+    same answer -- the page's red highlight means "the alert pushed this", and
+    two copies of the day boundary would silently drift apart."""
+    offset = lst_offset_hours(tzname)
+    return (now.astimezone(timezone.utc) + timedelta(hours=offset)).date()
 
 
 def _day_periods(periods: list, day: date, tzname: str) -> list:

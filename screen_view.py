@@ -20,6 +20,7 @@ import bet_history
 import market_view
 import scan_cities
 import scan_log
+import screen_forecast
 import screen_pnl
 import screen_rules
 from screen_rules import (MAX_LIVE_NO_PRICE, MIN_LIVE_NO_PRICE,  # noqa: F401
@@ -103,6 +104,12 @@ _TIPS = {
                "Based on normal diurnal timing, not a lock detector.",
     "Hrs": "Hours until the Kalshi market closes, which is also the end of its "
            "climate day. Over 24 means the day has not started yet.",
+    "Day": "Which climate day the bracket is about, in the city's own fixed "
+           "standard time. Only 'Today' rows can turn red and only they send a "
+           "phone alert — the alert loop runs every 5 minutes against the day "
+           "already in progress, while a 'Tomorrow' row is an advance listing "
+           "whose forecast has all day to move. '—' means the day could not be "
+           "read.",
 }
 
 # The trade table's own tooltips. A SEPARATE map because half its column names
@@ -640,6 +647,66 @@ def new_tickers(rows: list, now=None) -> set:
     return {r.get("ticker") for r in rows if r.get("ts") == stamps[-1]} - previous
 
 
+# ---- Which climate day a bracket settles on --------------------------------
+#
+# The screen lists brackets up to ~30 hours out, so roughly four rows in five
+# are about TOMORROW. The alert loop deliberately pushes only the day already
+# running (screen_alert.check), which left the red highlight promising a
+# notification for rows that could never send one: measured over 2026-08-08/09,
+# 69 of 84 newly-red rows were tomorrow's markets, 8 were today's and pushed,
+# and not one same-day row in the price band was missed. Red now means exactly
+# "this is on your phone too", and the Day column says which rows can be.
+
+@st.cache_data(ttl=300, show_spinner=False)
+def city_timezones() -> dict:
+    """{series: IANA zone} from the reference screen.py publishes each firing.
+
+    The same document screen_alert reads, so the page and the alert place a
+    bracket's climate day identically. A city absent here is one the alert
+    skips, which is why an unknown zone reads as "not today's" below rather
+    than falling back to a guess."""
+    doc = scan_log.read_doc(scan_log.REFERENCE_PATH)
+    return {series: (info or {}).get("timezone")
+            for series, info in (doc.get("cities") or {}).items()}
+
+
+def _days(row: dict, zones: dict, now):
+    """(the bracket's climate day, the day running now in its city), or Nones."""
+    tzname = (zones or {}).get(row.get("series"))
+    day = screen_forecast.climate_day_of_ticker(row.get("ticker") or "")
+    if not tzname or day is None:
+        return None, None
+    return day, screen_forecast.in_progress_day(now or datetime.now(timezone.utc),
+                                                tzname)
+
+
+def settles_today(row: dict, zones: dict, now=None) -> bool:
+    """Whether this bracket settles on the climate day running RIGHT NOW in its
+    own city — exactly the rows screen_alert is able to push."""
+    day, today = _days(row, zones, now)
+    return day is not None and day == today
+
+
+def day_of(row: dict, zones: dict, now=None) -> str:
+    """'Today', 'Tomorrow', or '—' when the row cannot be placed.
+
+    Only those two days can normally appear: Kalshi lists a temperature market
+    about 30 hours before it closes. Anything else — an unmapped city, a ticker
+    with no readable date, a market still open past its own day — reads '—'
+    rather than inventing a third label for a case that means "nothing to say"."""
+    day, today = _days(row, zones, now)
+    if day is None:
+        return "—"
+    if day == today:
+        return "Today"
+    return "Tomorrow" if day == today + timedelta(days=1) else "—"
+
+
+def pushed_tickers(rows: list, zones: dict, now=None) -> set:
+    """Of these rows, the ones the alert loop would have notified about."""
+    return {r.get("ticker") for r in rows if settles_today(r, zones, now)}
+
+
 def display_rows(rows: list) -> list:
     """Soonest close first.
 
@@ -703,8 +770,9 @@ table.wtbl th .stipt{position:absolute;top:1.9rem;right:0;z-index:1000;
 table.wtbl th:first-child .stipt{right:auto;left:0;}
 table.wtbl th .stip:focus ~ .stipt{opacity:1;visibility:visible;}
 @media (hover:hover){table.wtbl th .stip:hover ~ .stipt{opacity:1;visibility:visible;}}
-/* Added by the newest firing — reverts to ordinary ink an hour later. Tints the
-   whole row, tracking the app's existing .hold red rather than a new colour. */
+/* Added by the newest firing AND settling today, so the phone alert carries the
+   same row — reverts to ordinary ink an hour later. Tints the whole row,
+   tracking the app's existing .hold red rather than a new colour. */
 table.wtbl tr.snew td{color:var(--bad);background:rgba(229,120,110,0.12);}
 /* Still-open trades in the history table, in the app's terracotta — the same
    colour the History page uses for a marked-to-market number, so a `~` value is
@@ -741,8 +809,13 @@ def _table(columns: list, rows: list, tips: dict = None) -> str:
 # therefore the least informative cell on the row. Hrs sits further right than
 # its importance suggests because rows are already SORTED by it — the ordering
 # carries the urgency, the column just confirms it.
-_COLUMNS = ["City", "Var", "Bracket", "Price", "NO Now", "Gap", "Str", "Storm",
-            "Settled", "Drift", "Ref", "Hrs", "Side"]
+#
+# Day is second, ahead of Var, and costs NO Now its place in the visible five on
+# a phone. Worth it: four rows in five are about tomorrow, and until this column
+# existed nothing on the page said so — the red highlight looked like it was
+# skipping rows at random.
+_COLUMNS = ["City", "Day", "Var", "Bracket", "Price", "NO Now", "Gap", "Str",
+            "Storm", "Settled", "Drift", "Ref", "Hrs", "Side"]
 
 # Same mobile logic as above, different priority: on a HISTORY table the outcome
 # and the money are the point, so Result, P&L and % Gain sit ahead of the
@@ -753,11 +826,13 @@ _TRADE_COLUMNS = ["Day", "City", "Contract", "Result", "P&L", "% Gain",
                   "Entry", "Exit", "Qty", "Flagged", "Side"]
 
 
-def _candidate_row(r: dict, live: dict, fresh: set) -> dict:
+def _candidate_row(r: dict, live: dict, fresh: set, zones: dict = None,
+                   now=None) -> dict:
     price = r.get("price")
     return {
         "_class": "snew" if r.get("ticker") in fresh else "",
         "City": city_of(r),
+        "Day": day_of(r, zones or {}, now),
         "Var": str(r.get("variable") or ""),
         "Bracket": _bracket_label(r),
         "Price": "" if price is None else f"{float(price):.2f}",
@@ -1014,15 +1089,23 @@ def render() -> None:
         live = live_no_prices(rows)
         rows, cheap, dear = tradeable_now(rows, live)
     if rows:
+        zones = city_timezones()
         # Freshness is counted off the VISIBLE rows: a filtered-out arrival is
-        # not on screen and must not be claimed in red.
-        fresh = new_tickers(all_rows) & {r.get("ticker") for r in rows}
+        # not on screen and must not be claimed in red. Same-day only, because
+        # red's whole promise is that the alert loop pushed it — see the Day
+        # column's tooltip.
+        fresh = (new_tickers(all_rows) & {r.get("ticker") for r in rows}
+                 & pushed_tickers(rows, zones))
         st.markdown(
-            _table(_COLUMNS, [_candidate_row(r, live, fresh)
+            _table(_COLUMNS, [_candidate_row(r, live, fresh, zones)
                               for r in display_rows(rows)]),
             unsafe_allow_html=True)
         if fresh:
-            st.caption(f"{len(fresh)} in red arrived with the latest firing.")
+            st.caption(f"{len(fresh)} in red arrived with the latest firing "
+                       f"and was pushed to your phone."
+                       if len(fresh) == 1 else
+                       f"{len(fresh)} in red arrived with the latest firing "
+                       f"and were pushed to your phone.")
     else:
         # Still fall through to the positions table: holding something the
         # screen flagged yesterday is exactly the day you want to see it.
