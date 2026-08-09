@@ -139,7 +139,7 @@ def test_alert_body_caps_its_length():
             for i in range(14)]
     lines = screen_alert.alert_body(rows).splitlines()
     assert len(lines) == 11
-    assert lines[-1] == "…and 4 more"
+    assert lines[-1] == "…and 4 more in the next push"
 
 
 def test_alert_body_shows_an_unquoted_row_honestly():
@@ -150,3 +150,66 @@ def test_alert_body_shows_an_unquoted_row_honestly():
 
 def test_main_rejects_an_unknown_command():
     assert screen_alert.main([]) == 2
+
+
+# ---- The overflow must not be recorded as delivered ------------------------
+#
+# check() used to mark every fresh ticker as pushed while alert_body named only
+# the first MAX_BODY_LINES, so anything past the cap was silently marked
+# delivered and never named again. Harmless while same-day batches stay small
+# (measured max 6), fatal the moment the scope widens.
+
+def _many(n):
+    return [{"series": "KXLOWTDEN", "variable": "low", "label": f"{i}",
+             "ticker": f"KXLOWTDEN-26AUG07-T{i}", "no_price": 0.5,
+             "forecast": 61.0, "gap": 9.0, "kind": "forecast"} for i in range(n)]
+
+
+def test_announced_is_what_the_body_names():
+    rows = _many(14)
+    named = screen_alert.announced(rows)
+    assert len(named) == screen_alert.MAX_BODY_LINES
+    assert named == rows[:screen_alert.MAX_BODY_LINES]
+
+
+def test_announced_returns_everything_under_the_cap():
+    rows = _many(3)
+    assert screen_alert.announced(rows) == rows
+
+
+def test_the_overflow_line_promises_the_next_push_not_a_silent_drop():
+    lines = screen_alert.alert_body(_many(14)).splitlines()
+    assert len(lines) == screen_alert.MAX_BODY_LINES + 1
+    assert lines[-1] == "…and 4 more in the next push"
+
+
+class _Overflow(Harness):
+    """A city whose whole same-day ladder fires at once."""
+
+    def deps(self):
+        d = super().deps()
+        d.list_markets = lambda series: [
+            dict(_market(), ticker=f"KXLOWTDEN-26AUG07-T{71 + i}",
+                 floor_strike=71 + i, yes_sub_title=f"{72 + i}° or above")
+            for i in range(14)]
+        return d
+
+
+def test_only_the_named_rows_are_recorded_as_pushed():
+    h = _Overflow()
+    got = screen_alert.check(_NOW, h.deps())
+    assert got["new"] == 14                       # all 14 are genuinely new
+    assert got["pushed"] == screen_alert.MAX_BODY_LINES
+    title, _ = h.sent[0]
+    assert title == "10 new screen rows"          # the title counts what it names
+    assert h.written[0]["2026-08-07"] == sorted(
+        f"KXLOWTDEN-26AUG07-T{71 + i}" for i in range(screen_alert.MAX_BODY_LINES))
+
+
+def test_the_overflow_is_pushed_by_the_following_pass():
+    h = _Overflow()
+    screen_alert.check(_NOW, h.deps())
+    h.state = h.written[0]                        # the next pass reads it back
+    screen_alert.check(_NOW, h.deps())
+    assert h.sent[1][0] == "4 new screen rows"
+    assert len(h.written[1]["2026-08-07"]) == 14

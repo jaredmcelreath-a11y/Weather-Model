@@ -195,11 +195,23 @@ def _line(c: dict) -> str:
     return f"{city} {c.get('variable')} {label} · NO {shown} · {tail}"
 
 
+def announced(candidates: list, max_lines: int = MAX_BODY_LINES) -> list:
+    """The candidates this push actually NAMES.
+
+    State records exactly this list and never the whole batch. A row the body
+    could not fit has not been announced, so marking it pushed would lose it for
+    good -- the same failure as advancing state on a failed POST, and for the
+    same reason. The remainder simply arrives with the next pass, `max_lines` at
+    a time, which drains a batch of any size within a few minutes."""
+    return candidates[:max_lines]
+
+
 def alert_body(candidates: list, max_lines: int = MAX_BODY_LINES) -> str:
-    lines = [_line(c) for c in candidates[:max_lines]]
-    extra = len(candidates) - len(lines)
+    named = announced(candidates, max_lines)
+    lines = [_line(c) for c in named]
+    extra = len(candidates) - len(named)
     if extra > 0:
-        lines.append(f"…and {extra} more")
+        lines.append(f"…and {extra} more in the next push")
     return "\n".join(lines)
 
 
@@ -238,14 +250,19 @@ def check(now: datetime, deps: Deps) -> dict:
                                      [t for _, t in readings], now, extreme))
     fresh = unseen(found, state)
     if not fresh:
-        return {"cities": cities, "found": len(found), "new": 0}
-    if deps.notify(alert_title(len(fresh)), alert_body(fresh)):
-        # Only after a delivered push: advancing state on a failed POST would
-        # lose the row for good, and this is the alert's entire purpose.
-        deps.write_state(prune(record(state, fresh), now.date()))
+        return {"cities": cities, "found": len(found), "new": 0, "pushed": 0}
+    named = announced(fresh)
+    pushed = 0
+    if deps.notify(alert_title(len(named)), alert_body(fresh)):
+        # Only after a delivered push, and only what the body NAMED: advancing
+        # state on a failed POST — or on a row the notification never mentioned
+        # — loses the row for good, and this is the alert's entire purpose.
+        deps.write_state(prune(record(state, named), now.date()))
+        pushed = len(named)
     else:
         print("[screen_alert] send_ntfy False — state not advanced")
-    return {"cities": cities, "found": len(found), "new": len(fresh)}
+    return {"cities": cities, "found": len(found), "new": len(fresh),
+            "pushed": pushed}
 
 
 def main(argv: list, deps: Deps = None, now: datetime = None) -> int:
