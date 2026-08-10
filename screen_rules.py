@@ -151,6 +151,42 @@ def within_band(price) -> bool:
     return MIN_LIVE_NO_PRICE <= float(price) <= MAX_LIVE_NO_PRICE
 
 
+# The mirror band, for the side that BUYS rather than fades. Above the cap the
+# market already agrees and under 11% is left to win; below the floor the market
+# is saying the screen's REFERENCE is wrong, not that the price is -- a
+# supposedly locked bracket at 5c is far likelier to mean a bad station reading
+# than free money, and that is exactly when this screen must not shout.
+#
+# One band, applied at firing (screen.py), on the live loop (screen_alert) and
+# at page load (screen_view), so a row cannot be logged under a standard the
+# page then disagrees with.
+MIN_LIVE_YES_PRICE = 0.20
+MAX_LIVE_YES_PRICE = 0.90
+
+
+def yes_ask_of(market: dict):
+    """Dollars to BUY YES on this market right now, or None when unquoted.
+
+    Kalshi's own YES ask when there is one, else the NO bid inverted: buying YES
+    sells against the resting NO bid, so YES ask = 1 - no bid. Prices arrive as
+    dollar STRINGS ("0.3900"), the gotcha that silently empties a scan pass."""
+    ask = scan_log.dollars(market.get("yes_ask_dollars"))
+    if ask is not None:
+        return ask
+    bid = scan_log.dollars(market.get("no_bid_dollars"))
+    return None if bid is None else round(1.0 - bid, 2)
+
+
+def within_yes_band(price) -> bool:
+    """Whether a live YES price is worth showing or pushing.
+
+    An unquoted row (None) SURVIVES, as on the fade side: an absent quote is
+    thin liquidity or a market that has since closed, not evidence."""
+    if price is None:
+        return True
+    return MIN_LIVE_YES_PRICE <= float(price) <= MAX_LIVE_YES_PRICE
+
+
 def winning_range(row: dict):
     """The INCLUSIVE (lo, hi) temperatures at which this contract settles YES.
 
@@ -335,3 +371,123 @@ def dead_candidate(row: dict, bound, now_iso: str):
     else:
         return None
     return _candidate(row, "dead", float(bound), gap, price, now_iso)
+
+
+# ---- The YES side: brackets the day has already won -----------------------
+#
+# Not a mirror of dead_candidate, because the physics is not symmetric. A low
+# can only FALL, so a low bracket left open UPWARD ("92 or above") never becomes
+# certain while the day runs -- an evening downdraft can still crash it. Only a
+# tail open in the direction the extreme can still move is ever safe.
+
+def settled_inside(row: dict, bound) -> bool:
+    """Whether EVERY whole-degF value this reading could settle at wins.
+
+    On the settled basis, never the raw reading: a 92.4 that could be reported
+    as 91 does not "already sit inside" a 92-and-above bracket, however it looks
+    on the thermometer."""
+    if bound is None:
+        return False
+    lo, hi = winning_range(row)
+    lowest, highest = settled_range(bound)
+    if lo is not None and lowest < lo:
+        return False
+    if hi is not None and highest > hi:
+        return False
+    return True
+
+
+def _yes_candidate(row: dict, kind: str, reference: float, margin: float,
+                   price, now_iso: str) -> dict:
+    """A YES-side candidate. Deliberately NOT the fade shape: `margin` not
+    `gap`, `reference` not `forecast`, and an explicit `side`, so a row from
+    this screen can never be mistaken for a fade even if the two logs are read
+    together."""
+    return {
+        "ts": now_iso,
+        "series": row.get("series"),
+        "variable": row.get("variable"),
+        "ticker": row.get("ticker"),
+        "floor": row.get("floor"),
+        "cap": row.get("cap"),
+        "strike_type": row.get("strike_type"),
+        "label": row.get("label"),
+        "side": "YES",
+        "price": price,
+        "yes_bid": row.get("yes_bid"),
+        "volume": row.get("volume"),
+        "reference": reference,
+        "margin": margin,
+        "kind": kind,
+        "hours_to_close": row.get("hours_to_close"),
+    }
+
+
+def locked_candidate(row: dict, bound, now_iso: str):
+    """A bracket the realized extreme has made impossible to LOSE, or None.
+
+    Fires only on a tail left open in the direction the extreme can still move:
+    a LOW bracket unbounded BELOW once the low has reached it, or a HIGH bracket
+    unbounded ABOVE. Everything else can still be taken away."""
+    if bound is None:
+        return None
+    price = row.get("yes_ask")
+    if not within_yes_band(price):
+        return None
+    variable = row.get("variable")
+    lo, hi = winning_range(row)
+    lowest_settled, highest_settled = settled_range(bound)
+    if variable == "low":
+        # Unbounded BELOW, and every value it could settle at already wins.
+        if lo is not None or hi is None or highest_settled > hi:
+            return None
+        margin = round(hi - highest_settled, 2)
+    elif variable == "high":
+        if hi is not None or lo is None or lowest_settled < lo:
+            return None
+        margin = round(lowest_settled - lo, 2)
+    else:
+        return None
+    return _yes_candidate(row, "locked", float(bound), margin, price, now_iso)
+
+
+def guarded_candidate(row: dict, bound, remaining, now_iso: str):
+    """A bracket the realized extreme already wins and the forecast protects.
+
+    Two conditions: every value the realized extreme could settle at already
+    wins, AND the forecast still ahead keeps it there by MIN_CANDIDATE_GAP_F.
+
+    Each variable has exactly ONE threatened edge, which is what makes this and
+    locked_candidate partition rather than overlap: a low can only fall, so only
+    its `lo` can be breached; a high can only rise, so only its `hi` can. An
+    unbounded threatened edge means nothing can take the bracket away, which is
+    locked_candidate's job, not this one's.
+
+    The bar is the FLAT MIN_CANDIDATE_GAP_F, never required_gap. required_gap
+    scales by forecast error at the lead where the extreme FORMS; here it has
+    already formed, and the only question left is whether the remaining hours
+    can undercut it -- a short-range, convection-dominated risk. required_gap
+    would demand 9.7F of a same-day low and silence every case this exists for.
+    Read the row's Storm column beside this: it is the risk that breaks it."""
+    if bound is None or remaining is None:
+        return None
+    price = row.get("yes_ask")
+    if not within_yes_band(price):
+        return None
+    if not settled_inside(row, bound):
+        return None
+    variable = row.get("variable")
+    lo, hi = winning_range(row)
+    if variable == "low":
+        if lo is None:                    # nothing below to breach
+            return None
+        margin = round(float(remaining) - lo, 2)
+    elif variable == "high":
+        if hi is None:
+            return None
+        margin = round(hi - float(remaining), 2)
+    else:
+        return None
+    if margin < MIN_CANDIDATE_GAP_F:
+        return None
+    return _yes_candidate(row, "guarded", float(bound), margin, price, now_iso)

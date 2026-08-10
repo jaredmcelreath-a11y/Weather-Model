@@ -96,6 +96,39 @@ def city_candidates(series: str, day: date, markets: list, realized: list,
     return out
 
 
+def city_locked(series: str, day: date, markets: list, realized: list,
+                now: datetime, remaining) -> list:
+    """Alertable YES rows for one city's in-progress climate day.
+
+    `remaining` is None when the reference is stale or missing, which disables
+    the guarded rule; the locked one needs only `realized`. Locked wins when
+    both would fire -- "cannot lose" is strictly more useful than "the forecast
+    is holding it"."""
+    now_iso = now.isoformat().replace("+00:00", "Z")
+    variable = scan_log.variable_of_series(series)
+    bound = screen_rules.realized_extreme(realized, variable)
+    out = []
+    for market in markets or []:
+        row = scan_log.build_snapshot_row(market, series, now)
+        if row is None:
+            continue
+        if screen_forecast.climate_day_of_ticker(row["ticker"]) != day:
+            continue
+        yes_price = screen_rules.yes_ask_of(market)
+        if not screen_rules.within_yes_band(yes_price):
+            continue
+        # The LIVE price decides, not the firing-time one on the row.
+        row = dict(row, yes_ask=yes_price)
+        hit = screen_rules.locked_candidate(row, bound, now_iso)
+        if hit is None and remaining is not None:
+            hit = screen_rules.guarded_candidate(row, bound, remaining, now_iso)
+        if hit is None:
+            continue
+        hit["yes_price"] = yes_price
+        out.append(hit)
+    return out
+
+
 MAX_BODY_LINES = 10      # a notification longer than this is unreadable
 STATE_KEEP_DAYS = 2
 REQUEST_SPACING_S = 0.5  # the same Kalshi pacing the screen and scanner use
@@ -110,6 +143,11 @@ class Deps:
     fetch_obs: Callable
     notify: Callable
     sleep: Callable = time.sleep
+    # The YES side keeps its OWN state document. A bracket can be a fade in the
+    # morning and guarded by evening, and one shared file keyed on bare tickers
+    # would let the first push suppress the second for good.
+    read_locked_state: Callable = None
+    write_locked_state: Callable = None
 
 
 def _real_deps() -> Deps:
@@ -122,6 +160,10 @@ def _real_deps() -> Deps:
         list_markets=lambda series: kalshi.list_series_markets(series, status="open"),
         fetch_obs=screen.fetch_observations,
         notify=notify_mod.send_ntfy,
+        read_locked_state=lambda: scan_log.read_doc(
+            scan_log.LOCKED_ALERT_STATE_PATH),
+        write_locked_state=lambda obj: scan_log.write_doc(
+            scan_log.LOCKED_ALERT_STATE_PATH, obj),
     )
 
 
@@ -215,6 +257,50 @@ def alert_body(candidates: list, max_lines: int = MAX_BODY_LINES) -> str:
     return "\n".join(lines)
 
 
+def locked_title(count: int) -> str:
+    return f"{count} new locked row" + ("" if count == 1 else "s")
+
+
+def _locked_line(c: dict) -> str:
+    city = scan_cities.city_name(c.get("series"))
+    label = c.get("label") or c.get("ticker")
+    price = c.get("yes_price")
+    shown = "—" if price is None else f"{round(float(price) * 100)}%"
+    if c.get("kind") == "locked":
+        word = "max" if c.get("variable") == "high" else "min"
+        tail = f"LOCKED ({word} {c.get('reference'):g} already)"
+    else:
+        # Never the word "locked" for a guarded row: it is a forecast bet, and
+        # the phone is the one place there is no Storm column to qualify it.
+        tail = f"GUARDED ({c.get('margin'):g}° margin)"
+    return f"{city} {c.get('variable')} {label} · YES {shown} · {tail}"
+
+
+def locked_body(candidates: list, max_lines: int = MAX_BODY_LINES) -> str:
+    named = announced(candidates, max_lines)
+    lines = [_locked_line(c) for c in named]
+    extra = len(candidates) - len(named)
+    if extra > 0:
+        lines.append(f"…and {extra} more in the next push")
+    return "\n".join(lines)
+
+
+def _dispatch(fresh: list, state: dict, title_fn, body_fn, deps, now,
+              write) -> int:
+    """Push what is new and record ONLY what the body named.
+
+    Shared by both sides so they cannot drift on the rule that matters: state
+    advances on a delivered push, and never past what the notification said."""
+    if not fresh:
+        return 0
+    named = announced(fresh)
+    if not deps.notify(title_fn(len(named)), body_fn(fresh)):
+        print("[screen_alert] send_ntfy False — state not advanced")
+        return 0
+    write(prune(record(state, named), now.date()))
+    return len(named)
+
+
 def check(now: datetime, deps: Deps) -> dict:
     """One pass: price every mapped city's same-day ladder and push what is new."""
     reference = deps.read_reference() or {}
@@ -224,7 +310,8 @@ def check(now: datetime, deps: Deps) -> dict:
         print(f"[screen_alert] reference age {age}min — dead rows only"
               if age is not None else "[screen_alert] no reference — dead rows only")
     state = deps.read_state() or {}
-    found, cities = [], 0
+    locked_state = (deps.read_locked_state() or {}) if deps.read_locked_state else {}
+    found, locked_found, cities = [], [], 0
     for series, info in (reference.get("cities") or {}).items():
         tzname, station = info.get("timezone"), info.get("station")
         if not tzname:
@@ -246,23 +333,26 @@ def check(now: datetime, deps: Deps) -> dict:
             except Exception as e:        # noqa: BLE001 - degrade to forecast
                 print(f"[screen_alert] {series}: observations skipped ({e})")
         extreme = (info.get("days") or {}).get(day.isoformat()) if usable else None
-        found.extend(city_candidates(series, day, markets,
-                                     [t for _, t in readings], now, extreme))
+        temps = [t for _, t in readings]
+        found.extend(city_candidates(series, day, markets, temps, now, extreme))
+        remaining = ((info.get("remaining") or {}).get(day.isoformat())
+                     if usable else None)
+        locked_found.extend(city_locked(series, day, markets, temps, now,
+                                        remaining))
+    # Only after a delivered push, and only what the body NAMED: advancing state
+    # on a failed POST — or on a row the notification never mentioned — loses
+    # the row for good, and this is the alert's entire purpose. _dispatch owns
+    # that rule so the two sides cannot drift on it.
     fresh = unseen(found, state)
-    if not fresh:
-        return {"cities": cities, "found": len(found), "new": 0, "pushed": 0}
-    named = announced(fresh)
-    pushed = 0
-    if deps.notify(alert_title(len(named)), alert_body(fresh)):
-        # Only after a delivered push, and only what the body NAMED: advancing
-        # state on a failed POST — or on a row the notification never mentioned
-        # — loses the row for good, and this is the alert's entire purpose.
-        deps.write_state(prune(record(state, named), now.date()))
-        pushed = len(named)
-    else:
-        print("[screen_alert] send_ntfy False — state not advanced")
+    pushed = _dispatch(fresh, state, alert_title, alert_body, deps, now,
+                       deps.write_state)
+    locked_fresh = unseen(locked_found, locked_state)
+    locked_pushed = _dispatch(locked_fresh, locked_state, locked_title,
+                              locked_body, deps, now,
+                              deps.write_locked_state or (lambda obj: None))
     return {"cities": cities, "found": len(found), "new": len(fresh),
-            "pushed": pushed}
+            "pushed": pushed, "locked_found": len(locked_found),
+            "locked_new": len(locked_fresh), "locked_pushed": locked_pushed}
 
 
 def main(argv: list, deps: Deps = None, now: datetime = None) -> int:

@@ -192,7 +192,7 @@ def _pop(period: dict) -> int:
     return 0 if value is None else int(value)
 
 
-def _still_open(day_periods: list, variable: str) -> list:
+def still_open(day_periods: list, variable: str) -> list:
     """The periods in which this variable's extreme can still MOVE.
 
     Asymmetric, and deliberately not mirrored. A high is finished at its peak:
@@ -224,13 +224,35 @@ def storm_chance(periods: list, day: date, tzname: str, variable: str, now):
     # left, so a high at 9pm would keep reporting the evening's storms long
     # after the peak that settled it had passed.
     day_periods = _day_periods(periods, day, tzname)
-    window = [(start, p) for start, p in _still_open(day_periods, variable)
+    window = [(start, p) for start, p in still_open(day_periods, variable)
               if start >= now]
     if not window:
         return None
     return max((_pop(p) for _, p in window
                 if "thunder" in str(p.get("shortForecast") or "").lower()),
                default=0)
+
+
+def remaining_extreme(periods: list, day: date, tzname: str, variable: str,
+                      now):
+    """The most extreme temperature still AHEAD in this variable's window.
+
+    The number that says whether a bracket the realized extreme has already
+    satisfied can still be taken away: for a low the coldest hour still to come,
+    for a high the hottest. None when no such hour is left -- a high past its
+    peak cannot move, and neither can any variable once the day is over.
+
+    Windowed exactly as storm_chance is, and for the same reason: cut on the
+    WHOLE day first, then narrowed to what is ahead, so a high at 9pm does not
+    re-peak on the evening and start reporting hours that cannot reach it."""
+    day_periods = _day_periods(periods, day, tzname)
+    window = [p for start, p in still_open(day_periods, variable)
+              if start >= now]
+    temps = [float(p["temperature"]) for p in window
+             if p.get("temperature") is not None]
+    if not temps:
+        return None
+    return min(temps) if variable == "low" else max(temps)
 
 
 def fold_realized(forecast_value, realized_temps: list, variable: str):
