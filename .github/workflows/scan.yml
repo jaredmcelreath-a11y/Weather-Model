@@ -45,7 +45,7 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: "snapshot | settle | report | screen | score"
+        description: "snapshot | settle | report | screen | score | consensus"
         required: true
         default: "snapshot"
 
@@ -102,6 +102,23 @@ jobs:
           SCAN_GH_TOKEN: ${{ secrets.SCAN_GH_TOKEN }}
         run: python screen.py run
 
+      # The consensus rides the same dispatch, right after the screen, because
+      # it reads the reference that step just published. ONE Open-Meteo request
+      # covers all 20 cities (~0.7s), and it runs here rather than in the app so
+      # the Streamlit Cloud shared-IP rate limit can never reach it.
+      #
+      # Deliberately AFTER the screen and not part of it: a broken consensus
+      # must never cost a screen pass.
+      - name: City model consensus
+        if: >-
+          github.event_name == 'schedule'
+          || github.event_name == 'repository_dispatch'
+        env:
+          SCAN_GH_REPO: ${{ github.repository }}
+          SCAN_GH_BRANCH: scan-data
+          SCAN_GH_TOKEN: ${{ secrets.SCAN_GH_TOKEN }}
+        run: python city_consensus.py run
+
       # Settlement runs once a day around 12:00Z: US city markets close ~06:00Z,
       # so by noon the prior climate day has finalized.
       #
@@ -148,7 +165,9 @@ jobs:
           SCAN_GH_TOKEN: ${{ secrets.SCAN_GH_TOKEN }}
           COMMAND: ${{ inputs.command }}
         run: |
-          if [ "$COMMAND" = "screen" ]; then
+          if [ "$COMMAND" = "consensus" ]; then
+            python city_consensus.py run
+          elif [ "$COMMAND" = "screen" ]; then
             python screen.py run
           elif [ "$COMMAND" = "score" ]; then
             python screen_score.py report

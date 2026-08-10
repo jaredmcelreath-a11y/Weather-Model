@@ -185,6 +185,12 @@ def screen_pass(now: datetime, deps: Deps) -> dict:
             if not in_progress:
                 continue
             bound = screen_rules.realized_extreme(realized, variable)
+            # Published so city_consensus can fold its models against the same
+            # realized extreme Ref is folded with, without refetching 20
+            # cities' observations. Only for a day in progress -- tomorrow has
+            # nothing realized, and an entry of None would read as "measured,
+            # and it is nothing".
+            reference[series].setdefault("realized", {})[day.isoformat()] = bound
             for r in day_rows:
                 hit = screen_rules.dead_candidate(r, bound, now_iso)
                 if hit:

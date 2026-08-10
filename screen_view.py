@@ -17,6 +17,7 @@ import pandas as pd
 import streamlit as st
 
 import bet_history
+import city_consensus
 import market_view
 import scan_cities
 import scan_log
@@ -104,6 +105,14 @@ _TIPS = {
                "Based on normal diurnal timing, not a lock detector.",
     "Hrs": "Hours until the Kalshi market closes, which is also the end of its "
            "climate day. Over 24 means the day has not started yet.",
+    "Models": "Consensus of five weather models (GFS, ECMWF, ICON, GEM, HRRR) "
+              "for this bracket's climate day, and how far apart they are. "
+              "Folded with temperature already realized, exactly like Ref, so "
+              "the two are comparable. A tight spread beside a distant Ref "
+              "means NWS is the outlier; a wide one means nobody knows. "
+              "Equal-weighted and NOT calibrated per city — a second opinion, "
+              "not a better forecast. '—' means too few models, or the feed is "
+              "over six hours stale.",
     "Day": "Which climate day the bracket is about, in the city's own fixed "
            "standard time. Only 'Today' rows can turn red and only they send a "
            "phone alert — the alert loop runs every 5 minutes against the day "
@@ -707,6 +716,162 @@ def pushed_tickers(rows: list, zones: dict, now=None) -> set:
     return {r.get("ticker") for r in rows if settles_today(r, zones, now)}
 
 
+# ---- The model consensus, published by city_consensus.py -------------------
+
+def consensus_doc_read() -> dict:
+    """The published consensus document, or {} when it is not there yet."""
+    return scan_log.read_doc(city_consensus.CONSENSUS_PATH)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def consensus_doc() -> dict:
+    return consensus_doc_read()
+
+
+def doc_is_fresh(doc: dict, now=None) -> bool:
+    """Whether the document is recent enough to show.
+
+    The globals refresh every 6 hours and HRRR hourly, so a document older than
+    STALE_AFTER_HOURS means the Action has been failing -- not that the models
+    have stood still. Showing it anyway would be a number with no date on it."""
+    stamp = (doc or {}).get("generated")
+    if not stamp:
+        return False
+    try:
+        when = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    now = now or datetime.now(timezone.utc)
+    return (now - when) <= timedelta(hours=city_consensus.STALE_AFTER_HOURS)
+
+
+def consensus_entry(row: dict, doc: dict):
+    """This candidate's published block, or None when the document lacks it."""
+    code = scan_cities.city_key(row.get("series") or "")
+    day = screen_forecast.climate_day_of_ticker(row.get("ticker") or "")
+    variable = row.get("variable")
+    if code is None or day is None or variable not in ("high", "low"):
+        return None
+    city = ((doc or {}).get("cities") or {}).get(code) or {}
+    return ((city.get("days") or {}).get(day.isoformat()) or {}).get(variable)
+
+
+def _models_cell(entry: dict) -> str:
+    """'92.1 ±1.4', or '—' when this variable had no consensus."""
+    value, spread = (entry or {}).get("cons_folded"), (entry or {}).get("spread")
+    if value is None:
+        return "—"
+    tail = "" if spread is None else f" ±{float(spread):.1f}"
+    return f"{float(value):.1f}{tail}"
+
+
+def consensus_cell(row: dict, doc: dict, now=None) -> str:
+    """'61.0 ±0.8' — the folded consensus and how far the models spread.
+
+    Folded, because Ref sits one cell away and IS folded; an unfolded number
+    beside it would invite exactly the wrong comparison by mid-afternoon."""
+    if not doc_is_fresh(doc, now):
+        return "—"
+    return _models_cell(consensus_entry(row, doc))
+
+
+# ---- The all-cities board --------------------------------------------------
+
+# The board's own columns and tips. A SEPARATE tip map from _TIPS for the same
+# reason _TRADE_TIPS is separate: 'Hi NWS' here is a whole city's forecast,
+# while 'Ref' on the candidate table is one bracket's reference.
+#
+# The two delta columns are 'Hi Δ' and 'Lo Δ', never both 'Δ': _table keys its
+# cells by column name, so a duplicate name would render the high's gap in the
+# low's cell.
+_BOARD_COLUMNS = ["City", "Hi NWS", "Hi Models", "Hi Δ",
+                  "Lo NWS", "Lo Models", "Lo Δ"]
+
+_BOARD_TIPS = {
+    "Hi NWS": "The NWS forecast high for this city's climate day, folded with "
+              "any temperature already realized — the same number the Ref "
+              "column measures a bracket's gap from.",
+    "Hi Models": "Consensus of five models (GFS, ECMWF, ICON, GEM, HRRR) and "
+                 "how far apart they are. Equal-weighted, not calibrated per "
+                 "city. '—' means fewer than three models had data.",
+    "Hi Δ": "Models minus NWS. A large value means the forecast every gap on "
+            "this page is measured from is contested — treat that city's rows "
+            "with more suspicion, in either direction.",
+    "Lo NWS": "The NWS forecast low for this city's climate day, folded with "
+              "any temperature already realized.",
+    "Lo Models": "Consensus of five models for the low, and their spread. "
+                 "'—' means fewer than three models had data.",
+    "Lo Δ": "Models minus NWS for the low. See 'Hi Δ'.",
+}
+
+
+def _one_decimal(value) -> str:
+    return "—" if value is None else f"{float(value):.1f}"
+
+
+def _delta_cell(entry: dict) -> str:
+    """Consensus minus NWS, in the app's true minus sign."""
+    cons, nws = (entry or {}).get("cons_folded"), (entry or {}).get("nws_folded")
+    if cons is None or nws is None:
+        return "—"
+    return f"{float(cons) - float(nws):+.1f}".replace("-", "−")
+
+
+def board_rows(doc: dict, which: str, now=None) -> list:
+    """One row per city for the chosen day, alphabetical by display name.
+
+    A city with no block for that day is OMITTED rather than shown as a row of
+    dashes: an all-dash row says only that this table does not know, which the
+    table's absence says more briefly."""
+    if not doc_is_fresh(doc, now):
+        return []
+    now = now or datetime.now(timezone.utc)
+    out = []
+    for code, city in ((doc or {}).get("cities") or {}).items():
+        tzname = city.get("timezone")
+        if not tzname:
+            continue
+        day = screen_forecast.in_progress_day(now, tzname)
+        if which == "Tomorrow":
+            day = day + timedelta(days=1)
+        block = (city.get("days") or {}).get(day.isoformat())
+        if not block:
+            continue
+        high, low = block.get("high") or {}, block.get("low") or {}
+        out.append({
+            "City": city.get("name") or code,
+            "Hi NWS": _one_decimal(high.get("nws_folded")),
+            "Hi Models": _models_cell(high),
+            "Hi Δ": _delta_cell(high),
+            "Lo NWS": _one_decimal(low.get("nws_folded")),
+            "Lo Models": _models_cell(low),
+            "Lo Δ": _delta_cell(low),
+        })
+    return sorted(out, key=lambda r: r["City"])
+
+
+def _render_board(doc: dict) -> None:
+    """The all-cities board, below the candidates and above the track record.
+
+    Placed there because it answers 'what should I bet', while the track record
+    and the trade table answer 'how did I do'."""
+    st.markdown("#### Model Consensus — All Cities")
+    which = st.segmented_control(
+        "Day", ["Today", "Tomorrow"], default="Today", key="consensus_day",
+        help="Which climate day to show. Only Today's rows can be flagged and "
+             "alerted; Tomorrow is the advance look.")
+    rows = board_rows(doc, which or "Today")
+    if not rows:
+        st.caption("No consensus published yet — it refreshes every 30 minutes, "
+                   "and blanks after six hours without one.")
+        return
+    st.markdown(_table(_BOARD_COLUMNS, rows, _BOARD_TIPS),
+                unsafe_allow_html=True)
+    st.caption("Five models, equal-weighted, folded with temperature already "
+               "realized. A second opinion on the forecast every gap above is "
+               "measured from — not a calibrated forecast of its own.")
+
+
 def display_rows(rows: list) -> list:
     """Soonest close first.
 
@@ -815,7 +980,7 @@ def _table(columns: list, rows: list, tips: dict = None) -> str:
 # existed nothing on the page said so — the red highlight looked like it was
 # skipping rows at random.
 _COLUMNS = ["City", "Day", "Var", "Bracket", "Price", "NO Now", "Gap", "Str",
-            "Storm", "Settled", "Drift", "Ref", "Hrs", "Side"]
+            "Storm", "Settled", "Drift", "Ref", "Models", "Hrs", "Side"]
 
 # Same mobile logic as above, different priority: on a HISTORY table the outcome
 # and the money are the point, so Result, P&L and % Gain sit ahead of the
@@ -827,7 +992,7 @@ _TRADE_COLUMNS = ["Day", "City", "Contract", "Result", "P&L", "% Gain",
 
 
 def _candidate_row(r: dict, live: dict, fresh: set, zones: dict = None,
-                   now=None) -> dict:
+                   now=None, consensus: dict = None) -> dict:
     price = r.get("price")
     return {
         "_class": "snew" if r.get("ticker") in fresh else "",
@@ -843,6 +1008,7 @@ def _candidate_row(r: dict, live: dict, fresh: set, zones: dict = None,
         "Settled": settled_of(r),
         "Drift": drift_of(r),
         "Ref": r.get("forecast"),
+        "Models": consensus_cell(r, consensus or {}, now),
         "Hrs": r.get("hours_to_close"),
         "Side": side_of(r),
     }
@@ -1090,6 +1256,7 @@ def render() -> None:
         rows, cheap, dear = tradeable_now(rows, live)
     if rows:
         zones = city_timezones()
+        doc = consensus_doc()
         # Freshness is counted off the VISIBLE rows: a filtered-out arrival is
         # not on screen and must not be claimed in red. Same-day only, because
         # red's whole promise is that the alert loop pushed it — see the Day
@@ -1097,7 +1264,8 @@ def render() -> None:
         fresh = (new_tickers(all_rows) & {r.get("ticker") for r in rows}
                  & pushed_tickers(rows, zones))
         st.markdown(
-            _table(_COLUMNS, [_candidate_row(r, live, fresh, zones)
+            _table(_COLUMNS, [_candidate_row(r, live, fresh, zones,
+                                             consensus=doc)
                               for r in display_rows(rows)]),
             unsafe_allow_html=True)
         if fresh:
@@ -1112,5 +1280,6 @@ def render() -> None:
         st.info("No candidates in the latest firing.")
     if cheap or dear:
         st.caption(hidden_notice(cheap, dear))
+    _render_board(consensus_doc())
     _render_track_record(all_rows)
     _render_history(all_rows)
