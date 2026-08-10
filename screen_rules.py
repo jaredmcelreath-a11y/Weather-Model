@@ -449,3 +449,45 @@ def locked_candidate(row: dict, bound, now_iso: str):
     else:
         return None
     return _yes_candidate(row, "locked", float(bound), margin, price, now_iso)
+
+
+def guarded_candidate(row: dict, bound, remaining, now_iso: str):
+    """A bracket the realized extreme already wins and the forecast protects.
+
+    Two conditions: every value the realized extreme could settle at already
+    wins, AND the forecast still ahead keeps it there by MIN_CANDIDATE_GAP_F.
+
+    Each variable has exactly ONE threatened edge, which is what makes this and
+    locked_candidate partition rather than overlap: a low can only fall, so only
+    its `lo` can be breached; a high can only rise, so only its `hi` can. An
+    unbounded threatened edge means nothing can take the bracket away, which is
+    locked_candidate's job, not this one's.
+
+    The bar is the FLAT MIN_CANDIDATE_GAP_F, never required_gap. required_gap
+    scales by forecast error at the lead where the extreme FORMS; here it has
+    already formed, and the only question left is whether the remaining hours
+    can undercut it -- a short-range, convection-dominated risk. required_gap
+    would demand 9.7F of a same-day low and silence every case this exists for.
+    Read the row's Storm column beside this: it is the risk that breaks it."""
+    if bound is None or remaining is None:
+        return None
+    price = row.get("yes_ask")
+    if not within_yes_band(price):
+        return None
+    if not settled_inside(row, bound):
+        return None
+    variable = row.get("variable")
+    lo, hi = winning_range(row)
+    if variable == "low":
+        if lo is None:                    # nothing below to breach
+            return None
+        margin = round(float(remaining) - lo, 2)
+    elif variable == "high":
+        if hi is None:
+            return None
+        margin = round(hi - float(remaining), 2)
+    else:
+        return None
+    if margin < MIN_CANDIDATE_GAP_F:
+        return None
+    return _yes_candidate(row, "guarded", float(bound), margin, price, now_iso)
