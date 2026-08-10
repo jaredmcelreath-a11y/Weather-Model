@@ -202,12 +202,33 @@ folding is a no-op, since nothing has been realized yet.
 
 ```json
 {"ts":"2026-08-09T22:00:00Z","city":"DEN","day":"2026-08-09","variable":"high",
- "nws":95.0,"cons":92.1,"spread":1.4,"n":5,
+ "in_progress":true,"nws":95.0,"nws_folded":96.0,
+ "cons":92.1,"cons_folded":96.0,"spread":1.4,"n":5,
  "models":{"gfs":92.0,"ecmwf":91.5,"icon":92.8,"gem":92.9,"hrrr":91.3}}
 ```
 
-Unfolded values only, so a later scorer sees the forecast as a forecast rather
-than contaminated by what had already happened.
+**AMENDED 2026-08-09 during implementation** (commit `22411763`). This section
+originally specified *unfolded values only*, reasoning that a scorer should see
+the forecast as a forecast. That is right for a day which has not started. It is
+wrong for a day in progress, and the live dry-run proved it:
+
+NWS hourly carries about one past hour — a fact `screen_forecast.forecast_at`
+already documents — so `daily_extremes` late in the day returns only the
+remaining hours. Atlanta on 2026-08-09 at 18:00 EDT published an NWS "low" of
+78.0 against a model consensus of 71.4. The models had the real overnight low;
+NWS had the coldest evening hour still to come. Those two numbers are not
+measuring the same thing, and scoring them against each other would have handed
+the consensus a 6.6 F win manufactured entirely by the NWS feed's window —
+baked into every same-day row from the first day of collection.
+
+So rows carry **both** pairs, plus `in_progress` to say which is the
+like-for-like comparison:
+
+- `in_progress: false` — use `nws`/`cons`. Folding is a no-op there anyway.
+- `in_progress: true` — use `nws_folded`/`cons_folded`, each side combined with
+  what has actually been realized. Both are then honest same-day best-estimates.
+
+Cost: about 40 bytes a row.
 
 **Hourly, not every pass.** 20 cities x 2 variables x 2 days is 80 rows; at
 every pass that is 3,840 rows/day into a file `append_many` rewrites whole on
