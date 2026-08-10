@@ -23,12 +23,34 @@ def test_the_log_fires_once_an_hour_not_once_a_pass():
     assert not city_consensus.should_log(datetime(2026, 8, 7, 20, 31, tzinfo=timezone.utc))
 
 
-def test_a_row_carries_the_unfolded_forecast_not_the_folded_one():
-    # The scorer grades what the forecast SAID, not what had already happened.
+def test_a_row_carries_both_forms_because_neither_alone_is_scorable():
+    # Unfolded is the honest forecast for a day that has not started. For a day
+    # in progress it is NOT: NWS hourly carries about one past hour, so its
+    # "low" late in the day is the coldest hour STILL TO COME, while the models
+    # cover the whole day. Measured live at Atlanta on 2026-08-09 at 18:00 EDT:
+    # NWS low 78.0 against a model consensus of 71.4. Scoring those against each
+    # other would hand the consensus a 6.6F win that is an artifact of the NWS
+    # feed's window. The folded pair is the like-for-like comparison there.
     rows = city_consensus.log_rows(_DOC, datetime(2026, 8, 7, 20, 0, tzinfo=timezone.utc))
     high = [r for r in rows if r["variable"] == "high"][0]
     assert high["nws"] == 95.0 and high["cons"] == 92.1
-    assert "nws_folded" not in high and "cons_folded" not in high
+    assert high["nws_folded"] == 96.0 and high["cons_folded"] == 96.0
+
+
+def test_a_row_says_whether_its_day_was_already_running():
+    # Which of the two pairs above the scorer may use.
+    rows = city_consensus.log_rows(_DOC, datetime(2026, 8, 7, 20, 0, tzinfo=timezone.utc))
+    assert rows[0]["in_progress"] is True
+
+
+def test_tomorrows_row_is_not_in_progress():
+    doc = {"generated": "2026-08-07T20:00:00Z", "cities": {"DEN": {
+        "name": "Denver", "timezone": "America/Denver", "days": {
+            "2026-08-08": {"high": {"nws": 97.0, "nws_folded": 97.0,
+                                    "cons": 90.0, "cons_folded": 90.0,
+                                    "spread": 1.0, "n": 5, "models": {}}}}}}}
+    rows = city_consensus.log_rows(doc, datetime(2026, 8, 7, 20, 0, tzinfo=timezone.utc))
+    assert rows[0]["in_progress"] is False
 
 
 def test_a_row_identifies_its_city_day_and_variable():

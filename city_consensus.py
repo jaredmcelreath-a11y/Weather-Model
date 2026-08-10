@@ -191,20 +191,40 @@ def should_log(now: datetime) -> bool:
 def log_rows(doc: dict, now: datetime) -> list:
     """One row per city / day / variable that has a consensus.
 
-    UNFOLDED values only: a scorer grades what the forecast said, and folding
-    mixes in what had already happened. A variable with no consensus is omitted
-    rather than logged as Nones -- there is nothing to score, and the empty
-    rows would dilute any later hit rate."""
+    BOTH forms are recorded, with `in_progress` saying which pair is the fair
+    comparison, because neither pair is scorable on its own:
+
+    - For a day that has NOT started, unfolded is the honest forecast and
+      folding is a no-op anyway.
+    - For a day in progress, the unfolded NWS value is not a forecast at all.
+      NWS hourly carries about one past hour (see screen_forecast.forecast_at),
+      so daily_extremes late in the day returns the coldest hour STILL TO COME,
+      while the models cover the whole day. Measured live at Atlanta on
+      2026-08-09 at 18:00 EDT: NWS "low" 78.0 against a model consensus of 71.4,
+      which is the real overnight low. Scoring that pair would hand the
+      consensus a 6.6F win manufactured by the NWS feed's window. The FOLDED
+      pair -- each side combined with what has actually been realized -- is the
+      like-for-like same-day comparison.
+
+    A variable with no consensus is omitted rather than logged as Nones: there
+    is nothing to score, and the empty rows would dilute any later hit rate."""
     stamp = now.isoformat().replace("+00:00", "Z")
     rows = []
     for code, city in (doc.get("cities") or {}).items():
+        tzname = city.get("timezone")
+        today = (screen_forecast.in_progress_day(now, tzname).isoformat()
+                 if tzname else None)
         for day, block in (city.get("days") or {}).items():
             for variable, entry in (block or {}).items():
                 if (entry or {}).get("cons") is None:
                     continue
                 rows.append({"ts": stamp, "city": code, "day": day,
-                             "variable": variable, "nws": entry.get("nws"),
-                             "cons": entry["cons"], "spread": entry.get("spread"),
+                             "variable": variable, "in_progress": day == today,
+                             "nws": entry.get("nws"),
+                             "nws_folded": entry.get("nws_folded"),
+                             "cons": entry["cons"],
+                             "cons_folded": entry.get("cons_folded"),
+                             "spread": entry.get("spread"),
                              "n": entry.get("n"), "models": entry.get("models")})
     return rows
 
