@@ -756,6 +756,15 @@ def consensus_entry(row: dict, doc: dict):
     return ((city.get("days") or {}).get(day.isoformat()) or {}).get(variable)
 
 
+def _models_cell(entry: dict) -> str:
+    """'92.1 ±1.4', or '—' when this variable had no consensus."""
+    value, spread = (entry or {}).get("cons_folded"), (entry or {}).get("spread")
+    if value is None:
+        return "—"
+    tail = "" if spread is None else f" ±{float(spread):.1f}"
+    return f"{float(value):.1f}{tail}"
+
+
 def consensus_cell(row: dict, doc: dict, now=None) -> str:
     """'61.0 ±0.8' — the folded consensus and how far the models spread.
 
@@ -763,12 +772,104 @@ def consensus_cell(row: dict, doc: dict, now=None) -> str:
     beside it would invite exactly the wrong comparison by mid-afternoon."""
     if not doc_is_fresh(doc, now):
         return "—"
-    entry = consensus_entry(row, doc) or {}
-    value, spread = entry.get("cons_folded"), entry.get("spread")
-    if value is None:
+    return _models_cell(consensus_entry(row, doc))
+
+
+# ---- The all-cities board --------------------------------------------------
+
+# The board's own columns and tips. A SEPARATE tip map from _TIPS for the same
+# reason _TRADE_TIPS is separate: 'Hi NWS' here is a whole city's forecast,
+# while 'Ref' on the candidate table is one bracket's reference.
+#
+# The two delta columns are 'Hi Δ' and 'Lo Δ', never both 'Δ': _table keys its
+# cells by column name, so a duplicate name would render the high's gap in the
+# low's cell.
+_BOARD_COLUMNS = ["City", "Hi NWS", "Hi Models", "Hi Δ",
+                  "Lo NWS", "Lo Models", "Lo Δ"]
+
+_BOARD_TIPS = {
+    "Hi NWS": "The NWS forecast high for this city's climate day, folded with "
+              "any temperature already realized — the same number the Ref "
+              "column measures a bracket's gap from.",
+    "Hi Models": "Consensus of five models (GFS, ECMWF, ICON, GEM, HRRR) and "
+                 "how far apart they are. Equal-weighted, not calibrated per "
+                 "city. '—' means fewer than three models had data.",
+    "Hi Δ": "Models minus NWS. A large value means the forecast every gap on "
+            "this page is measured from is contested — treat that city's rows "
+            "with more suspicion, in either direction.",
+    "Lo NWS": "The NWS forecast low for this city's climate day, folded with "
+              "any temperature already realized.",
+    "Lo Models": "Consensus of five models for the low, and their spread. "
+                 "'—' means fewer than three models had data.",
+    "Lo Δ": "Models minus NWS for the low. See 'Hi Δ'.",
+}
+
+
+def _one_decimal(value) -> str:
+    return "—" if value is None else f"{float(value):.1f}"
+
+
+def _delta_cell(entry: dict) -> str:
+    """Consensus minus NWS, in the app's true minus sign."""
+    cons, nws = (entry or {}).get("cons_folded"), (entry or {}).get("nws_folded")
+    if cons is None or nws is None:
         return "—"
-    tail = "" if spread is None else f" ±{float(spread):.1f}"
-    return f"{float(value):.1f}{tail}"
+    return f"{float(cons) - float(nws):+.1f}".replace("-", "−")
+
+
+def board_rows(doc: dict, which: str, now=None) -> list:
+    """One row per city for the chosen day, alphabetical by display name.
+
+    A city with no block for that day is OMITTED rather than shown as a row of
+    dashes: an all-dash row says only that this table does not know, which the
+    table's absence says more briefly."""
+    if not doc_is_fresh(doc, now):
+        return []
+    now = now or datetime.now(timezone.utc)
+    out = []
+    for code, city in ((doc or {}).get("cities") or {}).items():
+        tzname = city.get("timezone")
+        if not tzname:
+            continue
+        day = screen_forecast.in_progress_day(now, tzname)
+        if which == "Tomorrow":
+            day = day + timedelta(days=1)
+        block = (city.get("days") or {}).get(day.isoformat())
+        if not block:
+            continue
+        high, low = block.get("high") or {}, block.get("low") or {}
+        out.append({
+            "City": city.get("name") or code,
+            "Hi NWS": _one_decimal(high.get("nws_folded")),
+            "Hi Models": _models_cell(high),
+            "Hi Δ": _delta_cell(high),
+            "Lo NWS": _one_decimal(low.get("nws_folded")),
+            "Lo Models": _models_cell(low),
+            "Lo Δ": _delta_cell(low),
+        })
+    return sorted(out, key=lambda r: r["City"])
+
+
+def _render_board(doc: dict) -> None:
+    """The all-cities board, below the candidates and above the track record.
+
+    Placed there because it answers 'what should I bet', while the track record
+    and the trade table answer 'how did I do'."""
+    st.markdown("#### Model Consensus — All Cities")
+    which = st.segmented_control(
+        "Day", ["Today", "Tomorrow"], default="Today", key="consensus_day",
+        help="Which climate day to show. Only Today's rows can be flagged and "
+             "alerted; Tomorrow is the advance look.")
+    rows = board_rows(doc, which or "Today")
+    if not rows:
+        st.caption("No consensus published yet — it refreshes every 30 minutes, "
+                   "and blanks after six hours without one.")
+        return
+    st.markdown(_table(_BOARD_COLUMNS, rows, _BOARD_TIPS),
+                unsafe_allow_html=True)
+    st.caption("Five models, equal-weighted, folded with temperature already "
+               "realized. A second opinion on the forecast every gap above is "
+               "measured from — not a calibrated forecast of its own.")
 
 
 def display_rows(rows: list) -> list:
@@ -1179,5 +1280,6 @@ def render() -> None:
         st.info("No candidates in the latest firing.")
     if cheap or dear:
         st.caption(hidden_notice(cheap, dear))
+    _render_board(consensus_doc())
     _render_track_record(all_rows)
     _render_history(all_rows)
