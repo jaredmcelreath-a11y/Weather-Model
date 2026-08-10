@@ -371,3 +371,81 @@ def dead_candidate(row: dict, bound, now_iso: str):
     else:
         return None
     return _candidate(row, "dead", float(bound), gap, price, now_iso)
+
+
+# ---- The YES side: brackets the day has already won -----------------------
+#
+# Not a mirror of dead_candidate, because the physics is not symmetric. A low
+# can only FALL, so a low bracket left open UPWARD ("92 or above") never becomes
+# certain while the day runs -- an evening downdraft can still crash it. Only a
+# tail open in the direction the extreme can still move is ever safe.
+
+def settled_inside(row: dict, bound) -> bool:
+    """Whether EVERY whole-degF value this reading could settle at wins.
+
+    On the settled basis, never the raw reading: a 92.4 that could be reported
+    as 91 does not "already sit inside" a 92-and-above bracket, however it looks
+    on the thermometer."""
+    if bound is None:
+        return False
+    lo, hi = winning_range(row)
+    lowest, highest = settled_range(bound)
+    if lo is not None and lowest < lo:
+        return False
+    if hi is not None and highest > hi:
+        return False
+    return True
+
+
+def _yes_candidate(row: dict, kind: str, reference: float, margin: float,
+                   price, now_iso: str) -> dict:
+    """A YES-side candidate. Deliberately NOT the fade shape: `margin` not
+    `gap`, `reference` not `forecast`, and an explicit `side`, so a row from
+    this screen can never be mistaken for a fade even if the two logs are read
+    together."""
+    return {
+        "ts": now_iso,
+        "series": row.get("series"),
+        "variable": row.get("variable"),
+        "ticker": row.get("ticker"),
+        "floor": row.get("floor"),
+        "cap": row.get("cap"),
+        "strike_type": row.get("strike_type"),
+        "label": row.get("label"),
+        "side": "YES",
+        "price": price,
+        "yes_bid": row.get("yes_bid"),
+        "volume": row.get("volume"),
+        "reference": reference,
+        "margin": margin,
+        "kind": kind,
+        "hours_to_close": row.get("hours_to_close"),
+    }
+
+
+def locked_candidate(row: dict, bound, now_iso: str):
+    """A bracket the realized extreme has made impossible to LOSE, or None.
+
+    Fires only on a tail left open in the direction the extreme can still move:
+    a LOW bracket unbounded BELOW once the low has reached it, or a HIGH bracket
+    unbounded ABOVE. Everything else can still be taken away."""
+    if bound is None:
+        return None
+    price = row.get("yes_ask")
+    if not within_yes_band(price):
+        return None
+    variable = row.get("variable")
+    lo, hi = winning_range(row)
+    lowest_settled, highest_settled = settled_range(bound)
+    if variable == "low":
+        # Unbounded BELOW, and every value it could settle at already wins.
+        if lo is not None or hi is None or highest_settled > hi:
+            return None
+        margin = round(hi - highest_settled, 2)
+    elif variable == "high":
+        if hi is not None or lo is None or lowest_settled < lo:
+            return None
+        margin = round(lowest_settled - lo, 2)
+    else:
+        return None
+    return _yes_candidate(row, "locked", float(bound), margin, price, now_iso)
