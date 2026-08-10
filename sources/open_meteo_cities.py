@@ -25,6 +25,15 @@ def fetch(coords: list, models: list = None, forecast_days: int = 3,
     climate day Kalshi settles on is a fixed-LST window. In summer that is an
     hour of the wrong day -- see screen_forecast.climate_day_of_ticker for the
     same trap on close_time.
+
+    `past_days=1` because Open-Meteo starts its payload at 00:00Z of the CURRENT
+    GMT day, while a climate day is a fixed-LST window that straddles it. Once
+    GMT ticks past midnight, most of a day still in progress falls BEFORE the
+    payload begins: measured live 2026-08-10 at 01:30Z, Atlanta's Aug 9 climate
+    day had 5 of its 24 hours present, so the consensus "high" was the max of
+    five evening hours -- 81.5 against a realized 91.4. One past day covers
+    every US city; the furthest west is UTC-8, whose climate day starts 8h into
+    the GMT day, and the payload now starts 24h before that.
     """
     if not coords:
         return []
@@ -36,6 +45,7 @@ def fetch(coords: list, models: list = None, forecast_days: int = 3,
         "models": ",".join(models or DETERMINISTIC_MODELS),
         "temperature_unit": "fahrenheit",
         "timeformat": "unixtime",
+        "past_days": 1,
         "forecast_days": forecast_days,
     }, ttl=ttl)
     # A single coordinate comes back as a bare object, many as an array.
