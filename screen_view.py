@@ -716,6 +716,135 @@ def pushed_tickers(rows: list, zones: dict, now=None) -> set:
     return {r.get("ticker") for r in rows if settles_today(r, zones, now)}
 
 
+# ---- The YES side: brackets the day has already won ------------------------
+#
+# Its own table and its own tip map. The fade table's Gap and Str measure
+# distance from the reference TO the bracket, which is identically zero here --
+# the realized extreme is already inside it. Reusing those columns would put a
+# meaningless number under a familiar heading.
+_LOCKED_COLUMNS = ["City", "Day", "Var", "Bracket", "Price", "YES Now",
+                   "Margin", "Kind", "Storm", "Hrs"]
+
+_LOCKED_TIPS = {
+    "Day": "Which climate day the bracket is about, in the city's own fixed "
+           "standard time. Only 'Today' rows alert.",
+    "Price": f"What buying YES cost when the screen last fired, up to "
+             f"{int(FIRING_INTERVAL.total_seconds() // 60)} minutes ago. Judge "
+             f"the trade on 'YES Now', which is live.",
+    "YES Now": "Live cost to buy YES, fetched from Kalshi when this page "
+               "loaded. '—' means no live offer.",
+    "Margin": "Degrees of protection. For a 'Locked' row, how far past the "
+              "strike the realized extreme already settled — it cannot be taken "
+              "away. For 'Guarded', how far the forecast still ahead sits from "
+              "the only edge that can break the bracket. NOT a probability.",
+    "Kind": "'Locked' is physics: the extreme can only move away from this "
+            "bracket's open side, so it cannot lose. 'Guarded' is a forecast "
+            "bet — the realized extreme is already inside and the remaining "
+            "forecast holds it by at least 4°F, but a downdraft can still take "
+            "it. Read Storm beside it.",
+    "Storm": "Chance of THUNDERSTORMS over the hours that can still move this "
+             "extreme. On a 'Guarded' row this is the risk that breaks it — a "
+             "convective downdraft is exactly how a low that has already formed "
+             "gets undercut before midnight.",
+    "Hrs": "Hours until the market closes, which is also the end of its "
+           "climate day.",
+}
+
+
+def live_yes_prices(rows: list, fetch=None) -> dict:
+    """{ticker: YES ask in dollars} for these rows, priced right now.
+
+    One ladder call per distinct SERIES, reusing the same 60s-cached fetch the
+    fade table uses, so showing both tables costs one round of calls, not two."""
+    fetch = fetch or _live_markets
+    wanted = {r.get("ticker") for r in rows}
+    out = {}
+    for series in dict.fromkeys(r.get("series") for r in rows):
+        if not series:
+            continue
+        try:
+            markets = fetch(series)
+        except Exception as e:            # noqa: BLE001 - a page must not crash
+            print(f"[screen_view] {series}: live YES price skipped ({e})")
+            continue
+        for m in markets or []:
+            if m.get("ticker") in wanted:
+                price = screen_rules.yes_ask_of(m)
+                if price is not None:
+                    out[m["ticker"]] = price
+    return out
+
+
+def yes_tradeable_now(rows: list, live: dict):
+    """(rows worth reviewing, n too expensive, n suspiciously cheap).
+
+    The two counts mean opposite things and are never totalled: above the cap
+    the market agrees and there is nothing left to win; below the floor the
+    market is saying our REFERENCE is wrong, which is a reason to check the
+    station, not to buy."""
+    visible, dear, cheap = [], 0, 0
+    for r in rows:
+        price = live.get(r.get("ticker"))
+        price = None if price is None else float(price)
+        if price is not None and price > screen_rules.MAX_LIVE_YES_PRICE:
+            dear += 1
+        elif price is not None and price < screen_rules.MIN_LIVE_YES_PRICE:
+            cheap += 1
+        else:
+            visible.append(r)
+    return visible, dear, cheap
+
+
+def _locked_row(r: dict, live: dict, zones: dict = None, now=None) -> dict:
+    price = r.get("price")
+    margin = r.get("margin")
+    return {
+        "City": city_of(r),
+        "Day": day_of(r, zones or {}, now),
+        "Var": str(r.get("variable") or ""),
+        "Bracket": _bracket_label(r),
+        "Price": "" if price is None else f"{float(price):.2f}",
+        "YES Now": _pct(live.get(r.get("ticker"))),
+        "Margin": "—" if margin is None else f"{float(margin):.1f}",
+        "Kind": "Locked" if r.get("kind") == "locked" else "Guarded",
+        "Storm": storm_of(r),
+        "Hrs": r.get("hours_to_close"),
+    }
+
+
+def _render_locked(zones: dict) -> None:
+    """The YES table, between the candidates and the consensus board."""
+    st.markdown("#### Already Winning — Underpriced YES")
+    try:
+        rows = latest_firing(scan_log.load_recent(scan_log.LOCKED_PATH, days=3))
+    except Exception as e:              # noqa: BLE001 - a page must not crash
+        st.caption(f"No locked log yet ({e}).")
+        return
+    live = live_yes_prices(rows) if rows else {}
+    rows, dear, cheap = yes_tradeable_now(rows, live)
+    if rows:
+        st.markdown(_table(_LOCKED_COLUMNS,
+                           [_locked_row(r, live, zones)
+                            for r in display_rows(rows)],
+                           _LOCKED_TIPS),
+                    unsafe_allow_html=True)
+        st.caption("'Locked' cannot lose; 'Guarded' is a forecast bet the Storm "
+                   "column qualifies. This screen has no settled track record "
+                   "yet — treat it as observation.")
+    else:
+        st.caption("Nothing already won and underpriced in the latest firing.")
+    # Two captions, never one built by concatenation: the reasons mean opposite
+    # things and a single string would have to pick one voice for both.
+    if dear:
+        st.caption(f"{dear} hidden — the market already agrees, so there is "
+                   f"nothing left to win.")
+    if cheap:
+        st.caption(f"{cheap} hidden — priced under "
+                   f"{round(screen_rules.MIN_LIVE_YES_PRICE * 100)}%, which "
+                   f"says our reference is wrong, not the price. Worth checking "
+                   f"the station rather than buying.")
+
+
 # ---- The model consensus, published by city_consensus.py -------------------
 
 def consensus_doc_read() -> dict:
@@ -1280,6 +1409,7 @@ def render() -> None:
         st.info("No candidates in the latest firing.")
     if cheap or dear:
         st.caption(hidden_notice(cheap, dear))
+    _render_locked(city_timezones())
     _render_board(consensus_doc())
     _render_track_record(all_rows)
     _render_history(all_rows)
