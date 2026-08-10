@@ -305,3 +305,55 @@ def test_drift_abstains_when_either_input_does():
     readings = [_reading(10, 68.0)]
     assert sf.forecast_drift(_DRIFT_PERIODS, [], _ANCHOR_NOW) is None
     assert sf.forecast_drift([], readings, _ANCHOR_NOW) is None
+
+
+# ---- The forecast still AHEAD in a variable's window -----------------------
+
+def _phx_period(hour, temp, forecast="Sunny"):
+    return {"startTime": f"2026-08-09T{hour:02d}:00:00-07:00", "temperature": temp,
+            "probabilityOfPrecipitation": {"value": 0}, "shortForecast": forecast}
+
+
+_PHX_DAY = [_phx_period(h, t) for h, t in
+            [(5, 93), (6, 93), (14, 110), (17, 110), (18, 109), (19, 107),
+             (20, 103), (21, 101), (22, 99), (23, 97)]]
+_PHX_NOW = datetime(2026, 8, 10, 0, 18, tzinfo=timezone.utc)     # 17:18 LST
+
+
+def test_a_lows_remaining_extreme_is_the_coldest_hour_still_ahead():
+    # The threat to a low bracket is the temperature FALLING, so what matters is
+    # the minimum still to come -- 97 at 11pm, the last hour of the climate day.
+    got = sf.remaining_extreme(_PHX_DAY, date(2026, 8, 9), "America/Phoenix",
+                               "low", _PHX_NOW)
+    assert got == 97.0
+
+
+def test_a_lows_window_runs_to_midnight_not_to_the_peak():
+    # An evening downdraft can still crash a low, which is why still_open does
+    # not truncate for a low. The 5am readings are behind us and excluded by
+    # `now`, not by the window.
+    window = sf.still_open(
+        sf._day_periods(_PHX_DAY, date(2026, 8, 9), "America/Phoenix"), "low")
+    assert len(window) == len(_PHX_DAY)
+
+
+def test_a_highs_remaining_extreme_is_the_hottest_hour_still_ahead():
+    # Asked at noon, before the 2pm peak: 110 is still to come.
+    noon = datetime(2026, 8, 9, 19, 0, tzinfo=timezone.utc)      # 12:00 LST
+    got = sf.remaining_extreme(_PHX_DAY, date(2026, 8, 9), "America/Phoenix",
+                               "high", noon)
+    assert got == 110.0
+
+
+def test_a_high_after_its_peak_has_no_remaining_window():
+    # still_open truncates a high at its PEAK, so by 17:18 LST -- with the 2pm
+    # peak behind us -- nothing left can move it. The 7pm and 9pm periods are
+    # dropped by the truncation, not by the clock: no later hour can raise a
+    # high that has already happened.
+    assert sf.remaining_extreme(_PHX_DAY, date(2026, 8, 9), "America/Phoenix",
+                                "high", _PHX_NOW) is None
+
+
+def test_remaining_extreme_of_a_day_with_no_periods_is_none():
+    assert sf.remaining_extreme([], date(2026, 8, 9), "America/Phoenix",
+                                "low", _PHX_NOW) is None
