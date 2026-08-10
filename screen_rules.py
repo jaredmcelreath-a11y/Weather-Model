@@ -151,6 +151,42 @@ def within_band(price) -> bool:
     return MIN_LIVE_NO_PRICE <= float(price) <= MAX_LIVE_NO_PRICE
 
 
+# The mirror band, for the side that BUYS rather than fades. Above the cap the
+# market already agrees and under 11% is left to win; below the floor the market
+# is saying the screen's REFERENCE is wrong, not that the price is -- a
+# supposedly locked bracket at 5c is far likelier to mean a bad station reading
+# than free money, and that is exactly when this screen must not shout.
+#
+# One band, applied at firing (screen.py), on the live loop (screen_alert) and
+# at page load (screen_view), so a row cannot be logged under a standard the
+# page then disagrees with.
+MIN_LIVE_YES_PRICE = 0.20
+MAX_LIVE_YES_PRICE = 0.90
+
+
+def yes_ask_of(market: dict):
+    """Dollars to BUY YES on this market right now, or None when unquoted.
+
+    Kalshi's own YES ask when there is one, else the NO bid inverted: buying YES
+    sells against the resting NO bid, so YES ask = 1 - no bid. Prices arrive as
+    dollar STRINGS ("0.3900"), the gotcha that silently empties a scan pass."""
+    ask = scan_log.dollars(market.get("yes_ask_dollars"))
+    if ask is not None:
+        return ask
+    bid = scan_log.dollars(market.get("no_bid_dollars"))
+    return None if bid is None else round(1.0 - bid, 2)
+
+
+def within_yes_band(price) -> bool:
+    """Whether a live YES price is worth showing or pushing.
+
+    An unquoted row (None) SURVIVES, as on the fade side: an absent quote is
+    thin liquidity or a market that has since closed, not evidence."""
+    if price is None:
+        return True
+    return MIN_LIVE_YES_PRICE <= float(price) <= MAX_LIVE_YES_PRICE
+
+
 def winning_range(row: dict):
     """The INCLUSIVE (lo, hi) temperatures at which this contract settles YES.
 
