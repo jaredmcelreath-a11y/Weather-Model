@@ -1064,6 +1064,17 @@ table.wtbl th .stipt{position:absolute;top:1.9rem;right:0;z-index:1000;
 table.wtbl th:first-child .stipt{right:auto;left:0;}
 table.wtbl th .stip:focus ~ .stipt{opacity:1;visibility:visible;}
 @media (hover:hover){table.wtbl th .stip:hover ~ .stipt{opacity:1;visibility:visible;}}
+/* The wrap scrolls sideways on phones, and CSS cannot pair overflow-x:auto with
+   overflow-y:visible — asking for one turns the other into a clip. So the card
+   also clips DOWNWARD, and a tooltip on a one-row table (the YES side is nearly
+   always one row) got cut off after a line. Give the wrap room only while a tip
+   is open. min-height, not padding-bottom: a table already taller than the
+   tooltip is untouched, so only the short tables grow and nothing below a long
+   one shifts. 11.5rem clears the longest tips (Kind/Margin) down to a 320px
+   viewport, where the 74vw cap wraps them tallest — measured, not guessed, so
+   lengthening a tip in _LOCKED_TIPS means re-checking this number. */
+.wtbl-wrap:has(table.wtbl th .stip:focus){min-height:11.5rem;}
+@media (hover:hover){.wtbl-wrap:has(table.wtbl th .stip:hover){min-height:11.5rem;}}
 /* Added by the newest firing AND settling today, so the phone alert carries the
    same row — reverts to ordinary ink an hour later. Tints the whole row,
    tracking the app's existing .hold red rather than a new colour. */
