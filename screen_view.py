@@ -17,6 +17,7 @@ import pandas as pd
 import streamlit as st
 
 import bet_history
+import city_consensus
 import market_view
 import scan_cities
 import scan_log
@@ -104,6 +105,14 @@ _TIPS = {
                "Based on normal diurnal timing, not a lock detector.",
     "Hrs": "Hours until the Kalshi market closes, which is also the end of its "
            "climate day. Over 24 means the day has not started yet.",
+    "Models": "Consensus of five weather models (GFS, ECMWF, ICON, GEM, HRRR) "
+              "for this bracket's climate day, and how far apart they are. "
+              "Folded with temperature already realized, exactly like Ref, so "
+              "the two are comparable. A tight spread beside a distant Ref "
+              "means NWS is the outlier; a wide one means nobody knows. "
+              "Equal-weighted and NOT calibrated per city — a second opinion, "
+              "not a better forecast. '—' means too few models, or the feed is "
+              "over six hours stale.",
     "Day": "Which climate day the bracket is about, in the city's own fixed "
            "standard time. Only 'Today' rows can turn red and only they send a "
            "phone alert — the alert loop runs every 5 minutes against the day "
@@ -707,6 +716,61 @@ def pushed_tickers(rows: list, zones: dict, now=None) -> set:
     return {r.get("ticker") for r in rows if settles_today(r, zones, now)}
 
 
+# ---- The model consensus, published by city_consensus.py -------------------
+
+def consensus_doc_read() -> dict:
+    """The published consensus document, or {} when it is not there yet."""
+    return scan_log.read_doc(city_consensus.CONSENSUS_PATH)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def consensus_doc() -> dict:
+    return consensus_doc_read()
+
+
+def doc_is_fresh(doc: dict, now=None) -> bool:
+    """Whether the document is recent enough to show.
+
+    The globals refresh every 6 hours and HRRR hourly, so a document older than
+    STALE_AFTER_HOURS means the Action has been failing -- not that the models
+    have stood still. Showing it anyway would be a number with no date on it."""
+    stamp = (doc or {}).get("generated")
+    if not stamp:
+        return False
+    try:
+        when = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    now = now or datetime.now(timezone.utc)
+    return (now - when) <= timedelta(hours=city_consensus.STALE_AFTER_HOURS)
+
+
+def consensus_entry(row: dict, doc: dict):
+    """This candidate's published block, or None when the document lacks it."""
+    code = scan_cities.city_key(row.get("series") or "")
+    day = screen_forecast.climate_day_of_ticker(row.get("ticker") or "")
+    variable = row.get("variable")
+    if code is None or day is None or variable not in ("high", "low"):
+        return None
+    city = ((doc or {}).get("cities") or {}).get(code) or {}
+    return ((city.get("days") or {}).get(day.isoformat()) or {}).get(variable)
+
+
+def consensus_cell(row: dict, doc: dict, now=None) -> str:
+    """'61.0 ±0.8' — the folded consensus and how far the models spread.
+
+    Folded, because Ref sits one cell away and IS folded; an unfolded number
+    beside it would invite exactly the wrong comparison by mid-afternoon."""
+    if not doc_is_fresh(doc, now):
+        return "—"
+    entry = consensus_entry(row, doc) or {}
+    value, spread = entry.get("cons_folded"), entry.get("spread")
+    if value is None:
+        return "—"
+    tail = "" if spread is None else f" ±{float(spread):.1f}"
+    return f"{float(value):.1f}{tail}"
+
+
 def display_rows(rows: list) -> list:
     """Soonest close first.
 
@@ -815,7 +879,7 @@ def _table(columns: list, rows: list, tips: dict = None) -> str:
 # existed nothing on the page said so — the red highlight looked like it was
 # skipping rows at random.
 _COLUMNS = ["City", "Day", "Var", "Bracket", "Price", "NO Now", "Gap", "Str",
-            "Storm", "Settled", "Drift", "Ref", "Hrs", "Side"]
+            "Storm", "Settled", "Drift", "Ref", "Models", "Hrs", "Side"]
 
 # Same mobile logic as above, different priority: on a HISTORY table the outcome
 # and the money are the point, so Result, P&L and % Gain sit ahead of the
@@ -827,7 +891,7 @@ _TRADE_COLUMNS = ["Day", "City", "Contract", "Result", "P&L", "% Gain",
 
 
 def _candidate_row(r: dict, live: dict, fresh: set, zones: dict = None,
-                   now=None) -> dict:
+                   now=None, consensus: dict = None) -> dict:
     price = r.get("price")
     return {
         "_class": "snew" if r.get("ticker") in fresh else "",
@@ -843,6 +907,7 @@ def _candidate_row(r: dict, live: dict, fresh: set, zones: dict = None,
         "Settled": settled_of(r),
         "Drift": drift_of(r),
         "Ref": r.get("forecast"),
+        "Models": consensus_cell(r, consensus or {}, now),
         "Hrs": r.get("hours_to_close"),
         "Side": side_of(r),
     }
@@ -1090,6 +1155,7 @@ def render() -> None:
         rows, cheap, dear = tradeable_now(rows, live)
     if rows:
         zones = city_timezones()
+        doc = consensus_doc()
         # Freshness is counted off the VISIBLE rows: a filtered-out arrival is
         # not on screen and must not be claimed in red. Same-day only, because
         # red's whole promise is that the alert loop pushed it — see the Day
@@ -1097,7 +1163,8 @@ def render() -> None:
         fresh = (new_tickers(all_rows) & {r.get("ticker") for r in rows}
                  & pushed_tickers(rows, zones))
         st.markdown(
-            _table(_COLUMNS, [_candidate_row(r, live, fresh, zones)
+            _table(_COLUMNS, [_candidate_row(r, live, fresh, zones,
+                                             consensus=doc)
                               for r in display_rows(rows)]),
             unsafe_allow_html=True)
         if fresh:
