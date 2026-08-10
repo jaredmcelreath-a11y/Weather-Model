@@ -29,6 +29,10 @@ SETTLED_PATH = "scan_settled.jsonl"
 CANDIDATES_PATH = "scan_candidates.jsonl"
 REFERENCE_PATH = "screen_reference.json"      # screen.py -> screen_alert.py
 ALERT_STATE_PATH = "screen_alert_state.json"  # tickers already pushed, by day
+LOCKED_PATH = "scan_locked.jsonl"             # the YES side, kept SEPARATE from
+                                              # scan_candidates so screen_score
+                                              # never applies fade math to it
+LOCKED_ALERT_STATE_PATH = "screen_locked_alert_state.json"
 
 
 class GitHubTransport:

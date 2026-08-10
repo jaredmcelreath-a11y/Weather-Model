@@ -94,6 +94,7 @@ def screen_pass(now: datetime, deps: Deps) -> dict:
     """Screen every mapped city's ladder once."""
     now_iso = now.isoformat().replace("+00:00", "Z")
     candidates, cities, errors = [], 0, 0
+    locked = []
     reference: dict = {}
     for s in deps.list_series():
         series = s["ticker"]
@@ -199,7 +200,26 @@ def screen_pass(now: datetime, deps: Deps) -> dict:
                     hit["drift"] = hit["drift_ref"] = None
                     candidates.append(hit)
 
+            # The YES side. `remaining` is published as well as used, because
+            # screen_alert cannot recompute forecasts and the guarded rule needs
+            # the hours still ahead -- exactly like `realized` above.
+            remaining = screen_forecast.remaining_extreme(
+                periods, day, tzname, variable, now)
+            reference[series].setdefault("remaining", {})[day.isoformat()] = remaining
+            for r in day_rows:
+                # Locked first: it is the half that claims certainty, and
+                # "cannot lose" is strictly more useful than "the forecast is
+                # holding it".
+                hit = screen_rules.locked_candidate(r, bound, now_iso)
+                if hit is None:
+                    hit = screen_rules.guarded_candidate(r, bound, remaining,
+                                                         now_iso)
+                if hit:
+                    hit["storm"] = storm
+                    locked.append(hit)
+
     written = deps.append_rows(scan_log.CANDIDATES_PATH, candidates)
+    written_locked = deps.append_rows(scan_log.LOCKED_PATH, locked)
     # Best-effort and last: the candidate log is the product, and a contents-API
     # failure here must not cost the pass its rows.
     if deps.write_reference:
@@ -207,7 +227,8 @@ def screen_pass(now: datetime, deps: Deps) -> dict:
             deps.write_reference({"generated": now_iso, "cities": reference})
         except Exception as e:            # noqa: BLE001
             print(f"[screen] reference publish failed ({e})")
-    return {"candidates": written or 0, "cities": cities, "errors": errors}
+    return {"candidates": written or 0, "cities": cities, "errors": errors,
+            "locked": written_locked or 0}
 
 
 def main(argv: list, deps: Deps = None, now: datetime = None) -> int:
