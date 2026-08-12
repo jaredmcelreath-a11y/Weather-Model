@@ -2581,3 +2581,4 @@
 {"ts": "2026-08-12T13:21:35.348889+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26AUG12-B100.5"}
 {"ts": "2026-08-12T13:31:30.137156+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26AUG12-B100.5"}
 {"ts": "2026-08-12T13:31:32.405573+00:00", "kind": "skip", "variable": "low", "reason": "low still forming", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26AUG12-B80.5"}
+{"ts": "2026-08-12T13:41:35.502694+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26AUG12-B100.5"}
