@@ -1,15 +1,3 @@
 {
-  "entries": {
-    "KXLOWTAUS-26AUG12-B77.5": {
-      "cap": 78,
-      "count": 1,
-      "day": "2026-08-12",
-      "entry_ask": 0.92,
-      "floor": 77,
-      "label": "77\u00b0 to 78\u00b0",
-      "side": "yes",
-      "ts": "2026-08-12T08:31:22.926173-05:00",
-      "variable": "low"
-    }
-  }
+  "entries": {}
 }
