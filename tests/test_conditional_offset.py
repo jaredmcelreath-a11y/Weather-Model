@@ -195,3 +195,60 @@ def test_backtest_applies_bucketed_offset_per_day(monkeypatch):
                    "clear_calm_std": 0.0, "other_std": 0.0}}
     res = backtest.run(cli=True, settle_offset=off)
     assert res["low"]["mae"] == 0.0          # each day's shift matches its CLI low
+
+
+# ---- the bucketed shape must reach the lone-spike/dip trust gates -------------
+#
+# 2026-08-13 KDFW crash: `predict_variable` read the settlement offset for the
+# spike gate with a bare `.get(variable)`, which hands the *bucketed dict* to
+# `_trusted_high_max` -> `s + shift` on a float+dict -> TypeError. Dallas has the
+# bucketed calibration, Austin the flat one, so only Dallas's Forecast page died,
+# and only on a day whose 5-min feed carried a lone spike above the corroborated
+# peak. Both gates must resolve the bucket like every other reader does.
+
+_SPIKE_OFF = {"high": {"clear_calm": 4.0, "other": 0.0,
+                       "clear_calm_std": 0.0, "other_std": 0.0},
+              "low": {"clear_calm": -0.8, "other": -0.2,
+                      "clear_calm_std": 0.0, "other_std": 0.0}}
+
+_SPIKE_HOURLY = [96 - abs(h - 15) for h in range(17)]     # hourly max 96 at 15:00
+
+
+def _obs_with_spike(day):
+    """Hourly obs plus a continuous feed mirroring them, except one LONE 15-min
+    reading of 100 at 15:15 (uncorroborated -> it must pass the forecast gate)."""
+    base = datetime(day.year, day.month, day.day, tzinfo=_TZ)
+    ot = [base + timedelta(hours=h) for h in range(len(_SPIKE_HOURLY))]
+    ct = [base + timedelta(minutes=15 * k) for k in range(len(_SPIKE_HOURLY) * 4)]
+    cv = [_SPIKE_HOURLY[k // 4] for k in range(len(_SPIKE_HOURLY) * 4)]
+    cv[15 * 4 + 1] = 100.0
+    return {"obs": (ot, _SPIKE_HOURLY), "obs_continuous": (ct, cv)}
+
+
+def _spike_series(day):
+    # Forecast peaks 95..97: on the unshifted basis nothing reaches the 100 bin.
+    return {f"m{p}": _member(day, p) for p in (95.0, 96.0, 97.0)}
+
+
+def _spike_observed_cont(monkeypatch, night):
+    day = date(2030, 7, 1)
+    monkeypatch.setattr(model.open_meteo_models, "night_conditions",
+                        lambda d, station=None: night)
+    out = model.predict_variable(_spike_series(day), _obs_with_spike(day), day, "high",
+                                 datetime(day.year, day.month, day.day, 16, tzinfo=_TZ),
+                                 None, _SPIKE_OFF)
+    return out["observed_continuous"]
+
+
+def test_bucketed_offset_does_not_crash_the_high_spike_gate(monkeypatch):
+    # The regression itself: a bucketed offset must not blow up on a lone spike.
+    assert _spike_observed_cont(monkeypatch, (90.0, 25.0)) is not None
+
+
+def test_high_spike_gate_uses_the_resolved_bucket(monkeypatch):
+    # 'other' = +0.0: the forecast tops out at 97, nothing supports the 100 bin ->
+    # the lone spike is rejected for the corroborated 96.
+    assert _spike_observed_cont(monkeypatch, (90.0, 25.0)) == 96.0
+    # 'clear_calm' = +4.0: 97+4 lands in the 100 bin -> the spike is trusted.
+    # (A 0.0 fallback would reject here, proving the bucket is really resolved.)
+    assert _spike_observed_cont(monkeypatch, (10.0, 5.0)) == 100.0

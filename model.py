@@ -616,6 +616,12 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     bias = (calib or {}).get("bias", {})
     fullday, _fw = _collect_samples(series, day, variable, None, None, bias)
 
+    # The settlement shift to the CLI basis, resolved here (not at its point of use
+    # below) because the lone-spike/dip gates need it too. Always read it through
+    # _offset_bucket: `settle_offset[variable]` is a bucketed dict whenever the
+    # conditional offset is calibrated (Dallas), and only a float otherwise (Austin).
+    settle_shift, settle_gap_std = _offset_bucket(settle_offset, variable, day, calib, station)
+
     # Continuous (sub-hourly) observed extreme for the hard bound only: the live
     # 5-minute feed can catch a brief spike the routine :53 reading missed. Reads
     # are whole-°C, so haircut by half a °C (0.9°F) — the bound only tightens past
@@ -638,8 +644,7 @@ def predict_variable(series, obs_series, day, variable, now, calib,
         c_max_raw, c_min_raw = observed_so_far_robust(cont_times, cont_temps, day, now, min_support=1)
         c_max_rob, c_min = observed_so_far_robust(cont_times, cont_temps, day, now)
         if variable == "high":
-            shift = (settle_offset or {}).get("high", 0.0)
-            c_max = _trusted_high_max(c_max_raw, c_max_rob, fullday, shift)
+            c_max = _trusted_high_max(c_max_raw, c_max_rob, fullday, settle_shift)
             if c_max is not None:
                 observed_cont = c_max
                 observed_cont_display = c_max  # high already shows its trusted spike
@@ -651,9 +656,7 @@ def predict_variable(series, obs_series, day, variable, now, calib,
             # non-trivial probability (a plausible dawn trough, not a sensor glitch);
             # else fall back to the ≥2-corroborated trough, so a lone cold blip on a
             # convective afternoon still can't wrongly lock it.
-            shift = (settle_offset or {}).get("low", 0.0)
-            shift = shift if isinstance(shift, (int, float)) else 0.0
-            c_min_t = _trusted_low_min(c_min_raw, c_min, fullday, shift)
+            c_min_t = _trusted_low_min(c_min_raw, c_min, fullday, settle_shift)
             if c_min_t is not None:
                 observed_cont = c_min_t
                 observed_cont_display = c_min_raw if c_min_raw is not None else c_min_t  # show the raw dip
@@ -755,7 +758,7 @@ def predict_variable(series, obs_series, day, variable, now, calib,
     # NOT the hard observed bound (the offset is an average gap, not a floor) —
     # so consensus/bins move but still-possible bins are not zeroed. A constant
     # shift leaves sigma and locked_ratio unchanged. None => Robinhood, no shift.
-    settle_shift, settle_gap_std = _offset_bucket(settle_offset, variable, day, calib, station)
+    # (settle_shift/settle_gap_std are resolved once up top — the spike gates need them.)
     # Locked + continuous extreme observed: the CLI settlement value is directly
     # measured. observed_cont already includes any real sub-hourly spike the
     # average offset is meant to approximate, so anchor on the OBSERVED gap
