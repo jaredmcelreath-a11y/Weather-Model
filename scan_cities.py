@@ -4,13 +4,22 @@ The ONLY per-city data this system needs for the screen. Everything else --
 forecast gridpoint, timezone, nearest observation station -- is derived from
 NWS `points/{lat},{lon}` and cached for a day.
 
-Coordinates are the city's NWS CLIMATE STATION, which is the primary airport
-everywhere except New York, whose climate station is Central Park (KNYC). Using
-a downtown point elsewhere would resolve to the wrong observation station and
-silently break the realized-extreme rule in screen_rules.
+Coordinates are the station KALSHI SETTLES ON, which is usually but not always
+the city's busiest airport: New York settles on Central Park (KNYC), Chicago on
+Midway rather than O'Hare, and Houston on Hobby rather than Intercontinental.
+Picking the obvious airport for those three, or a downtown point anywhere,
+resolves to the wrong observation station and silently breaks the
+realized-extreme rule in screen_rules.
 
 Every pair below was verified 2026-08-03 by resolving it and confirming the
-FIRST returned station is the expected climate station.
+FIRST returned station is the expected station.
+
+Re-verified 2026-08-13 against outcomes rather than geography: for each city,
+the NWS CLI daily product for each candidate station was compared to how Kalshi
+actually settled, over ~33 settled days per series. Every station below matched
+32/33 or better; the runner-up matched roughly half. That check found Chicago
+(CLIMDW 67/67 vs CLIORD 33/67) and Houston (CLIHOU 33/33 vs CLIIAH 6/33) were
+pointed at the wrong airport. `scripts/verify_city_stations.py` re-runs it.
 """
 from __future__ import annotations
 
@@ -21,11 +30,11 @@ _CITY_COORDS = {
     "ATL": (33.6404, -84.4269),     # KATL
     "AUS": (30.1975, -97.6664),     # KAUS
     "BOS": (42.3656, -71.0096),     # KBOS
-    "CHI": (41.9803, -87.9090),     # KORD
+    "CHI": (41.7859, -87.7524),     # KMDW -- Midway, NOT O'Hare
     "DAL": (32.8934, -97.0265),     # KDFW
     "DC": (38.8512, -77.0402),      # KDCA
     "DEN": (39.8561, -104.6737),    # KDEN
-    "HOU": (29.9902, -95.3368),     # KIAH
+    "HOU": (29.6454, -95.2789),     # KHOU -- Hobby, NOT Intercontinental
     "LAX": (33.9425, -118.4081),    # KLAX
     "LV": (36.0840, -115.1537),     # KLAS
     "MIA": (25.7932, -80.2906),     # KMIA

@@ -47,18 +47,20 @@ _MODELED = (("DAL", "KDFW"), ("AUS", "KAUS"))
 # runs midnight-to-midnight LST year-round (the rule config.CLIMATE_TZ encodes
 # for KDFW). Coordinates are deliberately absent — they come from scan_cities.
 #
-# Three entries are not guessable from the city name and were confirmed against
-# api.weather.gov: Chicago observes at O'Hare (CLI `ORD`, there is no `CHI`
-# product), Houston at Intercontinental (`IAH` — a Hobby product exists and is
-# the wrong airport for the Kalshi series), and New York at Central Park (KNYC,
-# not an airport), matching the exception scan_cities already documents.
+# Three entries are not guessable from the city name, and the busier airport is
+# the WRONG answer for all three. Confirmed 2026-08-13 by scoring each candidate
+# station's NWS CLI product against how Kalshi actually settled (see the
+# scan_cities docstring): Chicago settles at Midway, not O'Hare (CLIMDW 67/67 vs
+# CLIORD 33/67); Houston at Hobby, not Intercontinental (CLIHOU 33/33 vs CLIIAH
+# 6/33); and New York at Central Park, not an airport (CLINYC 67/67 vs CLIJFK
+# 28/67). Every other city below matched its obvious airport 32/33 or better.
 _REFERENCE = (
     ("ATL",  "KATL", "America/New_York",    "Etc/GMT+5", "ATL"),
     ("BOS",  "KBOS", "America/New_York",    "Etc/GMT+5", "BOS"),
-    ("CHI",  "KORD", "America/Chicago",     "Etc/GMT+6", "ORD"),
+    ("CHI",  "KMDW", "America/Chicago",     "Etc/GMT+6", "MDW"),
     ("DC",   "KDCA", "America/New_York",    "Etc/GMT+5", "DCA"),
     ("DEN",  "KDEN", "America/Denver",      "Etc/GMT+7", "DEN"),
-    ("HOU",  "KIAH", "America/Chicago",     "Etc/GMT+6", "IAH"),
+    ("HOU",  "KHOU", "America/Chicago",     "Etc/GMT+6", "HOU"),
     ("LAX",  "KLAX", "America/Los_Angeles", "Etc/GMT+8", "LAX"),
     ("LV",   "KLAS", "America/Los_Angeles", "Etc/GMT+8", "LAS"),
     ("MIA",  "KMIA", "America/New_York",    "Etc/GMT+5", "MIA"),

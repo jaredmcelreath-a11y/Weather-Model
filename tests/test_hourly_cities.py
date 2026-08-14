@@ -43,10 +43,12 @@ def test_reference_coordinates_come_from_scan_cities():
 
 
 def test_verified_station_ids_and_zones():
-    # Verified live 2026-08-07 against api.weather.gov; the surprising ones.
+    # The three cities whose busier airport is the WRONG answer. Verified
+    # 2026-08-13 by scoring each candidate's NWS CLI product against how Kalshi
+    # actually settled; see the scan_cities docstring for the counts.
     c = hourly_cities.city("CHI")
-    assert (c.station, c.cli_location) == ("KORD", "ORD")
-    assert hourly_cities.city("HOU").station == "KIAH"       # not Hobby
+    assert (c.station, c.cli_location) == ("KMDW", "MDW")    # Midway, not O'Hare
+    assert hourly_cities.city("HOU").station == "KHOU"       # Hobby, not IAH
     assert hourly_cities.city("NYC").station == "KNYC"       # Central Park
     assert hourly_cities.city("PHX").timezone == "America/Phoenix"
     assert hourly_cities.city("MIA").timezone == "America/New_York"
