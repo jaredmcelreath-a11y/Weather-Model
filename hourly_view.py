@@ -59,15 +59,35 @@ def chart_frame(rows: list[dict]) -> list[dict]:
     return out
 
 
+def freshest(nws: dict | None, metar: dict | None, tzname: str) -> dict | None:
+    """The newer of the two readings, localised to `tzname`.
+
+    Both carry the same station's temperature and differ only in delivery: the
+    5-minute api.weather.gov feed lands ~20 minutes late and in whole degrees
+    Celsius, the routine :53 METAR in ~2 minutes and in tenths. Newest wins,
+    and a tie goes to the METAR as the finer of the two.
+
+    `tzname` rather than the project default because this page spans four
+    timezones — a Miami reading must not be stamped Central."""
+    best = None
+    for reading in (nws, metar):          # METAR second, so it wins a tie
+        if reading and (best is None or reading["time"] >= best["time"]):
+            best = reading
+    if best is None:
+        return None
+    return {"temp": best["temp"],
+            "time": best["time"].astimezone(ZoneInfo(tzname))}
+
+
 def _current(city) -> dict | None:
     """Official current temp for the city = its station's newest reading
-    (display only, no settlement logic), converted to the city's own zone."""
-    from sources import nws_observations
-    got = nws_observations.latest(city.station)
-    if not got:
-        return None
-    return {"temp": got["temp"],
-            "time": got["time"].astimezone(ZoneInfo(city.timezone))}
+    (display only, no settlement logic), converted to the city's own zone.
+
+    Two feeds carry it; see `freshest` for which one wins."""
+    from sources import metar_tgftp, nws_observations
+    return freshest(nws_observations.latest(city.station),
+                    metar_tgftp.latest_for_id(city.station),
+                    city.timezone)
 
 
 def _temp_chart(rows: list[dict], series_colors=None):

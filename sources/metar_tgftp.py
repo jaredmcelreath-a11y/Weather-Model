@@ -72,6 +72,25 @@ def parse(text: str):
     return when, _c_to_f(float(celsius))
 
 
+def latest_for_id(station_id: str, fetch=None) -> dict | None:
+    """{'temp': °F, 'time': aware UTC} for a RAW station id, or None.
+
+    Takes an ICAO rather than a config station code, so it serves the Hourly
+    page's 20 reference cities, which `config` has never heard of — the same
+    split `nws_observations.latest` makes, and for the same reason. The
+    timestamp stays UTC and localising it is the caller's job: a Miami reading
+    must not be stamped Central."""
+    fetch = fetch or (lambda url: get_text(url, ttl=60, timeout=10))
+    try:
+        parsed = parse(fetch(URL.format(id=station_id)))
+    except Exception:                     # noqa: BLE001 - see parse's docstring
+        return None
+    if parsed is None:
+        return None
+    when, temp = parsed
+    return {"temp": temp, "time": when}
+
+
 def latest(station: str = config.DEFAULT_STATION, fetch=None):
     """The station's newest routine reading, in ITS OWN timezone, or None.
 
@@ -79,12 +98,7 @@ def latest(station: str = config.DEFAULT_STATION, fetch=None):
     last reading, which model.py has already localised; comparing a UTC value
     against a local one would silently pick the wrong reading."""
     cfg = config.station(station)
-    fetch = fetch or (lambda url: get_text(url, ttl=60, timeout=10))
-    try:
-        parsed = parse(fetch(URL.format(id=cfg.id)))
-    except Exception:                     # noqa: BLE001 - see parse's docstring
+    got = latest_for_id(cfg.id, fetch=fetch)
+    if got is None:
         return None
-    if parsed is None:
-        return None
-    when, temp = parsed
-    return when.astimezone(ZoneInfo(cfg.timezone)), temp
+    return got["time"].astimezone(ZoneInfo(cfg.timezone)), got["temp"]

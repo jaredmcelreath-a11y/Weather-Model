@@ -88,3 +88,36 @@ def test_latest_swallows_a_dead_upstream():
         raise RuntimeError("tgftp down")
 
     assert metar_tgftp.latest(station="KAUS", fetch=boom) is None
+
+
+# ---- The raw-station entry point --------------------------------------------
+#
+# The Hourly page covers 20 reference cities that `config` has never heard of,
+# so it addresses stations by ICAO. Mirrors the same decision recorded in
+# nws_observations.latest's docstring.
+
+def test_latest_for_id_takes_an_icao_config_has_never_heard_of():
+    urls = []
+
+    def spy(url):
+        urls.append(url)
+        return _KAUS.replace("KAUS", "KATL")
+
+    got = metar_tgftp.latest_for_id("KATL", fetch=spy)
+    assert urls == ["https://tgftp.nws.noaa.gov/data/observations/metar/"
+                    "stations/KATL.TXT"]
+    assert got["temp"] == 102.02
+
+
+def test_latest_for_id_leaves_the_timestamp_in_utc_for_the_caller_to_localise():
+    # A Miami reading must not be stamped Central, so the display zone stays the
+    # caller's job -- the same contract nws_observations.latest keeps.
+    got = metar_tgftp.latest_for_id("KMIA", fetch=lambda url: _KAUS)
+    assert got["time"] == datetime(2026, 8, 16, 21, 53, tzinfo=timezone.utc)
+
+
+def test_latest_for_id_swallows_a_dead_upstream():
+    def boom(url):
+        raise RuntimeError("tgftp down")
+
+    assert metar_tgftp.latest_for_id("KATL", fetch=boom) is None

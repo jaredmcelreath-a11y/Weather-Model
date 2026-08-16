@@ -174,7 +174,7 @@ def test_render_accepts_a_modeled_city(monkeypatch):
 def test_current_reads_the_citys_station_and_converts_to_its_zone(monkeypatch):
     import hourly_cities
     import hourly_view
-    from sources import nws_observations
+    from sources import metar_tgftp, nws_observations
 
     seen = {}
 
@@ -184,6 +184,9 @@ def test_current_reads_the_citys_station_and_converts_to_its_zone(monkeypatch):
                 "time": datetime(2026, 8, 7, 18, 53, tzinfo=ZoneInfo("UTC"))}
 
     monkeypatch.setattr(nws_observations, "latest", fake_latest)
+    # _current now reads two feeds; silence the second so this test stays about
+    # station threading and zone conversion (and stays off the network).
+    monkeypatch.setattr(metar_tgftp, "latest_for_id", lambda *a, **k: None)
     got = hourly_view._current(hourly_cities.city("LAX"))
     assert seen["station"] == "KLAX"
     # 18:53Z is 11:53 in Los Angeles, not 13:53 Central.
@@ -193,8 +196,9 @@ def test_current_reads_the_citys_station_and_converts_to_its_zone(monkeypatch):
 def test_current_is_none_when_the_station_has_nothing(monkeypatch):
     import hourly_cities
     import hourly_view
-    from sources import nws_observations
+    from sources import metar_tgftp, nws_observations
     monkeypatch.setattr(nws_observations, "latest", lambda *a, **k: None)
+    monkeypatch.setattr(metar_tgftp, "latest_for_id", lambda *a, **k: None)
     assert hourly_view._current(hourly_cities.city("ATL")) is None
 
 
@@ -217,3 +221,45 @@ def test_render_centers_the_radar_on_the_city(monkeypatch):
     rows = [_row(datetime(2026, 8, 7, 13, tzinfo=ZoneInfo("America/Denver")))]
     hourly_view.render(lambda: (rows, None), city=hourly_cities.city("DEN"))
     assert (round(seen["lat"], 2), round(seen["lon"], 2)) == (39.86, -104.67)
+
+
+# ---- The current-temperature box: two feeds, newest wins --------------------
+#
+# The Hourly page's 20 reference cities read api.weather.gov's 5-minute feed,
+# which lands ~20 min late and in whole °C. The routine :53 METAR arrives via
+# tgftp in ~2 min and in tenths. Same rule the Forecast page uses.
+
+def _reading(hour, minute, temp):
+    from datetime import timezone
+    return {"temp": temp, "time": datetime(2026, 8, 16, hour, minute,
+                                           tzinfo=timezone.utc)}
+
+
+def test_hourly_box_prefers_the_metar_while_the_5_minute_feed_lags():
+    import hourly_view
+    got = hourly_view.freshest(_reading(21, 50, 100.4), _reading(21, 53, 102.02),
+                               "America/Chicago")
+    assert got["temp"] == 102.02
+    assert got["time"].hour == 16          # localised to the city, not UTC
+
+
+def test_hourly_box_keeps_the_5_minute_feed_once_it_is_ahead():
+    import hourly_view
+    got = hourly_view.freshest(_reading(22, 20, 103.1), _reading(21, 53, 102.02),
+                               "America/Chicago")
+    assert got["temp"] == 103.1
+
+
+def test_hourly_box_localises_to_the_citys_own_zone_not_the_project_default():
+    # A Miami reading stamped Central is the bug this page's module docstring
+    # warns about: the page spans four timezones.
+    import hourly_view
+    got = hourly_view.freshest(None, _reading(21, 53, 90.0), "America/New_York")
+    assert got["time"].hour == 17          # 21:53Z is 5:53pm EDT
+
+
+def test_hourly_box_survives_either_feed_being_down():
+    import hourly_view
+    assert hourly_view.freshest(_reading(21, 50, 100.4), None,
+                                "America/Chicago")["temp"] == 100.4
+    assert hourly_view.freshest(None, None, "America/Chicago") is None
