@@ -34,6 +34,7 @@ class Deps:
     station_for: Callable
     sleep: Callable = time.sleep
     write_reference: Callable = None
+    read_reference: Callable = None
 
 
 def _real_fetch_forecast(url):
@@ -59,7 +60,36 @@ def _real_deps() -> Deps:
         append_rows=lambda path, rows: scan_log.append_many(path, rows),
         station_for=lambda url: scan_cities.station_for(url),
         write_reference=lambda obj: scan_log.write_doc(scan_log.REFERENCE_PATH, obj),
+        read_reference=lambda: scan_log.read_doc(scan_log.REFERENCE_PATH),
     )
+
+
+def merge_reference(previous: dict, current: dict) -> dict:
+    """This pass's entries, over the identity of cities it could not reach.
+
+    A pass is all-or-nothing per city but the document is not: api.weather.gov
+    trips a 60s host cooldown after one timeout, and the whole 40-series loop
+    runs inside that window, so a single slow response used to publish a
+    two-city reference over a good forty-city one. Everything downstream reads
+    this document -- screen_alert skips a series with no timezone outright, and
+    the page's Day column and the consensus board both go blank -- so a
+    degraded pass must not be allowed to delete cities.
+
+    Only `station` and `timezone` are carried: they identify a city rather than
+    describe a moment, and neither changes between passes. The measurements
+    (`days`, `realized`, `remaining`) are deliberately dropped, because a stale
+    realized extreme is exactly what screen_alert fires dead-row pushes from --
+    and both alert rules already degrade safely when they are absent."""
+    out = dict(current or {})
+    for series, info in ((previous or {}).get("cities") or {}).items():
+        if series in out:
+            continue                      # this pass reached it; its data wins
+        tzname = (info or {}).get("timezone")
+        if not tzname:
+            continue                      # nothing worth carrying
+        out[series] = {"station": (info or {}).get("station"),
+                       "timezone": tzname, "days": {}}
+    return out
 
 
 def observed_readings(features, tzname, day):
@@ -224,7 +254,16 @@ def screen_pass(now: datetime, deps: Deps) -> dict:
     # failure here must not cost the pass its rows.
     if deps.write_reference:
         try:
-            deps.write_reference({"generated": now_iso, "cities": reference})
+            previous = deps.read_reference() if deps.read_reference else {}
+        except Exception as e:            # noqa: BLE001 - an unreadable previous
+            print(f"[screen] previous reference unreadable ({e})")   # is not fatal
+            previous = {}
+        published = merge_reference(previous, reference)
+        carried = len(published) - len(reference)
+        if carried:
+            print(f"[screen] reference: carried {carried} city entries forward")
+        try:
+            deps.write_reference({"generated": now_iso, "cities": published})
         except Exception as e:            # noqa: BLE001
             print(f"[screen] reference publish failed ({e})")
     return {"candidates": written or 0, "cities": cities, "errors": errors,

@@ -86,6 +86,56 @@ def test_the_reference_publishes_the_realized_extreme_for_today():
     assert city["realized"]["2026-08-07"] == 61.0
 
 
+def test_merge_carries_identity_forward_for_a_series_this_pass_missed():
+    # A pass that could not reach a city must not delete it: station and
+    # timezone are the two fields screen_alert REQUIRES, and neither changes.
+    previous = {"cities": {
+        "KXLOWTDEN": {"station": "KDEN", "timezone": "America/Denver",
+                      "days": {"2026-08-07": 61.0}},
+        "KXHIGHTDAL": {"station": "KDFW", "timezone": "America/Chicago",
+                       "days": {"2026-08-07": 99.0},
+                       "realized": {"2026-08-07": 97.0},
+                       "remaining": {"2026-08-07": 98.0}},
+    }}
+    current = {"KXLOWTDEN": {"station": "KDEN", "timezone": "America/Denver",
+                             "days": {"2026-08-07": 62.0}}}
+    merged = screen.merge_reference(previous, current)
+    # The screened city is replaced wholesale by this pass's fresher numbers.
+    assert merged["KXLOWTDEN"]["days"] == {"2026-08-07": 62.0}
+    # The missed city survives with its identity...
+    assert merged["KXHIGHTDAL"]["station"] == "KDFW"
+    assert merged["KXHIGHTDAL"]["timezone"] == "America/Chicago"
+    # ...but NOT with measurements this pass did not take. A stale realized
+    # extreme is what screen_alert fires dead-row pushes from.
+    assert not merged["KXHIGHTDAL"].get("days")
+    assert not merged["KXHIGHTDAL"].get("realized")
+    assert not merged["KXHIGHTDAL"].get("remaining")
+
+
+def test_a_degraded_pass_does_not_shrink_the_published_reference():
+    # The live failure: one api.weather.gov timeout trips a 60s host cooldown,
+    # every later series fast-fails, and the truncated doc used to overwrite a
+    # good 40-city one -- blanking the consensus board and the Day column.
+    published = []
+    deps = _deps(published)
+    deps.list_series = lambda: [{"ticker": "KXLOWTDEN"}, {"ticker": "KXHIGHTDAL"}]
+
+    def flaky(lat, lon):
+        if (lat, lon) != screen.scan_cities.point_for("KXLOWTDEN"):
+            raise RuntimeError("api.weather.gov skipped: recent failure")
+        return {"timezone": "America/Denver",
+                "forecast_hourly": "https://example.test/hourly",
+                "stations_url": "https://example.test/stations"}
+
+    deps.resolve_point = flaky
+    deps.read_reference = lambda: {"cities": {
+        "KXHIGHTDAL": {"station": "KDFW", "timezone": "America/Chicago"}}}
+    screen.screen_pass(_NOW, deps)
+    cities = published[0]["cities"]
+    assert set(cities) == {"KXLOWTDEN", "KXHIGHTDAL"}
+    assert cities["KXHIGHTDAL"]["timezone"] == "America/Chicago"
+
+
 def test_a_day_not_yet_in_progress_has_no_realized_entry():
     # The market listed for Aug 8 is screened, but nothing has been realized on
     # it -- an entry of None would read as "measured, and it is nothing".
