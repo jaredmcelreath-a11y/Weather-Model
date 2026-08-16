@@ -38,7 +38,7 @@ import convective
 from convective import convective_sigma
 import solar
 from sources import (open_meteo_ensemble, open_meteo_models, nws_forecast,
-                     nws_observations, iem_mos)
+                     nws_observations, iem_mos, metar_tgftp)
 from sources.station_history import fetch_actual_cli
 
 TZ = ZoneInfo(TIMEZONE)
@@ -1193,6 +1193,55 @@ def per_source_extremes(series, day):
     return out
 
 
+def live_hourly(obs_times, obs_temps, tgftp):
+    """The routine :53 reading, from whichever copy of it arrived first.
+
+    The api.weather.gov hourly series and tgftp carry the SAME observation —
+    the difference is delivery: ~20 minutes against ~2. Preferring tgftp when
+    it is at least as new turns the precise hourly box from a retrospective
+    into something usable while the hour is still trading.
+
+    Ties go to tgftp, whose T-group is in tenths of °C where the series has
+    already been rounded to whole °F."""
+    best = None
+    if obs_times:
+        best = (obs_times[-1], {"temp": round(obs_temps[-1], 1),
+                                "time": obs_times[-1].isoformat(timespec="minutes")})
+    if tgftp is not None:
+        when, temp = tgftp
+        if best is None or when >= best[0]:
+            best = (when, {"temp": round(temp, 1),
+                           "time": when.isoformat(timespec="minutes")})
+    return best[1] if best else None
+
+
+def live_current(cont, current_hourly, tgftp):
+    """The freshest reading to print as 'Current Temp'.
+
+    Newest wins, because "current" is a claim about now. The two continuous
+    feeds trade places through the hour: for roughly the 18 minutes after :53
+    the routine METAR is ahead (published ~2 min after the observation, against
+    the 5-minute feed's ~20 min ingest lag), and after that the 5-minute feed
+    creeps past it. A tie goes to the METAR, whose T-group is in tenths of °C
+    where the 5-minute feed is in whole degrees — the difference between
+    reading 100 and 102 with nothing expressible in between.
+
+    DISPLAY ONLY. Nothing here reaches predict_variable, which reads
+    `obs_continuous`; see gather_series for that split."""
+    best = None                           # (time, {"temp", "time"})
+    if cont and cont[0]:
+        cont_times, cont_temps = cont
+        best = (cont_times[-1], {"temp": round(cont_temps[-1], 1),
+                                 "time": cont_times[-1].isoformat(timespec="minutes")})
+    if tgftp is not None:
+        when, temp = tgftp
+        # >= so a tie prefers the METAR.
+        if best is None or when >= best[0]:
+            best = (when, {"temp": round(temp, 1),
+                           "time": when.isoformat(timespec="minutes")})
+    return best[1] if best else current_hourly
+
+
 def snapshot(calib: dict | None = None, settle_offset=None,
              continuous_obs: bool = False, include_candidate: bool = False,
              station: str = config.DEFAULT_STATION) -> dict:
@@ -1212,22 +1261,18 @@ def snapshot(calib: dict | None = None, settle_offset=None,
     obs_times, obs_temps = obs.get("obs", ([], []))
     # Latest routine hourly (:53 METAR) reading, kept alongside the live value so
     # the dashboard can still surface the precise hourly temp under Current Temp.
-    current_hourly = None
-    if obs_times:
-        current_hourly = {"temp": round(obs_temps[-1], 1),
-                          "time": obs_times[-1].isoformat(timespec="minutes")}
+    # Fetched once and shared by both boxes: it is the freshest copy of the :53
+    # report (~2 min against the hourly series' ~20) and the only one in tenths
+    # of °C. Display only — see live_current.
+    tgftp = metar_tgftp.latest(station=station)
+    current_hourly = live_hourly(obs_times, obs_temps, tgftp)
     # Prefer the sub-hourly (~5-min) feed for the live 'current' reading so it
     # refreshes every few minutes instead of only at the routine :53 METAR; fall
     # back to the hourly series when the continuous feed isn't fetched. The
     # display-only copy is present on every basis (see gather_series), so the
     # hourly-basis pages get the fresh reading without the CLI prediction plumbing.
     cont = obs.get("obs_continuous") or obs.get("obs_continuous_display")
-    if cont and cont[0]:
-        cont_times, cont_temps = cont
-        current = {"temp": round(cont_temps[-1], 1),
-                   "time": cont_times[-1].isoformat(timespec="minutes")}
-    else:
-        current = current_hourly
+    current = live_current(cont, current_hourly, tgftp)
 
     snap = {
         "updated": now.isoformat(timespec="seconds"),
