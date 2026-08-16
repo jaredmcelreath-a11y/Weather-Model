@@ -20,12 +20,30 @@ _CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", ".cache")
 _session = requests.Session()
 _session.headers.update({"User-Agent": NWS_USER_AGENT})
 
-# Circuit breaker: once a host exhausts its retries, fast-fail further calls to
-# it for a short cooldown. A total outage of one host (e.g. api.open-meteo.com,
-# which several call sites hit per snapshot) then costs a single timeout instead
-# of one per call site. Keyed by host, so a healthy sibling host is unaffected.
-_FAILED_HOSTS: dict[str, float] = {}
+# Circuit breaker: once a host looks DEAD, fast-fail further calls to it for a
+# short cooldown. A total outage of one host (e.g. api.open-meteo.com, which
+# several call sites hit per snapshot) then costs a few timeouts instead of one
+# per call site. Keyed by host, so a healthy sibling host is unaffected.
+#
+# "Dead" means _FAILURES_TO_TRIP calls exhausted their retries IN A ROW, not
+# one. A single exhausted call cannot distinguish a slow response from a dead
+# host, and treating the two alike broke batch callers: screen.py hits
+# api.weather.gov ~3x per city across 40 cities, which all falls inside the 60s
+# cooldown, so one read timeout cost 38 cities (observed 2026-08-16:
+# {'cities': 2, 'errors': 38}). Consecutive failures are the discriminator --
+# a dead host never succeeds in between, a slow one does. Any success clears
+# the count, so the trip only fires on a real run of failures.
+#
+# The cost of the threshold is that a genuine outage now pays up to
+# _FAILURES_TO_TRIP timeouts on the first pass rather than one. That is bounded,
+# it only happens once per cooldown, and the pages already degrade around a dead
+# source rather than waiting on it.
+#
+# {host: (consecutive failures, time tripped or None)} -- one dict so that
+# resetting it in a test resets the whole breaker.
+_FAILED_HOSTS: dict[str, tuple[int, float | None]] = {}
 _HOST_COOLDOWN = 60  # seconds
+_FAILURES_TO_TRIP = 3
 
 
 def _cache_path(url: str, params: dict) -> str:
@@ -53,11 +71,14 @@ def get_json(url: str, params: dict | None = None,
             with open(path) as fh:
                 return json.load(fh)
     host = urlparse(url).netloc
-    if host in _FAILED_HOSTS:
-        if time.time() - _FAILED_HOSTS[host] < _HOST_COOLDOWN:
+    failures, tripped_at = _FAILED_HOSTS.get(host, (0, None))
+    if tripped_at is not None:
+        if time.time() - tripped_at < _HOST_COOLDOWN:
             raise requests.exceptions.ConnectionError(
-                f"{host} skipped: recent failure within {_HOST_COOLDOWN}s cooldown")
+                f"{host} skipped: {failures} consecutive failures within "
+                f"{_HOST_COOLDOWN}s cooldown")
         del _FAILED_HOSTS[host]  # cooldown elapsed — allow a fresh probe
+        failures = 0
     for attempt in range(retries + 1):
         try:
             resp = _session.get(url, params=params, timeout=timeout)
@@ -65,7 +86,11 @@ def get_json(url: str, params: dict | None = None,
             break
         except requests.exceptions.RequestException:
             if attempt == retries:
-                _FAILED_HOSTS[host] = time.time()  # trip the breaker
+                failures += 1
+                # Only a RUN of failures means the host is down; one is a blip.
+                _FAILED_HOSTS[host] = (
+                    failures,
+                    time.time() if failures >= _FAILURES_TO_TRIP else None)
                 raise
             time.sleep(2 * (attempt + 1))  # brief backoff for a transient blip
     resp.raise_for_status()

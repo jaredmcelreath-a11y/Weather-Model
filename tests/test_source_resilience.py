@@ -55,10 +55,13 @@ def test_get_json_retries_transient_timeout(monkeypatch, tmp_path):
 
 
 def test_get_json_circuit_breaker_fast_fails_a_dead_host(monkeypatch, tmp_path):
-    """After a host exhausts its retries, further calls to it fail instantly.
+    """Once a host is declared dead, further calls to it fail instantly.
 
-    A single outage should cost one timeout, not one per call site — otherwise
-    the several open-meteo calls in a snapshot each wait out the full retry.
+    An outage should cost a BOUNDED number of timeouts, not one per call site —
+    otherwise the several open-meteo calls in a snapshot each wait out the full
+    retry. The bound is _FAILURES_TO_TRIP consecutive failures rather than one,
+    so that a single slow response no longer condemns the host; see the breaker
+    comment in sources/common.
     """
     monkeypatch.setattr(common, "_CACHE_DIR", str(tmp_path))
     monkeypatch.setattr(common, "_FAILED_HOSTS", {})
@@ -71,12 +74,12 @@ def test_get_json_circuit_breaker_fast_fails_a_dead_host(monkeypatch, tmp_path):
 
     monkeypatch.setattr(common._session, "get", always_timeout)
 
-    for _ in range(2):
+    for _ in range(common._FAILURES_TO_TRIP):
         try:
             common.get_json("https://dead.test/x", ttl=0)
         except requests.exceptions.RequestException:
             pass
-    first_round = calls["n"]  # network attempts for the first (real) call
+    first_round = calls["n"]  # network attempts before the breaker gave up
 
     # A subsequent call to the SAME host must not touch the network at all.
     before = calls["n"]
@@ -153,3 +156,87 @@ def test_gather_series_clean_when_all_sources_healthy(monkeypatch):
     series, obs, dropped = model.gather_series(forecast_days=2)
     assert dropped == []
     assert {"ens", "det", "nws", "mos"} <= set(series)
+
+
+# ---------------------------------------------------------------------------
+# Circuit breaker: one slow response is not an outage
+# ---------------------------------------------------------------------------
+#
+# The breaker used to trip on the FIRST exhausted call, which cannot tell a
+# single slow response from a dead host. screen.py hits api.weather.gov ~3x per
+# city across 40 cities inside the 60s cooldown, so one timeout cost 38 of them
+# (observed live 2026-08-16: {'cities': 2, 'errors': 38}). Consecutive failures
+# are the discriminator -- a dead host never succeeds in between.
+
+def _timeouts_then_ok(calls, fail_first):
+    def get(url, params=None, timeout=None):
+        calls["n"] += 1
+        if calls["n"] <= fail_first:
+            raise requests.exceptions.ReadTimeout("slow")
+        return _Resp({"ok": True})
+    return get
+
+
+def test_one_exhausted_call_does_not_trip_the_breaker(monkeypatch, tmp_path):
+    monkeypatch.setattr(common, "_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(common, "_FAILED_HOSTS", {})
+    monkeypatch.setattr(common.time, "sleep", lambda *_: None)
+    calls = {"n": 0}
+    # 2 attempts (retries=1) fail, then the host answers normally again.
+    monkeypatch.setattr(common._session, "get", _timeouts_then_ok(calls, 2))
+
+    try:
+        common.get_json("https://blip.test/a", ttl=0)
+    except requests.exceptions.RequestException:
+        pass
+    # The very next call must REACH THE NETWORK rather than be refused.
+    assert common.get_json("https://blip.test/b", ttl=0) == {"ok": True}
+
+
+def test_a_success_between_failures_resets_the_count(monkeypatch, tmp_path):
+    monkeypatch.setattr(common, "_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(common, "_FAILED_HOSTS", {})
+    monkeypatch.setattr(common.time, "sleep", lambda *_: None)
+    state = {"fail": True, "n": 0}
+
+    def alternating(url, params=None, timeout=None):
+        state["n"] += 1
+        if state["fail"]:
+            raise requests.exceptions.ReadTimeout("slow")
+        return _Resp({"ok": True})
+
+    monkeypatch.setattr(common._session, "get", alternating)
+    # Fail, succeed, fail, succeed, fail -- never three in a row, so the host
+    # is never declared dead. This is the screen loop's actual shape.
+    for _ in range(3):
+        state["fail"] = True
+        try:
+            common.get_json("https://flaky.test/x", ttl=0)
+        except requests.exceptions.RequestException:
+            pass
+        state["fail"] = False
+        assert common.get_json("https://flaky.test/y", ttl=0) == {"ok": True}
+
+
+def test_a_genuinely_dead_host_still_trips_and_fast_fails(monkeypatch, tmp_path):
+    monkeypatch.setattr(common, "_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(common, "_FAILED_HOSTS", {})
+    monkeypatch.setattr(common.time, "sleep", lambda *_: None)
+    calls = {"n": 0}
+
+    def always_timeout(url, params=None, timeout=None):
+        calls["n"] += 1
+        raise requests.exceptions.ReadTimeout("down")
+
+    monkeypatch.setattr(common._session, "get", always_timeout)
+    for _ in range(common._FAILURES_TO_TRIP):
+        try:
+            common.get_json("https://dead.test/x", ttl=0)
+        except requests.exceptions.RequestException:
+            pass
+    before = calls["n"]
+    try:
+        common.get_json("https://dead.test/y", ttl=0)
+    except requests.exceptions.RequestException:
+        pass
+    assert calls["n"] == before          # refused without touching the network
