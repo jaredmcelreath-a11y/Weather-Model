@@ -33,6 +33,36 @@ def test_an_empty_raw_message_marks_the_row_five_minute():
     assert not timeseries_view.is_hourly({"timestamp": "x"})
 
 
+def test_tenths_mark_a_metar_even_before_its_raw_text_arrives():
+    # THE TRAP that shipped wrong the first time. `rawMessage` LAGS the numeric
+    # fields by up to an hour -- measured 2026-08-16 across three stations, the
+    # newest METAR had tenths and an empty rawMessage while the one an hour
+    # older carried 69 bytes of raw text:
+    #     KDFW 22:53 temp=38.9 rawlen=0
+    #     KDFW 21:53 temp=38.9 rawlen=69
+    # Keying off the raw text alone therefore mislabels the newest METAR, which
+    # is the one row on this page anyone is actually watching.
+    assert timeseries_view.is_hourly(_props("2026-08-16T22:53:00+00:00", 38.9))
+    assert timeseries_view.is_hourly(_props("2026-08-16T22:52:00+00:00", 34.4))
+
+
+def test_a_metar_landing_on_the_whole_degree_reads_as_five_minute():
+    # Unresolvable and deliberately conservative: a METAR of exactly 38.0degC is
+    # indistinguishable by value from the 5-minute row's whole-degC 38. Claiming
+    # tenths it might not have is the error that costs money -- the same
+    # on-grid reasoning screen_rules._reading_slack_f documents -- so an on-grid
+    # reading is called the less precise thing unless raw text proves otherwise.
+    assert not timeseries_view.is_hourly(_props("2026-08-16T22:53:00+00:00", 38.0))
+    assert timeseries_view.is_hourly(
+        _props("2026-08-16T22:53:00+00:00", 38.0, raw="KDFW 162253Z 16005KT"))
+
+
+def test_calm_wind_is_not_reported_as_a_northerly():
+    # Speed 0 with direction 0 is CALM. Rendering it "N 0" invents a compass
+    # bearing the station never reported.
+    assert timeseries_view._wind(0.0, "N") == "Calm"
+
+
 def test_a_reading_converts_units_and_localises():
     # degC -> degF, km/h -> mph, degrees -> compass, UTC -> the city's zone.
     got = timeseries_view.reading(

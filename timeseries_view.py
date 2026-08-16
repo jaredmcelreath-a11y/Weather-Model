@@ -34,13 +34,39 @@ _COMPASS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
 _MPH_PER_KMH = 0.621371
 
 
+# How far off the whole-degC grid a value must sit to prove it carries tenths.
+# The feed states Celsius natively, so this is a float-noise guard, not a
+# conversion tolerance -- the same role the matching constant plays in
+# screen_rules._reading_slack_f.
+_WHOLE_C_TOLERANCE = 0.05
+
+
 def is_hourly(props: dict) -> bool:
     """Whether this row is the routine METAR rather than a 5-minute reading.
 
-    The raw text is the discriminator, not the minute of the timestamp: a SPECI
-    also carries raw text and is also a full-precision report, while the :55
-    five-minute row is not."""
-    return bool(((props or {}).get("rawMessage") or "").strip())
+    PRECISION is the discriminator, not the raw text and not the minute of the
+    timestamp. `rawMessage` looks like the obvious answer and is wrong: it LAGS
+    the numeric fields by up to an hour. Measured 2026-08-16 across KDFW, KLAS
+    and KATL, the newest METAR carried tenths with an empty rawMessage while the
+    one an hour older carried its full text --
+
+        KDFW 22:53  temp=38.9  rawlen=0
+        KDFW 21:53  temp=38.9  rawlen=69
+
+    -- so keying off raw text alone mislabels the newest METAR, which is the one
+    row on this page anyone is watching. Raw text still counts when it IS there;
+    it just cannot be required.
+
+    A METAR landing exactly on the whole-degC grid is unresolvable and reads as
+    5-minute. That is the conservative direction, for the reason
+    screen_rules._reading_slack_f gives: overstating precision the reading does
+    not have is the error with a cost."""
+    if ((props or {}).get("rawMessage") or "").strip():
+        return True
+    celsius = _value(props, "temperature")
+    if celsius is None:
+        return False
+    return abs(float(celsius) - round(float(celsius))) >= _WHOLE_C_TOLERANCE
 
 
 def compass(degrees) -> str:
@@ -144,8 +170,15 @@ def _temp(value) -> str:
 
 
 def _wind(mph, direction) -> str:
+    """'SW 10', 'Calm', or an em dash when the station reported no wind at all.
+
+    Calm is named rather than printed as a bearing: a 0 mph reading arrives with
+    direction 0, which the compass renders 'N', inventing a northerly the
+    station never reported."""
     if mph is None:
         return _EM
+    if round(float(mph)) == 0:
+        return "Calm"
     return f"{direction} {mph:.0f}".strip()
 
 
@@ -158,3 +191,53 @@ def table_rows(rows: list) -> list:
              "Feed": "METAR" if r.get("hourly") else "5-min",
              "Raw METAR": r.get("raw") or _EM}
             for r in rows or []]
+
+
+def _extreme(pair) -> str:
+    """'102.2° at 4:25 PM', or an em dash when the day has none yet."""
+    if not pair:
+        return _EM
+    value, when = pair
+    return f"{float(value):.1f}° at {when.strftime('%-I:%M %p')}"
+
+
+def extreme_caption(extremes: dict) -> str:
+    """The climate day's running extremes, as one line."""
+    return (f"High so far {_extreme((extremes or {}).get('high'))}  ·  "
+            f"Low so far {_extreme((extremes or {}).get('low'))}")
+
+
+def render(load_window, city=None, now=None) -> None:
+    """Draw the Timeseries page.
+
+    `load_window` is a cached () -> list of NWS observation `properties` dicts,
+    newest first (nws_observations.window_for_id). `city` is an
+    hourly_cities.HourlyCity; None means the default city.
+    """
+    from datetime import timezone as _utc
+
+    c = city or hourly_cities.city(hourly_cities.DEFAULT_KEY)
+    tz = ZoneInfo(c.timezone)
+    market_view._theme_controls()      # theme CSS + .wtbl/.wtbl-wrap + Settings
+    # Five minutes, matching the feed: a new MADIS reading exists only that
+    # often, so a faster refresh would re-render the same table.
+    st_autorefresh(interval=300_000, key="refresh_timeseries")
+    st.title(f"{c.name} Timeseries")
+    st.caption(f"The last 36 hours of {c.station}'s own observations, five "
+               "minutes apart — the same feed weather.gov/wrh/timeseries draws.")
+
+    try:
+        rows = readings(load_window(), tz)
+    except Exception as e:             # noqa: BLE001 - one dead station must
+        st.info(f"No observations for {c.station} right now ({e}).")
+        return
+    if not rows:
+        st.info(f"No observations for {c.station} in the last 36 hours.")
+        return
+
+    day = hourly_cities.climate_day(c, now or datetime.now(_utc.utc))
+    st.markdown(f"#### Climate day {day:%b %-d}")
+    st.caption(extreme_caption(day_extremes(rows, day, c.climate_tz)))
+    st.caption("Read as published: with a whole-°C row in the mix the high is a "
+               "FLOOR on the true high and the low a CEILING on the true low.")
+    st.markdown(_table(_COLUMNS, table_rows(rows)), unsafe_allow_html=True)
