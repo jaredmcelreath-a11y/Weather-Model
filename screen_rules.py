@@ -491,3 +491,52 @@ def guarded_candidate(row: dict, bound, remaining, now_iso: str):
     if margin < MIN_CANDIDATE_GAP_F:
         return None
     return _yes_candidate(row, "guarded", float(bound), margin, price, now_iso)
+
+
+# ---- Which ladders are still live -----------------------------------------
+#
+# Not a screening rule and deliberately not shaped like one: it flags no
+# mispricing and produces no candidate. It answers the prior question the page
+# never answered -- which of the forty ladders has a market at all today, and
+# which have already collapsed onto one bracket.
+
+# At or above this the ladder has picked its answer and there is nothing left to
+# decide. The mirror of SETTLED_PRICE's logic applied to a whole ladder rather
+# than one bracket, and a round number by choice: this is an orientation
+# threshold, not a calibrated one.
+UNSETTLED_BELOW = 0.90
+
+
+def leading_bracket(rows: list):
+    """The dearest bracket on this ladder and its runner-up, or None.
+
+    Priced off `price_of` -- the YES ask, falling back to the bid -- so the
+    number means what Price means everywhere else on the page: what taking that
+    side would cost.
+
+    The runner-up is carried as its own label/price pair rather than a nested
+    dict, so a consumer reading one field cannot accidentally read the
+    leader's. It is None on a one-bracket ladder rather than zero: a zero would
+    read as "the market prices the alternative at nothing", which the ladder
+    never said.
+
+    Ties break on ticker so the answer is deterministic: a leader that flickered
+    between two equally-priced brackets would republish a different document
+    every firing from identical inputs."""
+    priced = [(price_of(r), r) for r in rows or []]
+    priced = [(p, r) for p, r in priced if p is not None]
+    if not priced:
+        return None
+    priced.sort(key=lambda pair: (-pair[0], str(pair[1].get("ticker") or "")))
+    price, top = priced[0]
+    runner = priced[1] if len(priced) > 1 else None
+    return {"ticker": top.get("ticker"), "label": top.get("label"),
+            "price": price,
+            "next_label": None if runner is None else runner[1].get("label"),
+            "next_price": None if runner is None else runner[0]}
+
+
+def is_unsettled(leader) -> bool:
+    """Whether this ladder still has something to decide."""
+    price = (leader or {}).get("price")
+    return price is not None and float(price) < UNSETTLED_BELOW
