@@ -67,3 +67,17 @@ def test_the_caption_names_the_denominator_and_the_firing_time():
 def test_the_caption_survives_a_document_with_no_stamp():
     got = screen_view.unsettled_caption({"cities": {}}, shown=0, total=0)
     assert isinstance(got, str) and got
+
+
+def test_an_unreachable_reference_does_not_take_the_page_down(monkeypatch):
+    # THE REGRESSION this guards. scan_log.read_doc's docstring says "never
+    # raises", but that covers only the JSON parse -- GitHubTransport.get calls
+    # raise_for_status(), so a 403 rate-limit or a 5xx propagates. This section
+    # renders BEFORE the candidate load, and Streamlit Cloud's shared egress IP
+    # is exactly where a 403 shows up, so an unguarded read here empties the
+    # whole Strategy page rather than one table.
+    def boom():
+        raise RuntimeError("403 rate limit exceeded")
+
+    monkeypatch.setattr(screen_view, "reference_doc", boom)
+    screen_view._render_unsettled()          # must not raise

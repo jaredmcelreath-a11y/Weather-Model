@@ -757,12 +757,25 @@ def unsettled_caption(doc: dict, shown: int, total: int) -> str:
             "Prices are from that firing, not live.")
 
 
-def _render_unsettled(doc: dict) -> None:
+def _render_unsettled() -> None:
     """Today's still-open ladders, at the top of the page.
 
     Above the candidates because it answers the prior question: 'where is there
-    a market at all' comes before 'which bracket is mispriced'."""
+    a market at all' comes before 'which bracket is mispriced'.
+
+    Reads its own document INSIDE the guard rather than taking it as an
+    argument. scan_log.read_doc says it never raises, but that covers only the
+    JSON parse: GitHubTransport.get calls raise_for_status(), so a 403 rate
+    limit or a 5xx propagates. Being the first section on the page, an
+    unguarded read here empties the whole Strategy page -- candidates, YES side
+    and all -- for a failure in the least important table on it. Streamlit
+    Cloud's shared egress IP is precisely where that 403 turns up."""
     st.markdown("#### Still Live Today")
+    try:
+        doc = reference_doc()
+    except Exception as e:            # noqa: BLE001 - a page must not crash
+        st.caption(f"Reference unavailable right now ({e}).")
+        return
     rows = unsettled_rows(doc)
     total = len({s for s, i in ((doc or {}).get("cities") or {}).items()
                  if (i or {}).get("timezone")})
@@ -1476,7 +1489,7 @@ def render() -> None:
     st.markdown(_TIP_CSS, unsafe_allow_html=True)   # header tips for both tables
     # Before the candidate load, deliberately: this reads a different document,
     # and a missing candidate log must not take it down too.
-    _render_unsettled(reference_doc())
+    _render_unsettled()
     try:
         # Three days, not the whole history: enough for the newest firing, for
         # "what did the last firing add", and for the trade table's Flagged
