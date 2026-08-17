@@ -3822,3 +3822,4 @@
 {"ts": "2026-08-17T21:52:20.974166+00:00", "kind": "skip", "variable": "low", "reason": "model 69.4 vs market 70.5 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26AUG17-B70.5"}
 {"ts": "2026-08-17T22:02:59.914461+00:00", "kind": "exit", "ticker": "KXHIGHAUS-26AUG17-B102.5", "side": "yes", "count": 1, "reason": "stop-loss: ask 0.01 <= entry 0.92 - 0.20", "mode": "shadow", "variable": "high", "exit_price": 0.01, "pnl": -0.91}
 {"ts": "2026-08-17T22:03:01.358926+00:00", "kind": "skip", "variable": "high", "reason": "model 102.2 vs market 104.5 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26AUG17-B104.5"}
+{"ts": "2026-08-17T22:03:02.842144+00:00", "kind": "skip", "variable": "low", "reason": "model 69.4 vs market 70.5 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26AUG17-B70.5"}
