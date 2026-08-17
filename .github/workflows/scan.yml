@@ -154,6 +154,38 @@ jobs:
           fi
           python scanner.py settle
 
+      # Does each city's station still match how Kalshi actually settles it?
+      #
+      # This check existed from 2026-08-13 and found Chicago and Houston on the
+      # wrong airport the first time it was run — then nothing ran it again for
+      # twelve days, during which every "dead" row those two cities produced was
+      # wrong. Manual-only was the defect, so it is on the clock now.
+      #
+      # Right after settlement, and gated the same way, because it scores
+      # against settled days and wants the one that just finalized. Daily is
+      # generous for a mapping that changes almost never; the point is that the
+      # gap between a change and noticing it is a day, not a fortnight.
+      #
+      # `|| true` deliberately: a wrong station is news for the phone, not a red
+      # X on a workflow whose real job is recording settlements. The push is the
+      # alarm; the log keeps the detail.
+      - name: Verify city stations
+        if: >-
+          (github.event_name == 'schedule'
+           && github.event.schedule == '0 12 * * *')
+          || github.event_name == 'repository_dispatch'
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = "repository_dispatch" ]; then
+            H=$(date -u +%-H); M=$(date -u +%-M)
+            if [ "$H" != "12" ] || [ "$M" -ge 30 ]; then
+              echo "${H}:${M}Z — not the settlement slot, skipping"; exit 0
+            fi
+          fi
+          python scripts/verify_city_stations.py --notify || true
+
       # The screen is a separate entry point, so a dispatch of "screen" must not
       # be handed to scanner.py -- without this branch the Screen page could only
       # be populated by waiting for a scheduled firing.

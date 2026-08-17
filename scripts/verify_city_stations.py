@@ -1,4 +1,10 @@
-"""Verify each city's station against how Kalshi ACTUALLY SETTLED. Run by hand.
+"""Verify each city's station against how Kalshi ACTUALLY SETTLED.
+
+Runs daily from scan.yml beside the settlement step, and by hand whenever a city
+is added or a mapping is doubted. It was manual-only until 2026-08-17, and that
+was the whole defect: Chicago and Houston were pointed at the wrong airport for
+twelve days, not because the check could not find them -- this script found both
+the first time it was run -- but because nothing ever ran it.
 
 `verify_hourly_cities.py` checks geography: that a coordinate resolves to the
 station the table claims. It cannot catch the failure that matters here --- a
@@ -17,7 +23,7 @@ Note this scores against the CLI basis, which is what Kalshi settled on before
 the ~2026-08-14 move to The Weather Company. It stays valid as a station test:
 the settlement SOURCE changed, the station did not.
 
-Usage: python3 scripts/verify_city_stations.py [--days 35]
+Usage: python3 scripts/verify_city_stations.py [--days 35] [--notify]
 """
 import argparse
 import json
@@ -34,6 +40,15 @@ import hourly_cities   # noqa: E402
 import scan_cities     # noqa: E402
 
 HEADERS = {"User-Agent": "kdfw-weather-model (jaredmcelreath@gmail.com)"}
+
+# Seconds between Kalshi requests. Forty series x two statuses is eighty calls,
+# and the scanner measured 51 unpaced series losing 21 of 26 to HTTP 429
+# (scanner.REQUEST_SPACING_S documents it). The single retry below does not
+# survive a sustained 429, and a rate-limited run does not fail loudly -- it
+# reports "UNVERIFIED" for real cities, which reads as a data hiccup and gets
+# ignored. That is precisely how a wrong station survives an audit. Mattered
+# little while this was run by hand; it is now on a daily schedule.
+REQUEST_SPACING_S = 0.5
 
 # Candidate stations per city: the one we use plus every plausible rival. A city
 # with one obvious airport still gets scored -- a lone candidate matching 6/33
@@ -118,6 +133,7 @@ def settled_targets() -> dict:
                         FETCH_ERRORS.append(f"{series} ({status}): {exc}")
                     else:
                         time.sleep(2)
+            time.sleep(REQUEST_SPACING_S)
         for market in markets:
             if market.get("result") != "yes":
                 continue
@@ -150,11 +166,17 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=35,
                     help="how far back to pull CLI products (default 35)")
+    ap.add_argument("--notify", action="store_true",
+                    help="push the failing lines to ntfy (for the daily run)")
     args = ap.parse_args()
 
     in_use = {c.key: c.station for c in hourly_cities.CITIES}
     targets = settled_targets()
     bad = 0
+    # What a push would say. Collected rather than re-derived at the end: the
+    # message must name the same lines the log does, and two renderings of one
+    # result eventually disagree about which city was wrong.
+    problems = []
 
     for city in sorted(CANDIDATES):
         scores = []
@@ -171,7 +193,9 @@ def main() -> int:
                 scores.append((hits / total, hits, total, pil))
         if not scores:
             bad += 1
-            print(f"{city:<5} UNVERIFIED: no settled days scored")
+            line = f"{city:<5} UNVERIFIED: no settled days scored"
+            problems.append(line)
+            print(line)
             continue
         scores.sort(reverse=True)
         rate, hits, total, best = scores[0]
@@ -179,10 +203,20 @@ def main() -> int:
         expected = in_use.get(city)
         if f"K{best}" != expected or rate < PASS_RATE:
             bad += 1
-            print(f"{city:<5} WRONG: using {expected}, data says K{best}"
-                  f" ({rate:.0%})   {detail}")
+            line = (f"{city:<5} WRONG: using {expected}, data says K{best}"
+                    f" ({rate:.0%})   {detail}")
+            problems.append(line)
+            print(line)
         else:
             print(f"{city:<5} ok {expected} {hits}/{total}   {detail}")
+
+    # Pushed here rather than from the workflow so the YAML stays a one-liner
+    # and there is exactly one place that decides what "failed" means. Off by
+    # default: running this by hand must never page anybody.
+    if args.notify and (problems or FETCH_ERRORS):
+        import notify                              # noqa: E402 - optional path
+        body = "\n".join(problems + [f"fetch failed: {e}" for e in FETCH_ERRORS])
+        notify.send_ntfy(f"Station audit: {len(problems)} mismatch(es)", body)
 
     if FETCH_ERRORS:
         print(f"\n{len(FETCH_ERRORS)} fetch(es) failed after a retry:")
