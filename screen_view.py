@@ -1,4 +1,4 @@
-"""The Screen page: brackets worth two minutes of attention.
+"""The Strategy page: brackets worth two minutes of attention.
 
 Reads scan_candidates.jsonl and shows the newest firing. Display tables are
 hand-rolled HTML because canvas-rendered st.dataframe cannot center cells --
@@ -1467,7 +1467,7 @@ def _render_history(all_rows: list) -> None:
 
 def render() -> None:
     market_view._theme_controls()   # theme CSS + .wtbl/.wtbl-wrap + Settings
-    st.subheader("Screen — Mispriced Brackets")
+    st.subheader("Strategy — Mispriced Brackets")
     st.caption(
         "Candidates for review, not signals. The NWS forecast is public, so a "
         "gap usually means the market knows something — 'dead' rows are the "
