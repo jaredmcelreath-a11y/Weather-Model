@@ -130,3 +130,64 @@ def latest(station_id: str, ttl: int = 60) -> dict | None:
             continue
         return {"temp": c_to_f(temp_c), "time": when}
     return None
+
+
+# The endpoint's row cap. A 36-hour window is ~432 five-minute readings and
+# SPECIs push it higher -- 466 measured at KLAS on 2026-08-16 -- so a response
+# that comes back exactly full may have been truncated.
+_WINDOW_LIMIT = 500
+# Four pages covers ~2000 readings, far past any real window this serves. A
+# bound rather than a while-loop because the paging cursor comes from data: a
+# feed repeating one timestamp would otherwise spin forever.
+_MAX_WINDOW_PAGES = 4
+
+
+def _stamp(text):
+    """An NWS timestamp as an aware datetime, or None when unparseable."""
+    try:
+        return datetime.fromisoformat(str(text).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+
+def window_for_id(station_id: str, start: datetime, end: datetime,
+                  ttl: int = 300, fetch=None) -> list:
+    """Every reading `station_id` published in [start, end], newest first.
+
+    Raw NWS `properties` dicts rather than a reduction: the Timeseries page
+    shows columns this module has no opinion about (dew point, wind, the raw
+    METAR), and normalising them here would put display concerns in a source.
+
+    Takes a RAW station id, like `latest` and for the same reason -- `config`
+    knows only KDFW and KAUS, while this serves twenty reference cities.
+
+    Display only, and best-effort: any failure returns the rows gathered so far
+    rather than raising, because one dead station must not take down a page.
+    """
+    get = fetch or get_json
+    url = f"https://api.weather.gov/stations/{station_id}/observations"
+    out, seen, cursor = [], set(), end
+    for _ in range(_MAX_WINDOW_PAGES):
+        params = {"start": start.isoformat().replace("+00:00", "Z"),
+                  "end": cursor.isoformat().replace("+00:00", "Z"),
+                  "limit": _WINDOW_LIMIT}
+        try:
+            features = (get(url, params, ttl=ttl) or {}).get("features") or []
+        except Exception:             # noqa: BLE001 - a page must not crash
+            break
+        fresh = []
+        for feature in features:
+            props = (feature or {}).get("properties") or {}
+            key = props.get("timestamp")
+            if not key or key in seen:
+                continue              # the boundary row repeats between pages
+            seen.add(key)
+            fresh.append(props)
+        out.extend(fresh)
+        if len(features) < _WINDOW_LIMIT:
+            break                     # the feed gave us the whole window
+        oldest = _stamp(fresh[-1]["timestamp"]) if fresh else None
+        if oldest is None or oldest <= start:
+            break                     # reached the far edge, or made no progress
+        cursor = oldest
+    return out

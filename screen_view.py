@@ -1,4 +1,4 @@
-"""The Screen page: brackets worth two minutes of attention.
+"""The Strategy page: brackets worth two minutes of attention.
 
 Reads scan_candidates.jsonl and shows the newest firing. Display tables are
 hand-rolled HTML because canvas-rendered st.dataframe cannot center cells --
@@ -677,6 +677,102 @@ def city_timezones() -> dict:
     doc = scan_log.read_doc(scan_log.REFERENCE_PATH)
     return {series: (info or {}).get("timezone")
             for series, info in (doc.get("cities") or {}).items()}
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def reference_doc() -> dict:
+    """The whole reference document screen.py publishes each firing.
+
+    Separate from city_timezones, which projects the same document down to
+    {series: zone}. That narrow return type is deliberate and has three
+    callers; widening it to serve one more would make every caller carry a
+    shape it does not use."""
+    return scan_log.read_doc(scan_log.REFERENCE_PATH)
+
+
+_UNSETTLED_COLUMNS = ["City", "Var", "Leader", "Price", "Runner-up", "Next"]
+
+_UNSETTLED_TIPS = {
+    "Leader": "The dearest bracket on this city's ladder — the market's own "
+              "answer, as of the last firing.",
+    "Price": f"What buying that answer costs. Under "
+             f"{round(screen_rules.UNSETTLED_BELOW * 100)}% the ladder has not "
+             "collapsed onto one bracket, so the day is still open.",
+    "Next": "What the runner-up costs. A close second means the market is "
+            "genuinely split rather than merely uncommitted.",
+}
+
+
+def unsettled_rows(doc: dict, now=None) -> list:
+    """Display rows for every ladder still under UNSETTLED_BELOW today.
+
+    Keyed to the climate day running RIGHT NOW in each city, not to whatever
+    day the firing published: the reference survives a day boundary, and
+    yesterday's leader under a heading that says "still live today" is worse
+    than no table at all.
+
+    Sorted by price ascending — the least decided ladder is the most
+    interesting, and it is the one a glance should land on first."""
+    now = now or datetime.now(timezone.utc)
+    out = []
+    for series, info in ((doc or {}).get("cities") or {}).items():
+        tzname = (info or {}).get("timezone")
+        if not tzname:
+            continue                  # unresolved city; screen_alert skips it too
+        today = screen_forecast.in_progress_day(now, tzname).isoformat()
+        leader = ((info or {}).get("leader") or {}).get(today)
+        if not screen_rules.is_unsettled(leader):
+            continue
+        variable = scan_log.variable_of_series(series) or ""
+        out.append({
+            "_price": float(leader["price"]),
+            "City": scan_cities.city_name(series),
+            "Var": variable.title() or "—",
+            "Leader": leader.get("label") or "—",
+            "Price": _pct(leader.get("price")),
+            "Runner-up": leader.get("next_label") or "—",
+            "Next": _pct(leader.get("next_price")),
+        })
+    out.sort(key=lambda r: (r["_price"], r["City"], r["Var"]))
+    for r in out:
+        del r["_price"]
+    return out
+
+
+def unsettled_caption(doc: dict, shown: int, total: int) -> str:
+    """How many ladders are still live, out of how many, and as of when.
+
+    The denominator is not decoration: 12 of 14 is a quiet afternoon and 12 of
+    40 is a busy one, and the count alone cannot tell them apart."""
+    stamp = (doc or {}).get("generated")
+    when = "the last firing"
+    if stamp:
+        try:
+            when = datetime.fromisoformat(
+                str(stamp).replace("Z", "+00:00")).astimezone().strftime("%-I:%M %p")
+        except ValueError:
+            pass
+    return (f"{shown} of {total} ladders still under "
+            f"{round(screen_rules.UNSETTLED_BELOW * 100)}%, as of {when}. "
+            "Prices are from that firing, not live.")
+
+
+def _render_unsettled(doc: dict) -> None:
+    """Today's still-open ladders, at the top of the page.
+
+    Above the candidates because it answers the prior question: 'where is there
+    a market at all' comes before 'which bracket is mispriced'."""
+    st.markdown("#### Still Live Today")
+    rows = unsettled_rows(doc)
+    total = len({s for s, i in ((doc or {}).get("cities") or {}).items()
+                 if (i or {}).get("timezone")})
+    if not rows:
+        st.caption("No reference published yet, or every ladder today has "
+                   "already collapsed onto one bracket.")
+        return
+    st.markdown(_table(_UNSETTLED_COLUMNS, rows, _UNSETTLED_TIPS),
+                unsafe_allow_html=True)
+    st.caption(unsettled_caption(doc, len(rows), total))
 
 
 def _days(row: dict, zones: dict, now):
@@ -1371,13 +1467,16 @@ def _render_history(all_rows: list) -> None:
 
 def render() -> None:
     market_view._theme_controls()   # theme CSS + .wtbl/.wtbl-wrap + Settings
-    st.subheader("Screen — Mispriced Brackets")
+    st.subheader("Strategy — Mispriced Brackets")
     st.caption(
         "Candidates for review, not signals. The NWS forecast is public, so a "
         "gap usually means the market knows something — 'dead' rows are the "
         "hard ones: realized temperature already ruled them out."
     )
     st.markdown(_TIP_CSS, unsafe_allow_html=True)   # header tips for both tables
+    # Before the candidate load, deliberately: this reads a different document,
+    # and a missing candidate log must not take it down too.
+    _render_unsettled(reference_doc())
     try:
         # Three days, not the whole history: enough for the newest firing, for
         # "what did the last firing add", and for the trade table's Flagged

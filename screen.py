@@ -77,9 +77,12 @@ def merge_reference(previous: dict, current: dict) -> dict:
 
     Only `station` and `timezone` are carried: they identify a city rather than
     describe a moment, and neither changes between passes. The measurements
-    (`days`, `realized`, `remaining`) are deliberately dropped, because a stale
-    realized extreme is exactly what screen_alert fires dead-row pushes from --
-    and both alert rules already degrade safely when they are absent."""
+    (`days`, `realized`, `remaining`, `leader`) are deliberately dropped,
+    because a stale realized extreme is exactly what screen_alert fires dead-row
+    pushes from -- and a stale leader price would put a market on the unsettled
+    table hours after it settled. Both alert rules already degrade safely when
+    they are absent, and the unsettled table simply omits a city it cannot
+    price."""
     out = dict(current or {})
     for series, info in ((previous or {}).get("cities") or {}).items():
         if series in out:
@@ -236,6 +239,19 @@ def screen_pass(now: datetime, deps: Deps) -> dict:
             remaining = screen_forecast.remaining_extreme(
                 periods, day, tzname, variable, now)
             reference[series].setdefault("remaining", {})[day.isoformat()] = remaining
+
+            # Which ladder still has something to decide. Published rather than
+            # screened: it is a reduction over rows already in hand, so it
+            # costs no request here, while pricing forty ladders at page load
+            # would cost 20-30s under REQUEST_SPACING_S on every rerun.
+            #
+            # Published for EVERY series, not only the unsettled ones, so the
+            # page can say "12 of 40 still live" rather than only ever seeing
+            # the survivors. screen_rules.is_unsettled applies the threshold.
+            leader = screen_rules.leading_bracket(day_rows)
+            if leader is not None:
+                reference[series].setdefault("leader", {})[day.isoformat()] = leader
+
             for r in day_rows:
                 # Locked first: it is the half that claims certainty, and
                 # "cannot lose" is strictly more useful than "the forecast is

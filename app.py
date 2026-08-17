@@ -403,6 +403,34 @@ def hourly_page():
                        city=hourly_cities.city(key))
 
 
+@st.cache_data(ttl=300, show_spinner="Fetching observations…")
+def load_timeseries(key: str):
+    """36 hours of 5-minute observations for a Timeseries-page city.
+
+    300s TTL matches both the page's autorefresh and the feed's own cadence:
+    NWS publishes a new 5-minute reading only that often, so a shorter window
+    would re-fetch the same rows."""
+    from datetime import datetime as _dt, timedelta as _td, timezone as _utc
+    from sources import nws_observations
+    c = hourly_cities.city(key)
+    now = _dt.now(_utc.utc)
+    return nws_observations.window_for_id(c.station, now - _td(hours=36), now,
+                                          ttl=300)
+
+
+def timeseries_page():
+    # Deliberately NOT city_view, for the same reason hourly_page is not: that
+    # control is the sticky Dallas/Austin pick shared by every modelled page,
+    # and selecting Las Vegas here must not follow the user to Forecast.
+    import timeseries_view
+    key = st.selectbox("City", hourly_cities.keys(), key="timeseries_city",
+                       format_func=hourly_cities.label,
+                       help="Every city Kalshi lists temperature contracts on, "
+                            "with the station its market settles on.")
+    timeseries_view.render(lambda: load_timeseries(key),
+                           city=hourly_cities.city(key))
+
+
 def edge_page():
     market_view._theme_controls()
     st.title("Edge")
@@ -482,7 +510,9 @@ def screen_page():
 # unreferenced, so re-listing it here is a one-line revert if ever needed.
 st.navigation([
     st.Page(kalshi_page, title="Forecast", default=True),
+    st.Page(screen_page, title="Strategy"),
     st.Page(hourly_page, title="Hourly"),
+    st.Page(timeseries_page, title="Timeseries"),
     st.Page(journal_page, title="Journal"),
     st.Page(bet_view.render, title="History"),
     st.Page(trader_page, title="Trader"),
@@ -490,5 +520,4 @@ st.navigation([
     st.Page(lab_page, title="Lab"),
     st.Page(accuracy_page, title="Accuracy"),
     st.Page(status_page, title="Status"),
-    st.Page(screen_page, title="Screen"),
 ]).run()

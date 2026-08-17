@@ -107,11 +107,30 @@ Two kinds of row arrive in one feed and they are not equally precise:
 
 | | cadence | precision | `rawMessage` |
 |---|---|---|---|
-| 5-minute MADIS | :00, :05, :10 … | whole °C | empty |
-| routine METAR | ~:53 | tenths °C, via the `T` group | present |
+| 5-minute MADIS | :00, :05, :10 … | whole °C | never |
+| routine METAR | ~:53 | tenths °C | eventually |
 
 Observed in the same KLAS payload: `39`, `38`, `38` on the 5-minute rows against
 `37.8` and `RMK AO2 SLP136 T03780111` on the :53 row.
+
+**Corrected during implementation.** This section first said `rawMessage` was
+simply *present* on METAR rows, and made it the marker. It is not: the raw text
+**lags the numeric fields by up to an hour**. Measured 2026-08-16 across three
+stations, the newest METAR carried tenths with an empty `rawMessage` while the
+one an hour older carried its full text —
+
+```
+KDFW 22:53  temp=38.9  rawlen=0
+KDFW 21:53  temp=38.9  rawlen=69
+KLAS 22:56  temp=38.3  rawlen=0
+KATL 22:52  temp=33.9  rawlen=0
+```
+
+So the marker is **precision itself** — a value off the whole-°C grid — with raw
+text counting when it happens to be there. A METAR landing exactly on a whole
+degree is unresolvable and reads as 5-minute, which is the conservative
+direction: overstating precision the reading does not have is the error with a
+cost, the same reasoning `screen_rules._reading_slack_f` already encodes.
 
 The whole-°C rows render at the **bottom** of their bucket — 38 °C displays as
 100.4 °F when the true reading is anywhere up to 102.2 °F. That is up to 1.8 °F
