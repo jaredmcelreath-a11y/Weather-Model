@@ -679,15 +679,17 @@ def city_timezones() -> dict:
             for series, info in (doc.get("cities") or {}).items()}
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def reference_doc() -> dict:
-    """The whole reference document screen.py publishes each firing.
+# 60s, not the 300s the rest of this page uses: screen_alert republishes these
+# ladder prices every five minutes, and a five-minute cache on a five-minute
+# document would show a price a full cycle old for no saving worth having.
+@st.cache_data(ttl=60, show_spinner=False)
+def leaders_doc() -> dict:
+    """The ladder leaders screen_alert publishes every five minutes.
 
-    Separate from city_timezones, which projects the same document down to
-    {series: zone}. That narrow return type is deliberate and has three
-    callers; widening it to serve one more would make every caller carry a
-    shape it does not use."""
-    return scan_log.read_doc(scan_log.REFERENCE_PATH)
+    A different document from the reference `city_timezones` reads, and a
+    different writer -- see scan_log.LEADERS_PATH for why the firing does not
+    produce this."""
+    return scan_log.read_doc(scan_log.LEADERS_PATH)
 
 
 _UNSETTLED_COLUMNS = ["City", "Var", "Leader", "Price", "Runner-up", "Next"]
@@ -751,12 +753,11 @@ def unsettled_empty_reason(doc: dict, now=None) -> str:
     cities = {s: i for s, i in ((doc or {}).get("cities") or {}).items()
               if (i or {}).get("timezone")}
     if not cities:
-        return ("No reference published yet — this table fills from the screen's "
-                "own firing, about every 30 minutes.")
+        return ("No ladder prices published yet — this table fills from the "
+                "alert loop, about every 5 minutes.")
     if not any((i or {}).get("leader") for i in cities.values()):
-        return (f"The last firing ({(doc or {}).get('generated', '?')}) predates "
-                "this table, so it carries no ladder prices. It fills on the "
-                "next one, about every 30 minutes.")
+        return (f"The last pass ({(doc or {}).get('generated', '?')}) carries no "
+                "ladder prices. It fills on the next one, about 5 minutes.")
     now = now or datetime.now(timezone.utc)
     today = 0
     for info in cities.values():
@@ -764,7 +765,7 @@ def unsettled_empty_reason(doc: dict, now=None) -> str:
         if ((info or {}).get("leader") or {}).get(day):
             today += 1
     if not today:
-        return ("The last firing's ladder prices are all for a climate day that "
+        return ("The last pass's ladder prices are all for a climate day that "
                 "has since ended. It refreshes on the next one.")
     return ("Every ladder today has already collapsed onto one bracket — "
             f"nothing left under {round(screen_rules.UNSETTLED_BELOW * 100)}%.")
@@ -776,7 +777,7 @@ def unsettled_caption(doc: dict, shown: int, total: int) -> str:
     The denominator is not decoration: 12 of 14 is a quiet afternoon and 12 of
     40 is a busy one, and the count alone cannot tell them apart."""
     stamp = (doc or {}).get("generated")
-    when = "the last firing"
+    when = "the last pass"
     if stamp:
         try:
             when = datetime.fromisoformat(
@@ -784,28 +785,24 @@ def unsettled_caption(doc: dict, shown: int, total: int) -> str:
         except ValueError:
             pass
     return (f"{shown} of {total} ladders still under "
-            f"{round(screen_rules.UNSETTLED_BELOW * 100)}%, as of {when}. "
-            "Prices are from that firing, not live.")
+            f"{round(screen_rules.UNSETTLED_BELOW * 100)}%, as of {when} — "
+            "repriced about every 5 minutes by the alert loop.")
 
 
 def _render_unsettled() -> None:
-    """Today's still-open ladders, at the top of the page.
-
-    Above the candidates because it answers the prior question: 'where is there
-    a market at all' comes before 'which bracket is mispriced'.
+    """Today's still-open ladders, below the two candidate tables.
 
     Reads its own document INSIDE the guard rather than taking it as an
     argument. scan_log.read_doc says it never raises, but that covers only the
     JSON parse: GitHubTransport.get calls raise_for_status(), so a 403 rate
-    limit or a 5xx propagates. Being the first section on the page, an
-    unguarded read here empties the whole Strategy page -- candidates, YES side
-    and all -- for a failure in the least important table on it. Streamlit
-    Cloud's shared egress IP is precisely where that 403 turns up."""
+    limit or a 5xx propagates. An unguarded read would empty every section
+    rendered after it for a failure in one table, and Streamlit Cloud's shared
+    egress IP is precisely where that 403 turns up."""
     st.markdown("#### Still Live Today")
     try:
-        doc = reference_doc()
+        doc = leaders_doc()
     except Exception as e:            # noqa: BLE001 - a page must not crash
-        st.caption(f"Reference unavailable right now ({e}).")
+        st.caption(f"Ladder prices unavailable right now ({e}).")
         return
     rows = unsettled_rows(doc)
     total = len({s for s, i in ((doc or {}).get("cities") or {}).items()
@@ -1517,9 +1514,6 @@ def render() -> None:
         "hard ones: realized temperature already ruled them out."
     )
     st.markdown(_TIP_CSS, unsafe_allow_html=True)   # header tips for both tables
-    # Before the candidate load, deliberately: this reads a different document,
-    # and a missing candidate log must not take it down too.
-    _render_unsettled()
     try:
         # Three days, not the whole history: enough for the newest firing, for
         # "what did the last firing add", and for the trade table's Flagged
@@ -1563,6 +1557,7 @@ def render() -> None:
     if cheap or dear:
         st.caption(hidden_notice(cheap, dear))
     _render_locked(city_timezones())
+    _render_unsettled()
     _render_board(consensus_doc())
     _render_track_record(all_rows)
     _render_history(all_rows)

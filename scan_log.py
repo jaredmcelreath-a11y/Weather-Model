@@ -33,6 +33,12 @@ LOCKED_PATH = "scan_locked.jsonl"             # the YES side, kept SEPARATE from
                                               # scan_candidates so screen_score
                                               # never applies fade math to it
 LOCKED_ALERT_STATE_PATH = "screen_locked_alert_state.json"
+# Each city ladder's dearest bracket, for the page's "Still Live" table.
+# Written by screen_alert, NOT by screen.py: the alert already prices every
+# mapped series every 5 minutes, so the leader costs no extra request there and
+# lands six times fresher than the 30-minute firing could manage. One writer, so
+# two documents can never disagree about the same price.
+LEADERS_PATH = "screen_leaders.json"          # screen_alert.py -> screen_view.py
 
 
 class GitHubTransport:

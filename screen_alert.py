@@ -148,6 +148,9 @@ class Deps:
     # would let the first push suppress the second for good.
     read_locked_state: Callable = None
     write_locked_state: Callable = None
+    # The "Still Live" ladder leaders. Optional, like the locked pair: a caller
+    # that does not supply it simply publishes nothing.
+    write_leaders: Callable = None
 
 
 def _real_deps() -> Deps:
@@ -164,6 +167,7 @@ def _real_deps() -> Deps:
             scan_log.LOCKED_ALERT_STATE_PATH),
         write_locked_state=lambda obj: scan_log.write_doc(
             scan_log.LOCKED_ALERT_STATE_PATH, obj),
+        write_leaders=lambda obj: scan_log.write_doc(scan_log.LEADERS_PATH, obj),
     )
 
 
@@ -312,6 +316,7 @@ def check(now: datetime, deps: Deps) -> dict:
     state = deps.read_state() or {}
     locked_state = (deps.read_locked_state() or {}) if deps.read_locked_state else {}
     found, locked_found, cities = [], [], 0
+    leaders: dict = {}
     for series, info in (reference.get("cities") or {}).items():
         tzname, station = info.get("timezone"), info.get("station")
         if not tzname:
@@ -324,6 +329,21 @@ def check(now: datetime, deps: Deps) -> dict:
             print(f"[screen_alert] {series}: markets skipped ({e})")   # cost the rest
             continue
         cities += 1
+        # The dearest bracket on this ladder, for the page's "Still Live" table.
+        # A reduction over markets already fetched, so it costs nothing here --
+        # the same argument that put it on a firing, except this loop runs every
+        # five minutes instead of every thirty. Published for every series, not
+        # only the undecided ones, so the page can name its denominator.
+        entry = {"timezone": tzname}
+        day_rows = [r for r in (scan_log.build_snapshot_row(m, series, now)
+                                for m in markets or [])
+                    if r is not None
+                    and screen_forecast.climate_day_of_ticker(r["ticker"]) == day]
+        leading = screen_rules.leading_bracket(day_rows)
+        if leading is not None:
+            entry["leader"] = {day.isoformat(): leading}
+        leaders[series] = entry
+
         readings = []
         if station:
             start, _ = day_window(day, tzname)
@@ -343,6 +363,17 @@ def check(now: datetime, deps: Deps) -> dict:
     # on a failed POST — or on a row the notification never mentioned — loses
     # the row for good, and this is the alert's entire purpose. _dispatch owns
     # that rule so the two sides cannot drift on it.
+    # Before the pushes and outside their state machine: this document is a
+    # passenger on the pass, and a contents-API failure here must not cost the
+    # alert its notifications -- the rule screen.py already applies to its own
+    # reference publish.
+    if deps.write_leaders:
+        try:
+            deps.write_leaders({"generated": now.isoformat().replace("+00:00", "Z"),
+                                "cities": leaders})
+        except Exception as e:            # noqa: BLE001
+            print(f"[screen_alert] leaders publish failed ({e})")
+
     fresh = unseen(found, state)
     pushed = _dispatch(fresh, state, alert_title, alert_body, deps, now,
                        deps.write_state)
