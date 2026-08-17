@@ -739,6 +739,37 @@ def unsettled_rows(doc: dict, now=None) -> list:
     return out
 
 
+def unsettled_empty_reason(doc: dict, now=None) -> str:
+    """Why the table has no rows — three states that must not be conflated.
+
+    Written after the live 2026-08-17T00:01Z case, where the message said "no
+    reference published yet, or every ladder has collapsed" and BOTH halves
+    were false: the reference was eleven minutes old and New York's low was
+    trading at 41c. The firing had simply run the code from before `leader`
+    existed. A message that is wrong twice over reads as a broken rule, which
+    is the one thing an empty table must never imply about a working one."""
+    cities = {s: i for s, i in ((doc or {}).get("cities") or {}).items()
+              if (i or {}).get("timezone")}
+    if not cities:
+        return ("No reference published yet — this table fills from the screen's "
+                "own firing, about every 30 minutes.")
+    if not any((i or {}).get("leader") for i in cities.values()):
+        return (f"The last firing ({(doc or {}).get('generated', '?')}) predates "
+                "this table, so it carries no ladder prices. It fills on the "
+                "next one, about every 30 minutes.")
+    now = now or datetime.now(timezone.utc)
+    today = 0
+    for info in cities.values():
+        day = screen_forecast.in_progress_day(now, info["timezone"]).isoformat()
+        if ((info or {}).get("leader") or {}).get(day):
+            today += 1
+    if not today:
+        return ("The last firing's ladder prices are all for a climate day that "
+                "has since ended. It refreshes on the next one.")
+    return ("Every ladder today has already collapsed onto one bracket — "
+            f"nothing left under {round(screen_rules.UNSETTLED_BELOW * 100)}%.")
+
+
 def unsettled_caption(doc: dict, shown: int, total: int) -> str:
     """How many ladders are still live, out of how many, and as of when.
 
@@ -780,8 +811,7 @@ def _render_unsettled() -> None:
     total = len({s for s, i in ((doc or {}).get("cities") or {}).items()
                  if (i or {}).get("timezone")})
     if not rows:
-        st.caption("No reference published yet, or every ladder today has "
-                   "already collapsed onto one bracket.")
+        st.caption(unsettled_empty_reason(doc))
         return
     st.markdown(_table(_UNSETTLED_COLUMNS, rows, _UNSETTLED_TIPS),
                 unsafe_allow_html=True)

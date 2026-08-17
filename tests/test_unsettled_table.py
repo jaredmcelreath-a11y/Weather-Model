@@ -81,3 +81,28 @@ def test_an_unreachable_reference_does_not_take_the_page_down(monkeypatch):
 
     monkeypatch.setattr(screen_view, "reference_doc", boom)
     screen_view._render_unsettled()          # must not raise
+
+
+def test_a_reference_predating_the_feature_says_so():
+    # THE MISLEADING STATE, seen live 2026-08-17T00:01Z: the reference IS
+    # published and the ladders have NOT collapsed -- the firing simply ran the
+    # code from before `leader` existed. Saying "no reference yet, or everything
+    # settled" there is wrong twice over, and reads as a broken rule when the
+    # rule is fine.
+    doc = {"generated": "2026-08-17T00:01:48Z",
+           "cities": {"KXLOWTNYC": {"timezone": "America/New_York", "days": {},
+                                    "realized": {}, "remaining": {}}}}
+    got = screen_view.unsettled_empty_reason(doc, NOW)
+    assert "firing" in got.lower()
+    assert "collapsed" not in got.lower()
+
+
+def test_no_document_at_all_says_that_instead():
+    got = screen_view.unsettled_empty_reason({}, NOW)
+    assert "no reference" in got.lower()
+
+
+def test_leaders_present_but_all_settled_says_collapsed():
+    doc = _doc(KXHIGHCHI=_city("America/Chicago", "2026-08-16", 0.97))
+    got = screen_view.unsettled_empty_reason(doc, NOW)
+    assert "collapsed" in got.lower()
