@@ -3910,3 +3910,4 @@
 {"ts": "2026-08-18T13:11:58.522866+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26AUG18-B102.5"}
 {"ts": "2026-08-18T13:12:00.771196+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26AUG18-B72.5", "reason": "yes price 0.94 outside [0.1,0.92)", "mode": "shadow"}
 {"ts": "2026-08-18T13:21:51.106201+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26AUG18-B102.5"}
+{"ts": "2026-08-18T13:21:53.281319+00:00", "kind": "skip", "variable": "low", "reason": "model 71.4 vs market 72.42 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26AUG18-B72.5"}
