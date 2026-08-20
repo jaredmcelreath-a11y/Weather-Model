@@ -4537,3 +4537,4 @@
 {"ts": "2026-08-20T21:22:10.937596+00:00", "kind": "skip", "variable": "low", "reason": "model 73.4 vs market 74.5 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26AUG20-B74.5"}
 {"ts": "2026-08-20T21:29:01.950750+00:00", "kind": "exit", "ticker": "KXHIGHAUS-26AUG20-B104.5", "side": "yes", "count": 1, "reason": "reversal: target moved to KXHIGHAUS-26AUG20-B102.5", "mode": "shadow", "variable": "high", "exit_price": 0.4, "pnl": -0.19}
 {"ts": "2026-08-20T21:29:05.903573+00:00", "kind": "entry", "ticker": "KXHIGHAUS-26AUG20-B102.5", "side": "yes", "count": 1, "entry_ask": 0.64, "stake": 0.64, "mode": "shadow", "variable": "high", "day": "2026-08-20", "floor": 102, "cap": 103, "label": "102\u00b0 to 103\u00b0"}
+{"ts": "2026-08-20T21:29:08.194381+00:00", "kind": "skip", "variable": "low", "reason": "model 73.4 vs market 74.5 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26AUG20-B74.5"}
