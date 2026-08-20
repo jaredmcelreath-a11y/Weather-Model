@@ -55,6 +55,12 @@ def hourly_at(lat: float, lon: float, tz: str) -> list[dict]:
             "feels": _at(data, "temperatureFeelsLike", i),
             "dew": _at(data, "temperatureDewPoint", i),
             "precip_pct": _at(data, "precipChance", i),
+            # TWC's icon enumeration and its prose. The Screen's storm gate
+            # reads the CODE: TWC calls a convective hour "Strong Storms" as
+            # readily as "Thunderstorms", and that phrase has no "thunder" in
+            # it to match on. See screen_forecast._TWC_CONVECTIVE_ICONS.
+            "icon": _at(data, "iconCode", i),
+            "phrase": _at(data, "wxPhraseLong", i),
             "cloud_pct": _at(data, "cloudCover", i),
             "humidity": _at(data, "relativeHumidity", i),
             "wind_mph": _at(data, "windSpeed", i),

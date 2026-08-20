@@ -125,3 +125,23 @@ def test_hourly_still_stamps_the_station_zone(monkeypatch):
     monkeypatch.setattr(wunderground, "get_json", lambda url, params, **kw: _HOURLY)
     rows = wunderground.hourly()
     assert rows[0]["time"].astimezone(_TZ).hour == 0
+
+
+def test_hourly_rows_carry_the_convective_icon_code(monkeypatch):
+    # screen_forecast reads TWC's icon enumeration rather than wxPhraseLong,
+    # because "Strong Storms" is a convective hour whose phrase omits the word
+    # "thunder". Without these two fields the Screen's storm gate cannot see it.
+    payload = dict(_HOURLY, iconCode=[32, 3, 4],
+                   wxPhraseLong=["Sunny", "Strong Storms", "Thunderstorms"])
+    monkeypatch.setattr(wunderground, "get_json", lambda url, params, **kw: payload)
+    rows = wunderground.hourly()
+    assert [r["icon"] for r in rows] == [32, 3, 4]
+    assert rows[1]["phrase"] == "Strong Storms"
+
+
+def test_a_feed_without_icon_codes_still_parses(monkeypatch):
+    # The fields are additive; an older or trimmed payload must not crash.
+    monkeypatch.setattr(wunderground, "get_json", lambda url, params, **kw: _HOURLY)
+    rows = wunderground.hourly()
+    assert rows[0]["icon"] is None
+    assert rows[0]["phrase"] is None

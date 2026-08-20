@@ -17,7 +17,7 @@ import scan_cities
 import scan_log
 import screen_forecast
 import screen_rules
-from sources import kalshi
+from sources import kalshi, wunderground
 from sources.common import get_json
 
 REQUEST_SPACING_S = 0.5     # same Kalshi pacing the scanner needs
@@ -32,6 +32,7 @@ class Deps:
     fetch_obs: Callable
     append_rows: Callable
     station_for: Callable
+    fetch_twc: Callable = None
     sleep: Callable = time.sleep
     write_reference: Callable = None
     read_reference: Callable = None
@@ -39,6 +40,15 @@ class Deps:
 
 def _real_fetch_forecast(url):
     return ((get_json(url, ttl=900) or {}).get("properties") or {}).get("periods") or []
+
+
+def _real_fetch_twc(lat, lon):
+    """TWC's hourly for a coordinate, as screen_forecast.twc_periods rows.
+
+    Stamped in UTC rather than the city's zone because only the absolute
+    instant is read: twc_periods hands the row's own offset to _day_periods,
+    which shifts it into fixed LST itself. One less thing to thread through."""
+    return wunderground.hourly_at(lat, lon, "UTC")
 
 
 def fetch_observations(station, start, end):
@@ -59,6 +69,7 @@ def _real_deps() -> Deps:
         fetch_obs=fetch_observations,
         append_rows=lambda path, rows: scan_log.append_many(path, rows),
         station_for=lambda url: scan_cities.station_for(url),
+        fetch_twc=_real_fetch_twc,
         write_reference=lambda obj: scan_log.write_doc(scan_log.REFERENCE_PATH, obj),
         read_reference=lambda: scan_log.read_doc(scan_log.REFERENCE_PATH),
     )
@@ -153,6 +164,18 @@ def screen_pass(now: datetime, deps: Deps) -> dict:
         except Exception as e:            # noqa: BLE001 - degrade to forecast only
             print(f"[screen] {series}: station lookup skipped ({e})")
             station = None
+        # Likewise hoisted, and likewise best-effort. The NWS grid is a
+        # scheduled product that can sit hours stale; TWC's hourly is
+        # radar-aware and is also the source these markets settle on. It is a
+        # SECOND OPINION on convection only -- an unofficial feed must cost the
+        # pass its storm number, never its rows.
+        twc_rows = []
+        if deps.fetch_twc:
+            try:
+                twc_rows = deps.fetch_twc(*point) or []
+            except Exception as e:        # noqa: BLE001 - degrade to the grid
+                print(f"[screen] {series}: TWC storm check skipped ({e})")
+
         reference[series] = {"station": station, "timezone": tzname, "days": {}}
 
         rows = [r for r in (scan_log.build_snapshot_row(m, series, now)
@@ -192,7 +215,7 @@ def screen_pass(now: datetime, deps: Deps) -> dict:
             # good as the forecast it is measured from, and convection is when
             # that forecast is least reliable. Free — the same payload.
             storm = screen_forecast.storm_chance(
-                periods, day, tzname, variable, now)
+                periods, day, tzname, variable, now, twc_rows=twc_rows)
             # Likewise free, and likewise never a screening input: how wrong the
             # forecast is against the station right now, applied to the forecast
             # HALF of the reference and re-folded. Shifting `forecast` directly

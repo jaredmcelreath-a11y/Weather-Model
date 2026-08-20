@@ -192,6 +192,55 @@ def _pop(period: dict) -> int:
     return 0 if value is None else int(value)
 
 
+# TWC's own icon enumeration for convective hours: tornado, tropical storm,
+# hurricane, strong storms, thunderstorms, mixed rain and hail, and the
+# isolated/scattered thunderstorm variants. Matched on the CODE rather than on
+# wxPhraseLong because TWC names a convective hour "Strong Storms" as readily as
+# "Thunderstorms" -- and that phrase contains no "thunder", so the NWS word rule
+# below misses it outright. On 2026-08-19 at KPHX that was a 99% hour the Screen
+# reported as 16%; the evening ended in a 59kt gust and a 27F crash.
+_TWC_CONVECTIVE_ICONS = frozenset({0, 1, 2, 3, 4, 35, 37, 38, 47})
+
+
+def twc_periods(rows: list) -> list:
+    """TWC hourly rows -> the period shape this module's windowing expects.
+
+    An adapter, so the climate-day window, the high/low asymmetry and the POP
+    reduction all stay in one implementation rather than being written twice.
+    Convection is resolved HERE, into an explicit flag, because each source
+    states it in its own vocabulary -- NWS in prose, TWC in icon codes.
+
+    The feed is unofficial (see sources/wunderground.py), so a row whose shape
+    has drifted is dropped rather than raised: a degraded second opinion must
+    not cost the pass its first one."""
+    out = []
+    for row in rows or []:
+        try:
+            when = row.get("time")
+            if when is None or when.utcoffset() is None:
+                continue
+        except AttributeError:            # not a datetime -- shape has drifted
+            continue
+        out.append({
+            "startTime": when.isoformat(),
+            "temperature": row.get("temp"),
+            "probabilityOfPrecipitation": {"value": row.get("precip_pct")},
+            "convective": row.get("icon") in _TWC_CONVECTIVE_ICONS,
+        })
+    return out
+
+
+def _convective(period: dict) -> bool:
+    """Whether this hour can produce a downdraft.
+
+    An adapted TWC period carries the answer outright; an NWS period states it
+    in its shortForecast prose."""
+    flag = period.get("convective")
+    if flag is not None:
+        return bool(flag)
+    return "thunder" in str(period.get("shortForecast") or "").lower()
+
+
 def still_open(day_periods: list, variable: str) -> list:
     """The periods in which this variable's extreme can still MOVE.
 
@@ -211,26 +260,37 @@ def still_open(day_periods: list, variable: str) -> list:
     return day_periods[:peak + 1]
 
 
-def storm_chance(periods: list, day: date, tzname: str, variable: str, now):
+def storm_chance(periods: list, day: date, tzname: str, variable: str, now,
+                 twc_rows: list = None):
     """Whole-percent chance of THUNDERSTORMS over the hours that can still move
     this variable's extreme, or None when there are no such hours.
 
     Thunder-only on purpose: it is the convective downdraft that crashes a high
     or props up a low, while a steady overcast drizzle at the same POP does
-    neither. 0 and None mean different things — 0 is a live window with clean
-    hours in it, None is no window left at all."""
-    # The window is cut on the WHOLE day first, then narrowed to what is still
-    # ahead. Cutting the remaining hours instead would re-peak on whatever is
-    # left, so a high at 9pm would keep reporting the evening's storms long
-    # after the peak that settled it had passed.
-    day_periods = _day_periods(periods, day, tzname)
-    window = [(start, p) for start, p in still_open(day_periods, variable)
-              if start >= now]
-    if not window:
-        return None
-    return max((_pop(p) for _, p in window
-                if "thunder" in str(p.get("shortForecast") or "").lower()),
-               default=0)
+    neither. 0 and None mean different things -- 0 is a live window with clean
+    hours in it, None is no window left at all.
+
+    Read from BOTH the NWS grid and TWC when TWC rows are supplied, and the
+    higher wins. The grid is a scheduled product that can sit hours stale, while
+    TWC's hourly is radar-aware and is also the source these markets settle on;
+    on 2026-08-19 at KPHX the two disagreed by 83 points about the same evening
+    (grid 18%, TWC 99%) and the grid was the wrong one. Taking the max rather
+    than averaging them is the asymmetry talking: a bracket screened as quiet
+    gets crushed, while an overstated storm number only skips a trade."""
+    best = None
+    for source in (periods, twc_periods(twc_rows)):
+        # The window is cut on the WHOLE day first, then narrowed to what is
+        # still ahead. Cutting the remaining hours instead would re-peak on
+        # whatever is left, so a high at 9pm would keep reporting the evening's
+        # storms long after the peak that settled it had passed.
+        day_periods = _day_periods(source, day, tzname)
+        window = [(start, p) for start, p in still_open(day_periods, variable)
+                  if start >= now]
+        if not window:
+            continue
+        got = max((_pop(p) for _, p in window if _convective(p)), default=0)
+        best = got if best is None else max(best, got)
+    return best
 
 
 def remaining_extreme(periods: list, day: date, tzname: str, variable: str,

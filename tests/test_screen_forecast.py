@@ -357,3 +357,122 @@ def test_a_high_after_its_peak_has_no_remaining_window():
 def test_remaining_extreme_of_a_day_with_no_periods_is_none():
     assert sf.remaining_extreme([], date(2026, 8, 9), "America/Phoenix",
                                 "low", _PHX_NOW) is None
+
+
+# --- TWC as a second storm-risk source -------------------------------------
+# The NWS grid is a scheduled product; TWC's hourly is radar-aware and is also
+# the source these markets settle on. On 2026-08-19 at KPHX the two disagreed
+# by 83 points on the same evening (grid 18%, TWC 99%) and the grid was wrong.
+
+_CT = timezone(timedelta(hours=-6))     # America/Chicago standard time
+
+# TWC icon codes seen in production across the 20 Screen cities.
+_ICON_STRONG_STORMS = 3
+_ICON_THUNDERSTORMS = 4
+_ICON_SCATTERED_STRONG = 38
+_ICON_SUNNY = 32
+_ICON_RAIN = 12
+
+
+def _twc(h, temp, pop, icon=_ICON_SUNNY, phrase="Sunny"):
+    """A TWC hourly row at hour `h` of 2026-08-04, Chicago standard time."""
+    return {"time": datetime(2026, 8, 4, h, tzinfo=_CT), "temp": temp,
+            "precip_pct": pop, "icon": icon, "phrase": phrase}
+
+
+def test_twc_strong_storms_counts_even_without_the_word_thunder():
+    # THE 2026-08-19 KPHX REGRESSION. TWC names a convective hour "Strong
+    # Storms" as readily as "Thunderstorms" -- and that phrase does not contain
+    # "thunder", so the NWS word rule misses it outright. That night the Screen
+    # printed 16% for an evening that produced a 59kt gust and a 27F crash.
+    now = datetime(2026, 8, 4, 12, tzinfo=timezone.utc)
+    rows = [_twc(14, 90, 99, _ICON_STRONG_STORMS, "Strong Storms")]
+    assert sf.storm_chance([], DAY, TZ, "low", now, twc_rows=rows) == 99
+
+
+def test_storm_chance_takes_the_higher_of_the_two_sources():
+    # Neither source is authoritative, and the cost of missing convection is
+    # asymmetric: a bracket screened as quiet gets crushed, while an overstated
+    # storm number only skips a trade.
+    now = datetime(2026, 8, 4, 12, tzinfo=timezone.utc)
+    periods = [_hour(14, 90, 18, STORMY)]
+    rows = [_twc(14, 90, 99, _ICON_THUNDERSTORMS, "Thunderstorms")]
+    assert sf.storm_chance(periods, DAY, TZ, "low", now, twc_rows=rows) == 99
+
+
+def test_a_higher_nws_pop_still_wins_over_twc():
+    now = datetime(2026, 8, 4, 12, tzinfo=timezone.utc)
+    periods = [_hour(14, 90, 80, STORMY)]
+    rows = [_twc(14, 90, 20, _ICON_THUNDERSTORMS, "Thunderstorms")]
+    assert sf.storm_chance(periods, DAY, TZ, "low", now, twc_rows=rows) == 80
+
+
+def test_twc_rain_without_convection_does_not_count():
+    # The same asymmetry the NWS rule encodes: a steady 90% drizzle crashes
+    # nothing. Only TWC's own convective icons arm the gate.
+    now = datetime(2026, 8, 4, 12, tzinfo=timezone.utc)
+    rows = [_twc(14, 90, 90, _ICON_RAIN, "Rain")]
+    assert sf.storm_chance([], DAY, TZ, "low", now, twc_rows=rows) == 0
+
+
+def test_twc_scattered_strong_storms_counts():
+    now = datetime(2026, 8, 4, 12, tzinfo=timezone.utc)
+    rows = [_twc(14, 90, 54, _ICON_SCATTERED_STRONG, "Scattered Strong Storms")]
+    assert sf.storm_chance([], DAY, TZ, "low", now, twc_rows=rows) == 54
+
+
+def test_twc_hours_already_past_are_ignored():
+    # Windowed exactly as the NWS side is: an 80% storm at 11:00 is history.
+    now = datetime(2026, 8, 4, 18, tzinfo=timezone.utc)     # 12:00 LST
+    rows = [_twc(11, 85, 80, _ICON_THUNDERSTORMS, "Thunderstorms"),
+            _twc(13, 90, 30, _ICON_THUNDERSTORMS, "Thunderstorms")]
+    assert sf.storm_chance([], DAY, TZ, "low", now, twc_rows=rows) == 30
+
+
+def test_twc_hours_from_another_climate_day_are_excluded():
+    now = datetime(2026, 8, 4, 12, tzinfo=timezone.utc)
+    rows = [{"time": datetime(2026, 8, 5, 14, tzinfo=_CT), "temp": 90,
+             "precip_pct": 95, "icon": _ICON_THUNDERSTORMS,
+             "phrase": "Thunderstorms"},
+            _twc(14, 88, 25, _ICON_THUNDERSTORMS, "Thunderstorms")]
+    assert sf.storm_chance([], DAY, TZ, "low", now, twc_rows=rows) == 25
+
+
+def test_a_highs_twc_window_still_ends_at_the_forecast_peak():
+    # The high/low asymmetry is a property of the window, not of the source.
+    now = datetime(2026, 8, 4, 12, tzinfo=timezone.utc)
+    rows = [_twc(14, 95, 10, _ICON_THUNDERSTORMS, "Thunderstorms"),
+            _twc(18, 88, 90, _ICON_THUNDERSTORMS, "Thunderstorms")]
+    assert sf.storm_chance([], DAY, TZ, "high", now, twc_rows=rows) == 10
+
+
+def test_twc_rows_alone_can_open_a_window_the_nws_grid_has_not():
+    # A None from the NWS side means "no hours left"; TWC having hours left
+    # must not be silently discarded by that None.
+    now = datetime(2026, 8, 4, 12, tzinfo=timezone.utc)
+    rows = [_twc(14, 90, 60, _ICON_THUNDERSTORMS, "Thunderstorms")]
+    assert sf.storm_chance([], DAY, TZ, "low", now, twc_rows=rows) == 60
+
+
+def test_storm_chance_is_none_when_neither_source_has_a_window():
+    now = datetime(2026, 8, 5, 6, tzinfo=timezone.utc)      # day already over
+    rows = [_twc(14, 90, 80, _ICON_THUNDERSTORMS, "Thunderstorms")]
+    assert sf.storm_chance([], DAY, TZ, "low", now, twc_rows=rows) is None
+
+
+def test_omitting_twc_rows_leaves_the_nws_answer_untouched():
+    # Every existing caller passes five arguments; the sixth is additive.
+    now = datetime(2026, 8, 4, 12, tzinfo=timezone.utc)
+    periods = [_hour(14, 90, 45, STORMY)]
+    assert sf.storm_chance(periods, DAY, TZ, "low", now) == 45
+    assert sf.storm_chance(periods, DAY, TZ, "low", now, twc_rows=None) == 45
+
+
+def test_a_malformed_twc_row_does_not_crash_the_gate():
+    # The feed is unofficial; a shape change must degrade to the NWS answer
+    # rather than take the whole pass down.
+    now = datetime(2026, 8, 4, 12, tzinfo=timezone.utc)
+    periods = [_hour(14, 90, 45, STORMY)]
+    rows = [{"time": None, "temp": None, "precip_pct": None},
+            {"nonsense": True}]
+    assert sf.storm_chance(periods, DAY, TZ, "low", now, twc_rows=rows) == 45
