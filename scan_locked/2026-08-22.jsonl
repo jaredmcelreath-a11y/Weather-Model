@@ -1,0 +1,1 @@
+{"ts": "2026-08-22T00:31:46.852339Z", "series": "KXLOWTNOLA", "variable": "low", "ticker": "KXLOWTNOLA-26AUG21-B79.5", "floor": 79, "cap": 80, "strike_type": "between", "label": "79\u00b0 to 80\u00b0", "side": "YES", "price": 0.54, "yes_bid": 0.33, "volume": 1447.83, "reference": 80.1, "margin": 4.0, "kind": "guarded", "hours_to_close": 5.47, "storm": 95}
