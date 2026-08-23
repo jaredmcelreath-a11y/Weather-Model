@@ -1,16 +1,5 @@
 {
   "entries": {
-    "KXHIGHTDAL-26AUG22-B104.5": {
-      "cap": 105,
-      "count": 1,
-      "day": "2026-08-22",
-      "entry_ask": 0.96,
-      "floor": 104,
-      "label": "104\u00b0 to 105\u00b0",
-      "side": "yes",
-      "ts": "2026-08-22T16:01:44.557723-05:00",
-      "variable": "high"
-    },
     "KXLOWTDAL-26AUG22-B80.5": {
       "cap": 81,
       "count": 1,
