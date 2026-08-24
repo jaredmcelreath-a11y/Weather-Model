@@ -6,3 +6,4 @@
 {"ts": "2026-08-24T21:02:24.303166+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26AUG24-B74.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
 {"ts": "2026-08-24T21:03:14.459069+00:00", "kind": "skip", "variable": "high", "reason": "resolved 69% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26AUG24-B104.5"}
 {"ts": "2026-08-24T21:03:15.630787+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26AUG24-B74.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
+{"ts": "2026-08-24T21:04:26.769057+00:00", "kind": "entry", "ticker": "KXHIGHAUS-26AUG24-B104.5", "side": "yes", "count": 1, "entry_ask": 0.8300000000000001, "stake": 0.8300000000000001, "mode": "shadow", "variable": "high", "day": "2026-08-24", "floor": 104, "cap": 105, "label": "104\u00b0 to 105\u00b0"}
