@@ -64,3 +64,4 @@
 {"ts": "2026-08-24T14:06:34.449586+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26AUG24-B108.5"}
 {"ts": "2026-08-24T14:06:35.321176+00:00", "kind": "skip", "variable": "low", "reason": "low still forming", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26AUG24-B84.5"}
 {"ts": "2026-08-24T14:11:38.121647+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26AUG24-B108.5"}
+{"ts": "2026-08-24T14:11:40.097283+00:00", "kind": "entry", "ticker": "KXLOWTDAL-26AUG24-B84.5", "side": "yes", "count": 1, "entry_ask": 0.18000000000000002, "stake": 0.18000000000000002, "mode": "shadow", "variable": "low", "day": "2026-08-24", "floor": 84, "cap": 85, "label": "84\u00b0 to 85\u00b0"}
