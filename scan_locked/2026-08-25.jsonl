@@ -1,0 +1,1 @@
+{"ts": "2026-08-25T12:01:37.464281Z", "series": "KXLOWTOKC", "variable": "low", "ticker": "KXLOWTOKC-26AUG25-B73.5", "floor": 73, "cap": 74, "strike_type": "between", "label": "73\u00b0 to 74\u00b0", "side": "YES", "price": 0.77, "yes_bid": 0.72, "volume": 2299.46, "reference": 73.4, "margin": 6.0, "kind": "guarded", "hours_to_close": 17.97, "storm": 0}
