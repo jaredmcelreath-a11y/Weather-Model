@@ -1,3 +1,15 @@
 {
-  "entries": {}
+  "entries": {
+    "KXLOWTDAL-26AUG26-B82.5": {
+      "cap": 83,
+      "count": 1,
+      "day": "2026-08-26",
+      "entry_ask": 0.26,
+      "floor": 82,
+      "label": "82\u00b0 to 83\u00b0",
+      "side": "yes",
+      "ts": "2026-08-26T07:11:19.898180-05:00",
+      "variable": "low"
+    }
+  }
 }
