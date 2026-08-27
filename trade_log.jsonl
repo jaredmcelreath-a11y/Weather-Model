@@ -903,3 +903,4 @@
 {"ts": "2026-08-27T00:02:21.297055+00:00", "kind": "hold", "ticker": "KXHIGHTDAL-26AUG26-B100.5", "variable": "high", "side": "yes", "count": 1, "entry_ask": 0.88, "current_ask": null, "current_bid": 0.99, "stop_at": 0.68, "target_ticker": "KXHIGHTDAL-26AUG26-B100.5", "mode": "shadow"}
 {"ts": "2026-08-27T00:02:23.216438+00:00", "kind": "exit", "ticker": "KXLOWTDAL-26AUG26-B80.5", "side": "yes", "count": 1, "reason": "reversal: safety gate fired", "mode": "shadow", "variable": "low", "exit_price": 0.17, "pnl": -0.15}
 {"ts": "2026-08-27T00:02:24.367171+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
+{"ts": "2026-08-27T00:02:25.402028+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26AUG26-B80.5"}
