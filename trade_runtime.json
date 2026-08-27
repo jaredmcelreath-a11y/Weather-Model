@@ -1,15 +1,3 @@
 {
-  "entries": {
-    "KXHIGHTDAL-26AUG26-B100.5": {
-      "cap": 101,
-      "count": 1,
-      "day": "2026-08-26",
-      "entry_ask": 0.88,
-      "floor": 100,
-      "label": "100\u00b0 to 101\u00b0",
-      "side": "yes",
-      "ts": "2026-08-26T16:21:11.484550-05:00",
-      "variable": "high"
-    }
-  }
+  "entries": {}
 }
