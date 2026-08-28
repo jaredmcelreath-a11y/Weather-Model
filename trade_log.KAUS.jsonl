@@ -741,3 +741,4 @@
 {"ts": "2026-08-27T23:51:29.907203+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHAUS-26AUG27-B103.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
 {"ts": "2026-08-27T23:51:30.845300+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26AUG27-B76.5"}
 {"ts": "2026-08-28T00:11:36.161135+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHAUS-26AUG27-B103.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
+{"ts": "2026-08-28T00:11:37.348805+00:00", "kind": "skip", "variable": "low", "reason": "model 72.7 vs market 77.58 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26AUG27-B78.5"}
