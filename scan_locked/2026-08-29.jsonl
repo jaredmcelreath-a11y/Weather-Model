@@ -1,0 +1,1 @@
+{"ts": "2026-08-29T02:01:15.917043Z", "series": "KXLOWTPHX", "variable": "low", "ticker": "KXLOWTPHX-26AUG28-T91", "floor": 91, "cap": null, "strike_type": "greater", "label": "92\u00b0 or above", "side": "YES", "price": 0.89, "yes_bid": 0.83, "volume": 5399.07, "reference": 93.2, "margin": 6.0, "kind": "guarded", "hours_to_close": 4.98, "storm": 17}
