@@ -1599,3 +1599,4 @@
 {"ts": "2026-08-30T00:51:24.164357+00:00", "kind": "hold", "ticker": "KXLOWTDAL-26AUG29-B78.5", "variable": "low", "side": "yes", "count": 1, "entry_ask": 0.86, "current_ask": null, "current_bid": 0.99, "stop_at": 0.66, "target_ticker": "KXLOWTDAL-26AUG29-B78.5", "mode": "shadow"}
 {"ts": "2026-08-30T00:51:25.254246+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-08-30T00:51:26.316916+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
+{"ts": "2026-08-30T11:01:29.570601+00:00", "kind": "exit", "ticker": "KXHIGHTDAL-26AUG29-B102.5", "side": "yes", "count": 1, "variable": "high", "reason": "settled won (high 103)", "exit_price": 1.0, "pnl": 0.15, "mode": "shadow"}
