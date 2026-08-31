@@ -1,0 +1,1 @@
+{"ts": "2026-08-31T06:01:12.589552Z", "series": "KXHIGHTBOS", "variable": "high", "ticker": "KXHIGHTBOS-26AUG31-T77", "floor": null, "cap": 77, "strike_type": "less", "label": "76\u00b0 or below", "side": "YES", "price": 0.87, "yes_bid": 0.86, "volume": 395.95, "reference": 73.4, "margin": 5.0, "kind": "guarded", "hours_to_close": 22.98, "storm": 0}
