@@ -2010,3 +2010,4 @@
 {"ts": "2026-09-03T18:20:52.492646+00:00", "kind": "skip", "variable": "high", "reason": "resolved 29% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26SEP03-B101.5"}
 {"ts": "2026-09-03T18:20:54.053969+00:00", "kind": "skip", "variable": "low", "reason": "model 80.0 vs market 78.31 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26SEP03-B77.5"}
 {"ts": "2026-09-03T18:21:49.030013+00:00", "kind": "skip", "variable": "high", "reason": "resolved 29% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26SEP03-B101.5"}
+{"ts": "2026-09-03T18:31:46.287852+00:00", "kind": "skip", "variable": "high", "reason": "resolved 32% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26SEP03-B101.5"}
