@@ -1980,3 +1980,4 @@
 {"ts": "2026-09-03T15:51:33.259547+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26SEP03-B99.5"}
 {"ts": "2026-09-03T15:51:35.164085+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26SEP03-B77.5", "reason": "yes price 0.07 outside [0.1,0.92)", "mode": "shadow"}
 {"ts": "2026-09-03T16:01:50.445226+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26SEP03-B99.5"}
+{"ts": "2026-09-03T16:01:52.766676+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26SEP03-B77.5"}
