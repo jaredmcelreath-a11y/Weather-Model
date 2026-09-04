@@ -1,3 +1,15 @@
 {
-  "entries": {}
+  "entries": {
+    "KXLOWTAUS-26SEP04-B77.5": {
+      "cap": 78,
+      "count": 1,
+      "day": "2026-09-04",
+      "entry_ask": 0.31,
+      "floor": 77,
+      "label": "77\u00b0 to 78\u00b0",
+      "side": "yes",
+      "ts": "2026-09-04T17:51:16.196435-05:00",
+      "variable": "low"
+    }
+  }
 }
