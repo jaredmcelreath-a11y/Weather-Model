@@ -2296,3 +2296,4 @@
 {"ts": "2026-09-04T23:51:43.984872+00:00", "kind": "skip", "variable": "low", "reason": "model 78.8 vs market 77.78 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26SEP04-B77.5"}
 {"ts": "2026-09-05T00:01:37.831184+00:00", "kind": "hold", "ticker": "KXLOWTAUS-26SEP04-B77.5", "variable": "low", "side": "yes", "count": 1, "entry_ask": 0.31, "current_ask": 0.24, "current_bid": 0.18, "stop_at": 0.11, "target_ticker": null, "mode": "shadow"}
 {"ts": "2026-09-05T00:01:39.134136+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHAUS-26SEP04-B95.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
+{"ts": "2026-09-05T00:01:40.282697+00:00", "kind": "skip", "variable": "low", "reason": "model 79.0 vs market 77.83 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26SEP04-B77.5"}
