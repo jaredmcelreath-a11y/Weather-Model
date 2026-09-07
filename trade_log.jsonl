@@ -3318,3 +3318,4 @@
 {"ts": "2026-09-07T13:51:23.832935+00:00", "kind": "skip", "variable": "low", "reason": "model 79.6 vs market 78.5 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26SEP07-B78.5"}
 {"ts": "2026-09-07T14:01:25.514193+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26SEP07-B101.5"}
 {"ts": "2026-09-07T14:01:26.872349+00:00", "kind": "skip", "variable": "low", "reason": "model 79.7 vs market 78.5 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26SEP07-B78.5"}
+{"ts": "2026-09-07T14:11:24.015402+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26SEP07-B101.5"}
