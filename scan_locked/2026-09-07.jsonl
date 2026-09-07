@@ -1,0 +1,1 @@
+{"ts": "2026-09-07T12:31:37.005201Z", "series": "KXLOWTLV", "variable": "low", "ticker": "KXLOWTLV-26SEP07-B70.5", "floor": 70, "cap": 71, "strike_type": "between", "label": "70\u00b0 to 71\u00b0", "side": "YES", "price": 0.84, "yes_bid": 0.74, "volume": 425.14, "reference": 71.1, "margin": 4.0, "kind": "guarded", "hours_to_close": 19.47, "storm": 0}
