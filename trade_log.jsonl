@@ -3615,3 +3615,4 @@
 {"ts": "2026-09-08T20:41:25.799930+00:00", "kind": "exit", "ticker": "KXHIGHTDAL-26SEP08-B101.5", "side": "yes", "count": 1, "reason": "stop-loss: ask 0.63 <= entry 0.84 - 0.20", "mode": "shadow", "variable": "high", "exit_price": 0.62, "pnl": -0.22}
 {"ts": "2026-09-08T20:41:27.597212+00:00", "kind": "skip", "variable": "high", "reason": "re-entry into just-stopped bracket", "mode": "shadow"}
 {"ts": "2026-09-08T20:41:29.304721+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTDAL-26SEP08-B80.5", "reason": "yes price 0.03 outside [0.1,0.92)", "mode": "shadow"}
+{"ts": "2026-09-08T20:51:36.018513+00:00", "kind": "entry", "ticker": "KXHIGHTDAL-26SEP08-B101.5", "side": "yes", "count": 1, "entry_ask": 0.75, "stake": 0.75, "mode": "shadow", "variable": "high", "day": "2026-09-08", "floor": 101, "cap": 102, "label": "101\u00b0 to 102\u00b0"}
