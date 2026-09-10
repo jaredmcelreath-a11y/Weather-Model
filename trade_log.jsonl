@@ -4028,3 +4028,4 @@
 {"ts": "2026-09-10T20:01:34.848344+00:00", "kind": "skip", "variable": "high", "reason": "resolved 61% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26SEP10-B99.5"}
 {"ts": "2026-09-10T20:01:37.030437+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-09-10T20:11:33.638065+00:00", "kind": "exit", "ticker": "KXLOWTDAL-26SEP10-B77.5", "side": "yes", "count": 1, "reason": "reversal: target moved to KXLOWTDAL-26SEP10-B79.5", "mode": "shadow", "variable": "low", "exit_price": 0.12, "pnl": -0.13}
+{"ts": "2026-09-10T20:11:35.080265+00:00", "kind": "skip", "variable": "high", "reason": "resolved 63% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26SEP10-B99.5"}
