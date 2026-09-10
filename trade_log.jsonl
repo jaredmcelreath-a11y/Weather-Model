@@ -4012,3 +4012,4 @@
 {"ts": "2026-09-10T19:11:25.129321+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26SEP10-B77.5"}
 {"ts": "2026-09-10T19:21:23.136389+00:00", "kind": "skip", "variable": "high", "reason": "resolved 52% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26SEP10-B99.5"}
 {"ts": "2026-09-10T19:21:25.624020+00:00", "kind": "entry", "ticker": "KXLOWTDAL-26SEP10-B77.5", "side": "yes", "count": 1, "entry_ask": 0.25, "stake": 0.25, "mode": "shadow", "variable": "low", "day": "2026-09-10", "floor": 77, "cap": 78, "label": "77\u00b0 to 78\u00b0"}
+{"ts": "2026-09-10T19:31:31.671288+00:00", "kind": "hold", "ticker": "KXLOWTDAL-26SEP10-B77.5", "variable": "low", "side": "yes", "count": 1, "entry_ask": 0.25, "current_ask": 0.22, "current_bid": 0.15, "stop_at": 0.05, "target_ticker": "KXLOWTDAL-26SEP10-B77.5", "mode": "shadow"}
