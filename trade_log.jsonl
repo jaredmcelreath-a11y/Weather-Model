@@ -3990,3 +3990,4 @@
 {"ts": "2026-09-10T18:01:31.012536+00:00", "kind": "skip", "variable": "high", "reason": "resolved 17% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26SEP10-B99.5"}
 {"ts": "2026-09-10T18:01:33.320581+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26SEP10-B77.5"}
 {"ts": "2026-09-10T18:08:09.984058+00:00", "kind": "skip", "variable": "high", "reason": "resolved 19% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26SEP10-B99.5"}
+{"ts": "2026-09-10T18:08:14.075910+00:00", "kind": "entry", "ticker": "KXLOWTDAL-26SEP10-B77.5", "side": "yes", "count": 1, "entry_ask": 0.22999999999999998, "stake": 0.22999999999999998, "mode": "shadow", "variable": "low", "day": "2026-09-10", "floor": 77, "cap": 78, "label": "77\u00b0 to 78\u00b0"}
