@@ -4215,3 +4215,4 @@
 {"ts": "2026-09-11T19:41:26.866834+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26SEP11-B77.5"}
 {"ts": "2026-09-11T19:51:10.633262+00:00", "kind": "skip", "variable": "high", "reason": "resolved 60% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26SEP11-B100.5"}
 {"ts": "2026-09-11T19:51:12.094956+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTDAL-26SEP11-B77.5", "reason": "market already settled (yes 0.95/1.00)", "mode": "shadow"}
+{"ts": "2026-09-11T20:01:33.680721+00:00", "kind": "skip", "variable": "high", "reason": "resolved 62% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26SEP11-B100.5"}
