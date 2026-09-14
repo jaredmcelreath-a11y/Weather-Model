@@ -4163,3 +4163,4 @@
 {"ts": "2026-09-14T15:41:30.673761+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26SEP14-B101.5"}
 {"ts": "2026-09-14T15:41:33.020779+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26SEP14-B77.5", "reason": "yes price 0.98 outside [0.1,0.92)", "mode": "shadow"}
 {"ts": "2026-09-14T15:51:41.139604+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26SEP14-B101.5"}
+{"ts": "2026-09-14T15:51:42.624726+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26SEP14-B77.5", "reason": "yes price 0.98 outside [0.1,0.92)", "mode": "shadow"}
