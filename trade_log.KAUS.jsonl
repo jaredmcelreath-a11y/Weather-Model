@@ -4810,3 +4810,4 @@
 {"ts": "2026-09-17T23:01:26.457968+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHAUS-26SEP17-B97.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
 {"ts": "2026-09-17T23:01:27.789135+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26SEP17-B73.5", "reason": "market already settled (yes 0.98/1.00)", "mode": "shadow"}
 {"ts": "2026-09-17T23:11:58.810164+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHAUS-26SEP17-B97.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
+{"ts": "2026-09-17T23:12:00.823585+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26SEP17-B73.5", "reason": "market already settled (yes 0.98/1.00)", "mode": "shadow"}
