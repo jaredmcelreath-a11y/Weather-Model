@@ -78,3 +78,4 @@
 {"ts": "2026-09-18T20:41:56.346616+00:00", "kind": "entry", "ticker": "KXHIGHTDAL-26SEP18-B97.5", "side": "yes", "count": 1, "entry_ask": 0.76, "stake": 0.76, "mode": "shadow", "variable": "high", "day": "2026-09-18", "floor": 97, "cap": 98, "label": "97\u00b0 to 98\u00b0"}
 {"ts": "2026-09-18T20:41:57.430993+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTDAL-26SEP18-B77.5", "reason": "market already settled (yes 0.98/1.00)", "mode": "shadow"}
 {"ts": "2026-09-18T20:51:55.097763+00:00", "kind": "hold", "ticker": "KXHIGHTDAL-26SEP18-B97.5", "variable": "high", "side": "yes", "count": 1, "entry_ask": 0.76, "current_ask": 0.72, "current_bid": 0.66, "stop_at": 0.56, "target_ticker": "KXHIGHTDAL-26SEP18-B97.5", "mode": "shadow"}
+{"ts": "2026-09-18T20:51:56.075293+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
