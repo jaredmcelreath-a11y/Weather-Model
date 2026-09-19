@@ -148,3 +148,4 @@
 {"ts": "2026-09-19T11:51:59.955009+00:00", "kind": "skip", "variable": "low", "reason": "low still forming", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26SEP19-B75.5"}
 {"ts": "2026-09-19T12:02:06.204526+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26SEP19-B97.5"}
 {"ts": "2026-09-19T12:02:07.212824+00:00", "kind": "skip", "variable": "low", "reason": "low still forming", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26SEP19-B75.5"}
+{"ts": "2026-09-19T12:12:21.107078+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26SEP19-B97.5"}
