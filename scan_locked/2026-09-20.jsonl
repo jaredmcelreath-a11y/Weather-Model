@@ -1,0 +1,1 @@
+{"ts": "2026-09-20T14:01:23.251163Z", "series": "KXLOWTATL", "variable": "low", "ticker": "KXLOWTATL-26SEP20-B71.5", "floor": 71, "cap": 72, "strike_type": "between", "label": "71\u00b0 to 72\u00b0", "side": "YES", "price": 0.89, "yes_bid": 0.78, "volume": 1517.18, "reference": 71.1, "margin": 6.0, "kind": "guarded", "hours_to_close": 14.98, "storm": 50}
