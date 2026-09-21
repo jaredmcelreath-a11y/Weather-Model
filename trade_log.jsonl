@@ -570,3 +570,4 @@
 {"ts": "2026-09-21T21:22:07.290350+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTDAL-26SEP21-B74.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
 {"ts": "2026-09-21T21:41:48.721229+00:00", "kind": "exit", "ticker": "KXHIGHTDAL-26SEP21-B96.5", "side": "yes", "count": 1, "reason": "stop-loss: ask 0.01 <= entry 0.75 - 0.20", "mode": "shadow", "variable": "high", "exit_price": 0.01, "pnl": -0.74}
 {"ts": "2026-09-21T21:41:50.207170+00:00", "kind": "skip", "variable": "high", "reason": "re-entry into just-stopped bracket", "mode": "shadow"}
+{"ts": "2026-09-21T21:41:51.635384+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26SEP21-B74.5"}
