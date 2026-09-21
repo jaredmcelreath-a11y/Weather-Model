@@ -572,3 +572,4 @@
 {"ts": "2026-09-21T21:41:50.207170+00:00", "kind": "skip", "variable": "high", "reason": "re-entry into just-stopped bracket", "mode": "shadow"}
 {"ts": "2026-09-21T21:41:51.635384+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26SEP21-B74.5"}
 {"ts": "2026-09-21T21:52:12.322961+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHTDAL-26SEP21-B96.5", "reason": "yes price 0.01 outside [0.1,0.92)", "mode": "shadow"}
+{"ts": "2026-09-21T21:52:13.964633+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26SEP21-B74.5"}
