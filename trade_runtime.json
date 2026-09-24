@@ -1,3 +1,15 @@
 {
-  "entries": {}
+  "entries": {
+    "KXLOWTDAL-26SEP24-B76.5": {
+      "cap": 77,
+      "count": 1,
+      "day": "2026-09-24",
+      "entry_ask": 0.19999999999999998,
+      "floor": 76,
+      "label": "76\u00b0 to 77\u00b0",
+      "side": "yes",
+      "ts": "2026-09-24T09:21:18.385169-05:00",
+      "variable": "low"
+    }
+  }
 }
