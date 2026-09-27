@@ -1935,3 +1935,4 @@
 {"ts": "2026-09-27T20:41:36.255191+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-09-27T20:41:38.064939+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTDAL-26SEP27-B75.5", "reason": "yes price 0.98 outside [0.1,0.92)", "mode": "shadow"}
 {"ts": "2026-09-27T20:51:48.641343+00:00", "kind": "exit", "ticker": "KXHIGHTDAL-26SEP27-B94.5", "side": "yes", "count": 1, "reason": "stop-loss: ask 0.01 <= entry 0.79 - 0.20", "mode": "shadow", "variable": "high", "exit_price": 0.01, "pnl": -0.78}
+{"ts": "2026-09-27T20:51:50.611030+00:00", "kind": "skip", "variable": "high", "reason": "model 94.7 vs market 96.67 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26SEP27-B96.5"}
