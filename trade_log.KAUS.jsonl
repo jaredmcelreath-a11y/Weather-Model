@@ -907,3 +907,4 @@
 {"ts": "2026-09-27T12:12:37.829723+00:00", "kind": "skip", "variable": "low", "reason": "low still forming", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26SEP27-B66.5"}
 {"ts": "2026-09-27T12:21:55.035882+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26SEP27-B98.5"}
 {"ts": "2026-09-27T12:21:56.419859+00:00", "kind": "skip", "variable": "low", "reason": "low still forming", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26SEP27-B66.5"}
+{"ts": "2026-09-27T12:31:55.516405+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26SEP27-B98.5"}
