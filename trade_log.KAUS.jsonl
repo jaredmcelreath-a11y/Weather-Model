@@ -1786,3 +1786,4 @@
 {"ts": "2026-10-01T19:31:54.150146+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26OCT01-B71.5"}
 {"ts": "2026-10-01T19:41:46.018804+00:00", "kind": "skip", "variable": "high", "reason": "resolved 67% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26OCT01-B87.5"}
 {"ts": "2026-10-01T19:41:47.742611+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26OCT01-B71.5"}
+{"ts": "2026-10-01T20:02:11.284850+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHAUS-26OCT01-B87.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
