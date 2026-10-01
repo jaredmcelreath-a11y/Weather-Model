@@ -2637,3 +2637,4 @@
 {"ts": "2026-10-01T19:01:57.348975+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-10-01T19:01:59.862506+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26OCT01-B69.5"}
 {"ts": "2026-10-01T19:11:42.424132+00:00", "kind": "hold", "ticker": "KXHIGHTDAL-26OCT01-B81.5", "variable": "high", "side": "yes", "count": 1, "entry_ask": 0.93, "current_ask": 0.98, "current_bid": 0.93, "stop_at": 0.73, "target_ticker": "KXHIGHTDAL-26OCT01-B81.5", "mode": "shadow"}
+{"ts": "2026-10-01T19:21:43.370079+00:00", "kind": "hold", "ticker": "KXHIGHTDAL-26OCT01-B81.5", "variable": "high", "side": "yes", "count": 1, "entry_ask": 0.93, "current_ask": null, "current_bid": 0.99, "stop_at": 0.73, "target_ticker": "KXHIGHTDAL-26OCT01-B81.5", "mode": "shadow"}
