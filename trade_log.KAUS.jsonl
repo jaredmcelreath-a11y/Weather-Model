@@ -1972,3 +1972,4 @@
 {"ts": "2026-10-02T20:21:38.872012+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26OCT02-B71.5"}
 {"ts": "2026-10-02T20:31:36.357787+00:00", "kind": "skip", "variable": "high", "reason": "resolved 64% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26OCT02-B78.5"}
 {"ts": "2026-10-02T20:31:38.222456+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26OCT02-B71.5"}
+{"ts": "2026-10-02T20:41:39.914935+00:00", "kind": "skip", "variable": "high", "reason": "resolved 67% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26OCT02-B78.5"}
