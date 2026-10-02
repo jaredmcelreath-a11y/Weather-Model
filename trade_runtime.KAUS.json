@@ -1,3 +1,15 @@
 {
-  "entries": {}
+  "entries": {
+    "KXHIGHAUS-26OCT02-B78.5": {
+      "cap": 79,
+      "count": 1,
+      "day": "2026-10-02",
+      "entry_ask": 0.74,
+      "floor": 78,
+      "label": "78\u00b0 to 79\u00b0",
+      "side": "yes",
+      "ts": "2026-10-02T15:56:34.684085-05:00",
+      "variable": "high"
+    }
+  }
 }
