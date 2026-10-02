@@ -2860,3 +2860,4 @@
 {"ts": "2026-10-02T20:01:38.161344+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26OCT02-B71.5"}
 {"ts": "2026-10-02T20:11:33.649308+00:00", "kind": "skip", "variable": "high", "reason": "model 78.7 vs market 79.77 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26OCT02-B79.5"}
 {"ts": "2026-10-02T20:11:35.444142+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26OCT02-B71.5"}
+{"ts": "2026-10-02T20:21:27.938220+00:00", "kind": "entry", "ticker": "KXHIGHTDAL-26OCT02-B79.5", "side": "yes", "count": 1, "entry_ask": 0.77, "stake": 0.77, "mode": "shadow", "variable": "high", "day": "2026-10-02", "floor": 79, "cap": 80, "label": "79\u00b0 to 80\u00b0"}
