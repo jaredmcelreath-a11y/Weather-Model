@@ -2073,3 +2073,4 @@
 {"ts": "2026-10-03T00:51:20.037691+00:00", "kind": "hold", "ticker": "KXLOWTAUS-26OCT02-B71.5", "variable": "low", "side": "yes", "count": 1, "entry_ask": 0.22999999999999998, "current_ask": 0.2, "current_bid": 0.11, "stop_at": 0.03, "target_ticker": "KXLOWTAUS-26OCT02-B71.5", "mode": "shadow"}
 {"ts": "2026-10-03T00:51:21.713944+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-10-03T00:51:23.362357+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
+{"ts": "2026-10-03T11:01:29.216663+00:00", "kind": "exit", "ticker": "KXHIGHAUS-26OCT02-B78.5", "side": "yes", "count": 1, "variable": "high", "reason": "settled won (high 79)", "exit_price": 1.0, "pnl": 0.26, "mode": "shadow"}
