@@ -2211,3 +2211,4 @@
 {"ts": "2026-10-03T21:21:32.434702+00:00", "kind": "skip", "variable": "high", "reason": "re-entry into just-stopped bracket", "mode": "shadow"}
 {"ts": "2026-10-03T21:21:34.365332+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26OCT03-B70.5"}
 {"ts": "2026-10-03T21:31:31.563781+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHAUS-26OCT03-B79.5", "reason": "yes price 0.09 outside [0.1,0.92)", "mode": "shadow"}
+{"ts": "2026-10-03T21:31:32.785081+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26OCT03-B70.5"}
