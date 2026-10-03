@@ -1,15 +1,3 @@
 {
-  "entries": {
-    "KXLOWTAUS-26OCT02-B71.5": {
-      "cap": 72,
-      "count": 1,
-      "day": "2026-10-02",
-      "entry_ask": 0.22999999999999998,
-      "floor": 71,
-      "label": "71\u00b0 to 72\u00b0",
-      "side": "yes",
-      "ts": "2026-10-02T17:21:16.227360-05:00",
-      "variable": "low"
-    }
-  }
+  "entries": {}
 }
