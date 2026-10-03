@@ -2074,3 +2074,4 @@
 {"ts": "2026-10-03T00:51:21.713944+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-10-03T00:51:23.362357+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-10-03T11:01:29.216663+00:00", "kind": "exit", "ticker": "KXHIGHAUS-26OCT02-B78.5", "side": "yes", "count": 1, "variable": "high", "reason": "settled won (high 79)", "exit_price": 1.0, "pnl": 0.26, "mode": "shadow"}
+{"ts": "2026-10-03T11:01:31.910498+00:00", "kind": "exit", "ticker": "KXLOWTAUS-26OCT02-B71.5", "side": "yes", "count": 1, "variable": "low", "reason": "settled lost (low 74)", "exit_price": 0.0, "pnl": -0.23, "mode": "shadow"}
