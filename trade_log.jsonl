@@ -3230,3 +3230,4 @@
 {"ts": "2026-10-04T15:51:11.998298+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-10-04T16:01:24.627641+00:00", "kind": "exit", "ticker": "KXLOWTDAL-26OCT04-B68.5", "side": "yes", "count": 1, "reason": "reversal: safety gate fired", "mode": "shadow", "variable": "low", "exit_price": 0.04, "pnl": -0.1}
 {"ts": "2026-10-04T16:01:25.904715+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26OCT04-B80.5"}
+{"ts": "2026-10-04T16:01:27.504372+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26OCT04-B68.5"}
