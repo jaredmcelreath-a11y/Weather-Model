@@ -2568,3 +2568,4 @@
 {"ts": "2026-10-05T21:17:08.055536+00:00", "kind": "exit", "ticker": "KXHIGHAUS-26OCT05-B87.5", "side": "yes", "count": 1, "reason": "stop-loss: ask 0.01 <= entry 0.32 - 0.20", "mode": "shadow", "variable": "high", "exit_price": 0.01, "pnl": -0.31}
 {"ts": "2026-10-05T21:17:10.229796+00:00", "kind": "skip", "variable": "high", "reason": "re-entry into just-stopped bracket", "mode": "shadow"}
 {"ts": "2026-10-05T21:17:12.264151+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26OCT05-B70.5"}
+{"ts": "2026-10-05T21:31:55.992689+00:00", "kind": "skip", "variable": "high", "reason": "model 89.6 vs market 88.5 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26OCT05-B87.5"}
