@@ -2599,3 +2599,4 @@
 {"ts": "2026-10-05T23:11:40.857785+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-10-05T23:21:43.062200+00:00", "kind": "exit", "ticker": "KXLOWTAUS-26OCT05-B70.5", "side": "yes", "count": 1, "reason": "reversal: safety gate fired", "mode": "shadow", "variable": "low", "exit_price": 0.68, "pnl": -0.08}
 {"ts": "2026-10-05T23:21:45.378665+00:00", "kind": "skip", "variable": "high", "reason": "model 89.6 vs market 88.5 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26OCT05-B87.5"}
+{"ts": "2026-10-05T23:21:47.564545+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26OCT05-B70.5"}
