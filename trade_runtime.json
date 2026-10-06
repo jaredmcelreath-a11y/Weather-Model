@@ -1,3 +1,15 @@
 {
-  "entries": {}
+  "entries": {
+    "KXHIGHTDAL-26OCT06-B85.5": {
+      "cap": 86,
+      "count": 1,
+      "day": "2026-10-06",
+      "entry_ask": 0.19999999999999998,
+      "floor": 85,
+      "label": "85\u00b0 to 86\u00b0",
+      "side": "yes",
+      "ts": "2026-10-06T14:21:17.974066-05:00",
+      "variable": "high"
+    }
+  }
 }
