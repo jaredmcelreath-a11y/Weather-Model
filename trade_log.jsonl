@@ -3724,3 +3724,4 @@
 {"ts": "2026-10-07T00:51:22.810303+00:00", "kind": "skip", "variable": "high", "reason": "model 87.8 vs market 86.5 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26OCT06-B85.5"}
 {"ts": "2026-10-07T00:51:24.840559+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTDAL-26OCT06-B62.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
 {"ts": "2026-10-07T11:01:42.257884+00:00", "kind": "exit", "ticker": "KXHIGHTDAL-26OCT06-B85.5", "side": "yes", "count": 1, "variable": "high", "reason": "settled lost (high 87)", "exit_price": 0.0, "pnl": -0.2, "mode": "shadow"}
+{"ts": "2026-10-07T11:01:43.769989+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26OCT07-B87.5"}
