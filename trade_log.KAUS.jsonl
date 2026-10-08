@@ -3223,3 +3223,4 @@
 {"ts": "2026-10-08T18:02:00.549254+00:00", "kind": "exit", "ticker": "KXLOWTAUS-26OCT08-B61.5", "side": "yes", "count": 1, "reason": "stop-loss: ask 0.01 <= entry 0.73 - 0.20", "mode": "shadow", "variable": "low", "exit_price": 0.01, "pnl": -0.72}
 {"ts": "2026-10-08T18:02:02.013338+00:00", "kind": "skip", "variable": "high", "reason": "resolved 17% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26OCT08-B92.5"}
 {"ts": "2026-10-08T18:02:03.688178+00:00", "kind": "skip", "variable": "low", "reason": "re-entry into just-stopped bracket", "mode": "shadow"}
+{"ts": "2026-10-08T18:11:34.997089+00:00", "kind": "skip", "variable": "high", "reason": "resolved 20% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26OCT08-B92.5"}
