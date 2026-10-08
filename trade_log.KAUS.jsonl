@@ -3118,3 +3118,4 @@
 {"ts": "2026-10-08T12:21:34.424077+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26OCT08-B92.5"}
 {"ts": "2026-10-08T12:21:36.638465+00:00", "kind": "skip", "variable": "low", "reason": "low still forming", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26OCT08-B61.5"}
 {"ts": "2026-10-08T12:31:35.514637+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26OCT08-B92.5"}
+{"ts": "2026-10-08T12:31:39.961222+00:00", "kind": "entry", "ticker": "KXLOWTAUS-26OCT08-B61.5", "side": "yes", "count": 1, "entry_ask": 0.73, "stake": 0.73, "mode": "shadow", "variable": "low", "day": "2026-10-08", "floor": 61, "cap": 62, "label": "61\u00b0 to 62\u00b0"}
