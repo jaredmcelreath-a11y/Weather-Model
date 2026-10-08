@@ -3959,3 +3959,4 @@
 {"ts": "2026-10-08T13:21:23.678860+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26OCT08-B89.5"}
 {"ts": "2026-10-08T13:21:27.598918+00:00", "kind": "entry", "ticker": "KXLOWTDAL-26OCT08-B64.5", "side": "yes", "count": 1, "entry_ask": 0.92, "stake": 0.92, "mode": "shadow", "variable": "low", "day": "2026-10-08", "floor": 64, "cap": 65, "label": "64\u00b0 to 65\u00b0"}
 {"ts": "2026-10-08T13:31:36.071026+00:00", "kind": "hold", "ticker": "KXLOWTDAL-26OCT08-B64.5", "variable": "low", "side": "yes", "count": 1, "entry_ask": 0.92, "current_ask": 0.97, "current_bid": 0.85, "stop_at": 0.72, "target_ticker": "KXLOWTDAL-26OCT08-B64.5", "mode": "shadow"}
+{"ts": "2026-10-08T13:31:38.203964+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26OCT08-B89.5"}
