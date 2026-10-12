@@ -4023,3 +4023,4 @@
 {"ts": "2026-10-12T21:21:38.981317+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26OCT12-B69.5", "reason": "market already settled (yes 0.98/0.99)", "mode": "shadow"}
 {"ts": "2026-10-12T21:31:45.185438+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHAUS-26OCT12-B92.5", "reason": "yes price 0.96 outside [0.1,0.92)", "mode": "shadow"}
 {"ts": "2026-10-12T21:31:47.384460+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26OCT12-B69.5", "reason": "market already settled (yes 0.98/0.99)", "mode": "shadow"}
+{"ts": "2026-10-12T21:41:46.388531+00:00", "kind": "entry", "ticker": "KXHIGHAUS-26OCT12-B92.5", "side": "yes", "count": 1, "entry_ask": 0.89, "stake": 0.89, "mode": "shadow", "variable": "high", "day": "2026-10-12", "floor": 92, "cap": 93, "label": "92\u00b0 to 93\u00b0"}
