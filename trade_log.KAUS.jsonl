@@ -4021,3 +4021,4 @@
 {"ts": "2026-10-12T21:21:34.459966+00:00", "kind": "exit", "ticker": "KXHIGHAUS-26OCT12-B90.5", "side": "yes", "count": 1, "reason": "stop-loss: ask 0.01 <= entry 0.77 - 0.20", "mode": "shadow", "variable": "high", "exit_price": 0.01, "pnl": -0.76}
 {"ts": "2026-10-12T21:21:36.571552+00:00", "kind": "skip", "variable": "high", "reason": "model 90.4 vs market 92.5 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26OCT12-B92.5"}
 {"ts": "2026-10-12T21:21:38.981317+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26OCT12-B69.5", "reason": "market already settled (yes 0.98/0.99)", "mode": "shadow"}
+{"ts": "2026-10-12T21:31:45.185438+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHAUS-26OCT12-B92.5", "reason": "yes price 0.96 outside [0.1,0.92)", "mode": "shadow"}
