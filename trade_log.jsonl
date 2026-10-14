@@ -5303,3 +5303,4 @@
 {"ts": "2026-10-14T20:01:53.439681+00:00", "kind": "hold", "ticker": "KXLOWTDAL-26OCT14-B76.5", "variable": "low", "side": "yes", "count": 1, "entry_ask": 0.19999999999999998, "current_ask": 0.08, "current_bid": 0.03, "stop_at": -0.0, "target_ticker": null, "mode": "shadow"}
 {"ts": "2026-10-14T20:01:56.245259+00:00", "kind": "skip", "variable": "high", "reason": "resolved 67% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26OCT14-B92.5"}
 {"ts": "2026-10-14T20:01:58.741546+00:00", "kind": "skip", "variable": "low", "reason": "model 78.8 vs market 77.36 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26OCT14-B76.5"}
+{"ts": "2026-10-14T20:02:55.665406+00:00", "kind": "hold", "ticker": "KXLOWTDAL-26OCT14-B76.5", "variable": "low", "side": "yes", "count": 1, "entry_ask": 0.19999999999999998, "current_ask": 0.08, "current_bid": 0.03, "stop_at": -0.0, "target_ticker": null, "mode": "shadow"}
