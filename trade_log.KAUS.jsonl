@@ -4452,3 +4452,4 @@
 {"ts": "2026-10-14T20:02:13.110361+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26OCT14-B75.5"}
 {"ts": "2026-10-14T20:03:09.344049+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHAUS-26OCT14-B95.5", "reason": "yes price 0.97 outside [0.1,0.92)", "mode": "shadow"}
 {"ts": "2026-10-14T20:03:11.471795+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26OCT14-B75.5"}
+{"ts": "2026-10-14T20:11:46.884376+00:00", "kind": "entry", "ticker": "KXHIGHAUS-26OCT14-B95.5", "side": "yes", "count": 1, "entry_ask": 0.88, "stake": 0.88, "mode": "shadow", "variable": "high", "day": "2026-10-14", "floor": 95, "cap": 96, "label": "95\u00b0 to 96\u00b0"}
