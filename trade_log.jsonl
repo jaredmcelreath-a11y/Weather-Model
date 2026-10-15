@@ -58,3 +58,4 @@
 {"ts": "2026-10-15T20:51:48.251607+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26OCT15-B66.5"}
 {"ts": "2026-10-15T21:02:04.313115+00:00", "kind": "exit", "ticker": "KXHIGHTDAL-26OCT15-B88.5", "side": "yes", "count": 1, "reason": "stop-loss: ask 0.29 <= entry 0.72 - 0.20", "mode": "shadow", "variable": "high", "exit_price": 0.24, "pnl": -0.48}
 {"ts": "2026-10-15T21:02:05.989743+00:00", "kind": "skip", "variable": "high", "reason": "model 88.4 vs market 89.95 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26OCT15-B90.5"}
+{"ts": "2026-10-15T21:02:09.862630+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26OCT15-B66.5"}
