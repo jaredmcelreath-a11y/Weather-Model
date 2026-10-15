@@ -67,3 +67,4 @@
 {"ts": "2026-10-15T21:31:42.570412+00:00", "kind": "skip", "variable": "high", "reason": "re-entry into just-stopped bracket", "mode": "shadow"}
 {"ts": "2026-10-15T21:31:44.198711+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26OCT15-B66.5"}
 {"ts": "2026-10-15T21:41:22.596043+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHTDAL-26OCT15-B90.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
+{"ts": "2026-10-15T21:41:24.234201+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26OCT15-B66.5"}
