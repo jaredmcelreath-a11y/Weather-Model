@@ -1,1 +1,2 @@
 {"ts": "2026-10-15T16:21:37.205198+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26OCT15-B66.5"}
+{"ts": "2026-10-15T16:31:24.463055+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26OCT15-B90.5"}
