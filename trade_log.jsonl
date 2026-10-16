@@ -108,3 +108,4 @@
 {"ts": "2026-10-16T00:35:05.102001+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26OCT15-B66.5"}
 {"ts": "2026-10-16T00:41:24.496521+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHTDAL-26OCT15-B90.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
 {"ts": "2026-10-16T00:41:25.583316+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26OCT15-B66.5"}
+{"ts": "2026-10-16T00:42:27.359300+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHTDAL-26OCT15-B90.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
