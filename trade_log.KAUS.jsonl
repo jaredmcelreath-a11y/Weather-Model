@@ -5020,3 +5020,4 @@
 {"ts": "2026-10-17T17:41:34.694310+00:00", "kind": "skip", "variable": "low", "reason": "model 50.7 vs market 47.67 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26OCT17-B47.5"}
 {"ts": "2026-10-17T17:51:59.942951+00:00", "kind": "skip", "variable": "high", "reason": "resolved 14% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26OCT17-B70.5"}
 {"ts": "2026-10-17T17:52:03.161392+00:00", "kind": "skip", "variable": "low", "reason": "model 50.7 vs market 47.93 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26OCT17-B47.5"}
+{"ts": "2026-10-17T18:01:32.760229+00:00", "kind": "skip", "variable": "high", "reason": "resolved 17% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26OCT17-B70.5"}
