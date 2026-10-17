@@ -5049,3 +5049,4 @@
 {"ts": "2026-10-17T20:11:25.510683+00:00", "kind": "skip", "variable": "high", "reason": "resolved 63% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26OCT17-B70.5"}
 {"ts": "2026-10-17T20:11:27.920489+00:00", "kind": "skip", "variable": "low", "reason": "model 49.9 vs market 47.82 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26OCT17-B47.5"}
 {"ts": "2026-10-17T20:21:37.616132+00:00", "kind": "entry", "ticker": "KXHIGHAUS-26OCT17-B70.5", "side": "yes", "count": 1, "entry_ask": 0.8, "stake": 0.8, "mode": "shadow", "variable": "high", "day": "2026-10-17", "floor": 70, "cap": 71, "label": "70\u00b0 to 71\u00b0"}
+{"ts": "2026-10-17T20:21:39.467343+00:00", "kind": "skip", "variable": "low", "reason": "model 50.0 vs market 47.82 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26OCT17-B47.5"}
