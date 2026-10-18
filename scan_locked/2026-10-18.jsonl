@@ -1,0 +1,1 @@
+{"ts": "2026-10-18T11:01:17.420874Z", "series": "KXLOWTSATX", "variable": "low", "ticker": "KXLOWTSATX-26OCT18-B46.5", "floor": 46, "cap": 47, "strike_type": "between", "label": "46\u00b0 to 47\u00b0", "side": "YES", "price": 0.87, "yes_bid": 0.27, "volume": 333.42, "reference": 46.4, "margin": 4.0, "kind": "guarded", "hours_to_close": 18.98, "storm": 0}
