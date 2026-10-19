@@ -5361,3 +5361,4 @@
 {"ts": "2026-10-19T00:51:28.498073+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-10-19T00:51:29.970565+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26OCT18-B42.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
 {"ts": "2026-10-19T11:01:58.909784+00:00", "kind": "exit", "ticker": "KXHIGHAUS-26OCT18-B75.5", "side": "yes", "count": 1, "variable": "high", "reason": "settled won (high 75)", "exit_price": 1.0, "pnl": 0.18, "mode": "shadow"}
+{"ts": "2026-10-19T11:02:00.578633+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26OCT19-B80.5"}
