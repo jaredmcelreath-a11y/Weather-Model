@@ -1,16 +1,5 @@
 {
   "entries": {
-    "KXHIGHTDAL-26OCT19-B77.5": {
-      "cap": 78,
-      "count": 1,
-      "day": "2026-10-19",
-      "entry_ask": 0.54,
-      "floor": 77,
-      "label": "77\u00b0 to 78\u00b0",
-      "side": "yes",
-      "ts": "2026-10-19T14:51:13.933669-05:00",
-      "variable": "high"
-    },
     "KXLOWTDAL-26OCT19-B52.5": {
       "cap": 53,
       "count": 1,
