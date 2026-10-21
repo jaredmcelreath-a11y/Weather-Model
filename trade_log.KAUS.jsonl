@@ -272,3 +272,4 @@
 {"ts": "2026-10-21T20:31:46.831444+00:00", "kind": "skip", "variable": "high", "reason": "model 84.0 vs market 85.04 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26OCT21-B85.5"}
 {"ts": "2026-10-21T20:31:48.744235+00:00", "kind": "skip", "variable": "low", "reason": "model 46.3 vs market 49.5 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26OCT21-B50.5"}
 {"ts": "2026-10-21T20:41:38.276111+00:00", "kind": "entry", "ticker": "KXHIGHAUS-26OCT21-B85.5", "side": "yes", "count": 1, "entry_ask": 0.87, "stake": 0.87, "mode": "shadow", "variable": "high", "day": "2026-10-21", "floor": 85, "cap": 86, "label": "85\u00b0 to 86\u00b0"}
+{"ts": "2026-10-21T20:41:39.559959+00:00", "kind": "skip", "variable": "low", "reason": "model 46.3 vs market 49.5 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26OCT21-B50.5"}
