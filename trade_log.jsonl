@@ -1506,3 +1506,4 @@
 {"ts": "2026-10-22T19:41:32.420584+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTDAL-26OCT22-B57.5", "reason": "market already settled (yes 0.98/0.99)", "mode": "shadow"}
 {"ts": "2026-10-22T19:51:33.444091+00:00", "kind": "skip", "variable": "high", "reason": "resolved 52% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26OCT22-B83.5"}
 {"ts": "2026-10-22T19:51:34.942117+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTDAL-26OCT22-B57.5", "reason": "market already settled (yes 0.98/0.99)", "mode": "shadow"}
+{"ts": "2026-10-22T20:02:39.138315+00:00", "kind": "entry", "ticker": "KXHIGHTDAL-26OCT22-B83.5", "side": "yes", "count": 1, "entry_ask": 0.9, "stake": 0.9, "mode": "shadow", "variable": "high", "day": "2026-10-22", "floor": 83, "cap": 84, "label": "83\u00b0 to 84\u00b0"}
