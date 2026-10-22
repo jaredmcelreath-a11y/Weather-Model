@@ -395,3 +395,4 @@
 {"ts": "2026-10-22T14:02:13.019086+00:00", "kind": "skip", "variable": "low", "reason": "model 50.5 vs market 52.47 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26OCT22-B52.5"}
 {"ts": "2026-10-22T14:11:46.848804+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26OCT22-B86.5"}
 {"ts": "2026-10-22T14:11:48.511482+00:00", "kind": "skip", "variable": "low", "reason": "model 50.5 vs market 52.47 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26OCT22-B52.5"}
+{"ts": "2026-10-22T14:21:41.269054+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26OCT22-B86.5"}
