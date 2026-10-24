@@ -1,0 +1,1 @@
+{"ts": "2026-10-24T07:01:20.548344Z", "series": "KXLOWTBOS", "variable": "low", "ticker": "KXLOWTBOS-26OCT24-T38", "floor": 38, "cap": null, "strike_type": "greater", "label": "39\u00b0 or above", "side": "YES", "price": 0.54, "yes_bid": 0.51, "volume": 390.0, "reference": 42.8, "margin": 5.0, "kind": "guarded", "hours_to_close": 21.98, "storm": 0}
