@@ -2399,3 +2399,4 @@
 {"ts": "2026-10-26T21:41:34.856699+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTDAL-26OCT26-B59.5", "reason": "yes price 0.01 outside [0.1,0.92)", "mode": "shadow"}
 {"ts": "2026-10-26T21:51:23.668149+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHTDAL-26OCT26-B80.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
 {"ts": "2026-10-26T21:51:25.916480+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTDAL-26OCT26-B59.5", "reason": "yes price 0.01 outside [0.1,0.92)", "mode": "shadow"}
+{"ts": "2026-10-26T22:01:39.393383+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHTDAL-26OCT26-B80.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
