@@ -1335,3 +1335,4 @@
 {"ts": "2026-10-26T21:14:44.357609+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26OCT26-B52.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
 {"ts": "2026-10-26T21:21:32.048891+00:00", "kind": "exit", "ticker": "KXHIGHAUS-26OCT26-B81.5", "side": "yes", "count": 1, "reason": "stop-loss: ask 0.07 <= entry 0.27 - 0.20", "mode": "shadow", "variable": "high", "exit_price": 0.05, "pnl": -0.22}
 {"ts": "2026-10-26T21:21:33.622563+00:00", "kind": "skip", "variable": "high", "reason": "re-entry into just-stopped bracket", "mode": "shadow"}
+{"ts": "2026-10-26T21:21:35.072764+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26OCT26-B52.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
