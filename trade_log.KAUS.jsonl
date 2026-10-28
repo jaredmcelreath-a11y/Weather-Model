@@ -1770,3 +1770,4 @@
 {"ts": "2026-10-28T21:21:38.010384+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-10-28T21:22:52.107404+00:00", "kind": "hold", "ticker": "KXLOWTAUS-26OCT28-B60.5", "variable": "low", "side": "yes", "count": 1, "entry_ask": 0.89, "current_ask": null, "current_bid": 0.99, "stop_at": 0.69, "target_ticker": "KXLOWTAUS-26OCT28-B60.5", "mode": "shadow"}
 {"ts": "2026-10-28T21:22:54.192708+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHAUS-26OCT28-B82.5", "reason": "yes price 0.09 outside [0.1,0.92)", "mode": "shadow"}
+{"ts": "2026-10-28T21:22:56.092679+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
