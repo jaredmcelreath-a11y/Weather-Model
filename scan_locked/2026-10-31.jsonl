@@ -1,0 +1,1 @@
+{"ts": "2026-10-31T00:01:14.784710Z", "series": "KXLOWTLV", "variable": "low", "ticker": "KXLOWTLV-26OCT30-T60", "floor": 60, "cap": null, "strike_type": "greater", "label": "61\u00b0 or above", "side": "YES", "price": 0.58, "yes_bid": 0.51, "volume": 240.89, "reference": 62.6, "margin": 4.0, "kind": "guarded", "hours_to_close": 7.98, "storm": 14}
