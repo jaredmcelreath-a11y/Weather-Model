@@ -3430,3 +3430,4 @@
 {"ts": "2026-11-01T14:01:28.999382+00:00", "kind": "exit", "ticker": "KXLOWTDAL-26NOV01-B59.5", "side": "yes", "count": 1, "reason": "reversal: safety gate fired", "mode": "shadow", "variable": "low", "exit_price": 0.99, "pnl": 0.1}
 {"ts": "2026-11-01T14:01:31.105532+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26NOV01-B81.5"}
 {"ts": "2026-11-01T14:01:33.193437+00:00", "kind": "skip", "variable": "low", "reason": "low still forming", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26NOV01-B59.5"}
+{"ts": "2026-11-01T14:11:19.926748+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26NOV01-B81.5"}
