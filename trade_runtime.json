@@ -1,15 +1,3 @@
 {
-  "entries": {
-    "KXLOWTDAL-26NOV01-B59.5": {
-      "cap": 60,
-      "count": 1,
-      "day": "2026-11-01",
-      "entry_ask": 0.89,
-      "floor": 59,
-      "label": "59\u00b0 to 60\u00b0",
-      "side": "yes",
-      "ts": "2026-11-01T06:51:17.802096-06:00",
-      "variable": "low"
-    }
-  }
+  "entries": {}
 }
