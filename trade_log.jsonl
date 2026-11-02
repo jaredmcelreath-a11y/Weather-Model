@@ -3596,3 +3596,4 @@
 {"ts": "2026-11-02T13:41:19.089827+00:00", "kind": "skip", "variable": "low", "reason": "low still forming", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26NOV02-B65.5"}
 {"ts": "2026-11-02T15:51:40.849782+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26NOV02-B83.5"}
 {"ts": "2026-11-02T15:51:43.425292+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26NOV02-B65.5"}
+{"ts": "2026-11-02T16:01:42.317861+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26NOV02-B83.5"}
