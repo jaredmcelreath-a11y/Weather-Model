@@ -3660,3 +3660,4 @@
 {"ts": "2026-11-02T20:41:36.352363+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26NOV02-B65.5"}
 {"ts": "2026-11-02T20:51:16.284100+00:00", "kind": "hold", "ticker": "KXHIGHTDAL-26NOV02-B85.5", "variable": "high", "side": "yes", "count": 1, "entry_ask": 0.64, "current_ask": 0.62, "current_bid": 0.54, "stop_at": 0.44, "target_ticker": "KXHIGHTDAL-26NOV02-B85.5", "mode": "shadow"}
 {"ts": "2026-11-02T20:51:18.442970+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
+{"ts": "2026-11-02T20:51:20.589605+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26NOV02-B65.5"}
