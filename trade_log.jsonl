@@ -3753,3 +3753,4 @@
 {"ts": "2026-11-03T01:51:27.458707+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26NOV02-B65.5"}
 {"ts": "2026-11-03T12:01:31.730269+00:00", "kind": "exit", "ticker": "KXHIGHTDAL-26NOV02-B85.5", "side": "yes", "count": 1, "variable": "high", "reason": "settled won (high 85)", "exit_price": 1.0, "pnl": 0.36, "mode": "shadow"}
 {"ts": "2026-11-03T12:01:34.038871+00:00", "kind": "skip", "variable": "high", "reason": "resolved 35% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26NOV03-B76.5"}
+{"ts": "2026-11-03T12:01:37.401626+00:00", "kind": "skip", "variable": "low", "reason": "resolved 67% < 70%", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26NOV03-B59.5"}
