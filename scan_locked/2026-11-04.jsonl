@@ -1,0 +1,1 @@
+{"ts": "2026-11-04T00:01:33.063905Z", "series": "KXLOWTMIA", "variable": "low", "ticker": "KXLOWTMIA-26NOV03-B75.5", "floor": 75, "cap": 76, "strike_type": "between", "label": "75\u00b0 to 76\u00b0", "side": "YES", "price": 0.76, "yes_bid": 0.58, "volume": 695.84, "reference": 75.9, "margin": 4.0, "kind": "guarded", "hours_to_close": 5.97, "storm": 52}
