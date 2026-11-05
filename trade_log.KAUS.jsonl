@@ -3217,3 +3217,4 @@
 {"ts": "2026-11-05T14:21:38.738358+00:00", "kind": "skip", "variable": "low", "reason": "model 50.4 vs market 51.5 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26NOV05-B51.5"}
 {"ts": "2026-11-05T14:31:39.575096+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26NOV05-B82.5"}
 {"ts": "2026-11-05T14:31:42.008735+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26NOV05-B51.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
+{"ts": "2026-11-05T14:41:43.923244+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26NOV05-B82.5"}
