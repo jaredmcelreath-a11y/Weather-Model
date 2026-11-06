@@ -4511,3 +4511,4 @@
 {"ts": "2026-11-06T22:21:22.893818+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
 {"ts": "2026-11-06T22:26:37.812627+00:00", "kind": "hold", "ticker": "KXLOWTDAL-26NOV06-B55.5", "variable": "low", "side": "yes", "count": 1, "entry_ask": 0.92, "current_ask": 0.95, "current_bid": 0.93, "stop_at": 0.72, "target_ticker": "KXLOWTDAL-26NOV06-B55.5", "mode": "shadow"}
 {"ts": "2026-11-06T22:26:40.029245+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHTDAL-26NOV06-B72.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
+{"ts": "2026-11-06T22:26:42.114041+00:00", "kind": "skip", "variable": "low", "reason": "max_open_per_variable", "mode": "shadow"}
