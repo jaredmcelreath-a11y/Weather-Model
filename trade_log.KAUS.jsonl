@@ -3870,3 +3870,4 @@
 {"ts": "2026-11-08T22:21:26.314253+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHAUS-26NOV08-B64.5", "reason": "yes price 0.06 outside [0.1,0.92)", "mode": "shadow"}
 {"ts": "2026-11-08T22:21:28.112603+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26NOV08-B56.5"}
 {"ts": "2026-11-08T22:31:31.385348+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHAUS-26NOV08-B64.5", "reason": "yes price 0.06 outside [0.1,0.92)", "mode": "shadow"}
+{"ts": "2026-11-08T22:31:33.128065+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26NOV08-B56.5"}
