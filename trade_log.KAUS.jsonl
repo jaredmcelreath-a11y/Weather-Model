@@ -4037,3 +4037,4 @@
 {"ts": "2026-11-09T21:22:04.470747+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26NOV09-B54.5"}
 {"ts": "2026-11-09T21:31:44.534601+00:00", "kind": "skip", "variable": "high", "reason": "resolved 69% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26NOV09-B64.5"}
 {"ts": "2026-11-09T21:31:47.100550+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26NOV09-B54.5"}
+{"ts": "2026-11-09T21:41:35.883693+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHAUS-26NOV09-B64.5", "reason": "yes price 0.92 outside [0.1,0.92)", "mode": "shadow"}
