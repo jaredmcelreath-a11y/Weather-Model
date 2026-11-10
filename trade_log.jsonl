@@ -5241,3 +5241,4 @@
 {"ts": "2026-11-10T16:51:57.919997+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTDAL-26NOV10-B58.5", "reason": "market already settled (yes 0.97/0.98)", "mode": "shadow"}
 {"ts": "2026-11-10T17:02:01.244252+00:00", "kind": "skip", "variable": "high", "reason": "resolved 1% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26NOV10-B76.5"}
 {"ts": "2026-11-10T17:02:04.474170+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTDAL-26NOV10-B58.5", "reason": "market already settled (yes 0.97/0.98)", "mode": "shadow"}
+{"ts": "2026-11-10T17:11:54.630821+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26NOV10-B76.5"}
