@@ -5212,3 +5212,4 @@
 {"ts": "2026-11-10T14:31:25.969770+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26NOV10-B76.5"}
 {"ts": "2026-11-10T14:31:28.679671+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTDAL-26NOV10-B58.5", "reason": "yes price 0.98 outside [0.1,0.92)", "mode": "shadow"}
 {"ts": "2026-11-10T14:41:20.537886+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26NOV10-B76.5"}
+{"ts": "2026-11-10T14:41:25.437526+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTDAL-26NOV10-B58.5", "reason": "yes price 0.98 outside [0.1,0.92)", "mode": "shadow"}
