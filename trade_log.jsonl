@@ -3,3 +3,4 @@
 {"ts": "2026-11-12T01:51:29.467559+00:00", "kind": "hold", "ticker": "KXLOWTDAL-26NOV11-B57.5", "variable": "low", "side": "yes", "count": 1, "entry_ask": 0.11, "current_ask": 0.07, "current_bid": 0.02, "stop_at": -0.09, "target_ticker": null, "mode": "shadow"}
 {"ts": "2026-11-12T01:51:30.818290+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHTDAL-26NOV11-B80.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
 {"ts": "2026-11-12T01:51:32.055413+00:00", "kind": "skip", "variable": "low", "reason": "model 60.0 vs market 58.45 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26NOV11-B57.5"}
+{"ts": "2026-11-12T12:02:22.938108+00:00", "kind": "exit", "ticker": "KXLOWTDAL-26NOV11-B57.5", "side": "yes", "count": 1, "variable": "low", "reason": "settled lost (low 60)", "exit_price": 0.0, "pnl": -0.11, "mode": "shadow"}
