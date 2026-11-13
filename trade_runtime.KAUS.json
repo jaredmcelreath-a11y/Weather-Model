@@ -1,15 +1,3 @@
 {
-  "entries": {
-    "KXLOWTAUS-26NOV12-B51.5": {
-      "cap": 52,
-      "count": 1,
-      "day": "2026-11-12",
-      "entry_ask": 0.76,
-      "floor": 51,
-      "label": "51\u00b0 to 52\u00b0",
-      "side": "yes",
-      "ts": "2026-11-12T18:51:14.242308-06:00",
-      "variable": "low"
-    }
-  }
+  "entries": {}
 }
