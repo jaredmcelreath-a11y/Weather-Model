@@ -10,17 +10,6 @@
       "side": "yes",
       "ts": "2026-11-12T15:21:12.810364-06:00",
       "variable": "high"
-    },
-    "KXLOWTAUS-26NOV12-B51.5": {
-      "cap": 52,
-      "count": 1,
-      "day": "2026-11-12",
-      "entry_ask": 0.88,
-      "floor": 51,
-      "label": "51\u00b0 to 52\u00b0",
-      "side": "yes",
-      "ts": "2026-11-12T10:21:22.235332-06:00",
-      "variable": "low"
     }
   }
 }
