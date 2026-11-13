@@ -1,16 +1,5 @@
 {
   "entries": {
-    "KXHIGHAUS-26NOV12-B77.5": {
-      "cap": 78,
-      "count": 1,
-      "day": "2026-11-12",
-      "entry_ask": 0.66,
-      "floor": 77,
-      "label": "77\u00b0 to 78\u00b0",
-      "side": "yes",
-      "ts": "2026-11-12T15:21:12.810364-06:00",
-      "variable": "high"
-    },
     "KXLOWTAUS-26NOV12-B51.5": {
       "cap": 52,
       "count": 1,
