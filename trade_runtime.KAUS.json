@@ -1,15 +1,3 @@
 {
-  "entries": {
-    "KXHIGHAUS-26NOV14-B67.5": {
-      "cap": 68,
-      "count": 1,
-      "day": "2026-11-14",
-      "entry_ask": 0.54,
-      "floor": 67,
-      "label": "67\u00b0 to 68\u00b0",
-      "side": "yes",
-      "ts": "2026-11-14T15:01:23.508575-06:00",
-      "variable": "high"
-    }
-  }
+  "entries": {}
 }
