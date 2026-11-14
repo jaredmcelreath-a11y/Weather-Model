@@ -4983,3 +4983,4 @@
 {"ts": "2026-11-14T20:41:37.835056+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26NOV14-B48.5"}
 {"ts": "2026-11-14T20:51:34.492507+00:00", "kind": "skip", "variable": "high", "reason": "resolved 69% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26NOV14-B67.5"}
 {"ts": "2026-11-14T20:51:36.982292+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26NOV14-B48.5"}
+{"ts": "2026-11-14T21:01:51.503582+00:00", "kind": "entry", "ticker": "KXHIGHAUS-26NOV14-B67.5", "side": "yes", "count": 1, "entry_ask": 0.54, "stake": 0.54, "mode": "shadow", "variable": "high", "day": "2026-11-14", "floor": 67, "cap": 68, "label": "67\u00b0 to 68\u00b0"}
