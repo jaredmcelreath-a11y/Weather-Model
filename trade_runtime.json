@@ -1,3 +1,15 @@
 {
-  "entries": {}
+  "entries": {
+    "KXHIGHTDAL-26NOV14-B62.5": {
+      "cap": 63,
+      "count": 1,
+      "day": "2026-11-14",
+      "entry_ask": 0.56,
+      "floor": 62,
+      "label": "62\u00b0 to 63\u00b0",
+      "side": "yes",
+      "ts": "2026-11-14T13:31:03.746594-06:00",
+      "variable": "high"
+    }
+  }
 }
