@@ -471,3 +471,4 @@
 {"ts": "2026-11-14T20:21:30.766827+00:00", "kind": "exit", "ticker": "KXHIGHTDAL-26NOV14-B62.5", "side": "yes", "count": 1, "reason": "reversal: target moved to KXHIGHTDAL-26NOV14-B64.5", "mode": "shadow", "variable": "high", "exit_price": 0.01, "pnl": -0.55}
 {"ts": "2026-11-14T20:21:32.571890+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHTDAL-26NOV14-B64.5", "reason": "market already settled (yes 0.97/0.98)", "mode": "shadow"}
 {"ts": "2026-11-14T20:21:34.118706+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26NOV14-B46.5"}
+{"ts": "2026-11-14T20:31:30.254380+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHTDAL-26NOV14-B64.5", "reason": "market already settled (yes 0.97/0.98)", "mode": "shadow"}
