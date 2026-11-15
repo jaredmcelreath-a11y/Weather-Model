@@ -5065,3 +5065,4 @@
 {"ts": "2026-11-15T01:00:17.787235+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26NOV14-B48.5"}
 {"ts": "2026-11-15T01:01:44.330430+00:00", "kind": "hold", "ticker": "KXHIGHAUS-26NOV14-B69.5", "variable": "high", "side": "yes", "count": 1, "entry_ask": 0.87, "current_ask": null, "current_bid": 0.99, "stop_at": 0.67, "target_ticker": null, "mode": "shadow"}
 {"ts": "2026-11-15T01:01:46.038227+00:00", "kind": "skip", "variable": "high", "reason": "model 68.0 vs market 69.5 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26NOV14-B69.5"}
+{"ts": "2026-11-15T01:01:47.914547+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26NOV14-B48.5"}
