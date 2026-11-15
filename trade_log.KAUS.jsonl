@@ -5082,3 +5082,4 @@
 {"ts": "2026-11-15T01:51:50.494023+00:00", "kind": "skip", "variable": "high", "reason": "model 68.0 vs market 69.5 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26NOV14-B69.5"}
 {"ts": "2026-11-15T01:51:53.124409+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTAUS-26NOV14-B48.5"}
 {"ts": "2026-11-15T12:01:46.692064+00:00", "kind": "exit", "ticker": "KXHIGHAUS-26NOV14-B69.5", "side": "yes", "count": 1, "variable": "high", "reason": "settled won (high 69)", "exit_price": 1.0, "pnl": 0.13, "mode": "shadow"}
+{"ts": "2026-11-15T12:01:48.972730+00:00", "kind": "skip", "variable": "high", "reason": "resolved 12% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26NOV15-B61.5"}
