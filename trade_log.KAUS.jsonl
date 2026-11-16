@@ -5384,3 +5384,4 @@
 {"ts": "2026-11-16T20:02:59.991521+00:00", "kind": "skip", "variable": "high", "reason": "resolved 54% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26NOV16-B56.5"}
 {"ts": "2026-11-16T20:03:03.985015+00:00", "kind": "entry", "ticker": "KXLOWTAUS-26NOV16-B46.5", "side": "yes", "count": 1, "entry_ask": 0.29000000000000004, "stake": 0.29000000000000004, "mode": "shadow", "variable": "low", "day": "2026-11-16", "floor": 46, "cap": 47, "label": "46\u00b0 to 47\u00b0"}
 {"ts": "2026-11-16T20:11:43.510550+00:00", "kind": "exit", "ticker": "KXLOWTAUS-26NOV16-B46.5", "side": "yes", "count": 1, "reason": "reversal: safety gate fired", "mode": "shadow", "variable": "low", "exit_price": 0.19, "pnl": -0.1}
+{"ts": "2026-11-16T20:11:46.276121+00:00", "kind": "skip", "variable": "high", "reason": "model 61.4 vs market 57.5 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26NOV16-B56.5"}
