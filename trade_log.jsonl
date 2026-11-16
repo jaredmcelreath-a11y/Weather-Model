@@ -713,3 +713,4 @@
 {"ts": "2026-11-16T01:01:29.370734+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26NOV15-B45.5"}
 {"ts": "2026-11-16T01:11:17.795007+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHTDAL-26NOV15-B50.5", "reason": "yes price 0.99 outside [0.1,0.92)", "mode": "shadow"}
 {"ts": "2026-11-16T01:11:19.837804+00:00", "kind": "skip", "variable": "low", "reason": "convective risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26NOV15-B45.5"}
+{"ts": "2026-11-16T01:21:17.014425+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHTDAL-26NOV15-B50.5", "reason": "yes price 0.99 outside [0.1,0.92)", "mode": "shadow"}
