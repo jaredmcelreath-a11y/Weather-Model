@@ -1,1 +1,2 @@
 {"ts": "2026-11-17T22:23:16.961348+00:00", "kind": "skip", "variable": "high", "reason": "max_open_per_variable", "mode": "shadow"}
+{"ts": "2026-11-17T22:23:18.468017+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26NOV17-B37.5", "reason": "market already settled (yes 0.98/0.99)", "mode": "shadow"}
