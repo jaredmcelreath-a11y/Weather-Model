@@ -1,16 +1,5 @@
 {
   "entries": {
-    "KXHIGHTDAL-26NOV16-B60.5": {
-      "cap": 61,
-      "count": 1,
-      "day": "2026-11-16",
-      "entry_ask": 0.15000000000000002,
-      "floor": 60,
-      "label": "60\u00b0 to 61\u00b0",
-      "side": "yes",
-      "ts": "2026-11-16T13:11:13.962547-06:00",
-      "variable": "high"
-    },
     "KXLOWTDAL-26NOV16-B46.5": {
       "cap": 47,
       "count": 1,
