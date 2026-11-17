@@ -5545,3 +5545,4 @@
 {"ts": "2026-11-17T20:12:48.830294+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26NOV17-B37.5", "reason": "market already settled (yes 0.98/0.99)", "mode": "shadow"}
 {"ts": "2026-11-17T20:22:54.968393+00:00", "kind": "skip", "variable": "high", "reason": "resolved 65% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26NOV17-B68.5"}
 {"ts": "2026-11-17T20:22:57.228695+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26NOV17-B37.5", "reason": "market already settled (yes 0.98/0.99)", "mode": "shadow"}
+{"ts": "2026-11-17T20:31:37.061857+00:00", "kind": "entry", "ticker": "KXHIGHAUS-26NOV17-B68.5", "side": "yes", "count": 1, "entry_ask": 0.66, "stake": 0.66, "mode": "shadow", "variable": "high", "day": "2026-11-17", "floor": 68, "cap": 69, "label": "68\u00b0 to 69\u00b0"}
