@@ -1016,3 +1016,4 @@
 {"ts": "2026-11-17T12:02:59.397518+00:00", "kind": "exit", "ticker": "KXHIGHTDAL-26NOV16-B60.5", "side": "yes", "count": 1, "variable": "high", "reason": "settled lost (high 62)", "exit_price": 0.0, "pnl": -0.15, "mode": "shadow"}
 {"ts": "2026-11-17T12:03:02.690514+00:00", "kind": "exit", "ticker": "KXLOWTDAL-26NOV16-B46.5", "side": "yes", "count": 1, "variable": "low", "reason": "settled won (low 47)", "exit_price": 1.0, "pnl": 0.33, "mode": "shadow"}
 {"ts": "2026-11-17T12:03:05.599094+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26NOV17-B65.5"}
+{"ts": "2026-11-17T12:03:07.627209+00:00", "kind": "skip", "variable": "low", "reason": "low still forming", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26NOV17-B41.5"}
