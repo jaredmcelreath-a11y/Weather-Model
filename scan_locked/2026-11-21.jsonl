@@ -1,0 +1,1 @@
+{"ts": "2026-11-21T05:15:58.043992Z", "series": "KXLOWTDEN", "variable": "low", "ticker": "KXLOWTDEN-26NOV20-B35.5", "floor": 35, "cap": 36, "strike_type": "between", "label": "35\u00b0 to 36\u00b0", "side": "YES", "price": 0.59, "yes_bid": 0.5, "volume": 1113.6, "reference": 36.0, "margin": 4.0, "kind": "guarded", "hours_to_close": 2.73, "storm": 0}
