@@ -2013,3 +2013,4 @@
 {"ts": "2026-11-22T15:41:24.616814+00:00", "kind": "skip", "variable": "high", "reason": "resolved 67% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26NOV22-B66.5"}
 {"ts": "2026-11-22T15:41:26.802116+00:00", "kind": "skip", "variable": "low", "reason": "low still forming", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26NOV22-B48.5"}
 {"ts": "2026-11-22T15:51:27.322781+00:00", "kind": "skip", "variable": "high", "reason": "resolved 67% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26NOV22-B66.5"}
+{"ts": "2026-11-22T15:51:29.513047+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26NOV22-B48.5"}
