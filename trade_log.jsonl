@@ -2082,3 +2082,4 @@
 {"ts": "2026-11-22T21:11:24.373087+00:00", "kind": "skip", "variable": "low", "reason": "low still forming", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26NOV22-B46.5"}
 {"ts": "2026-11-22T21:21:17.064126+00:00", "kind": "skip", "variable": "high", "reason": "model 67.7 vs market 66.5 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26NOV22-B66.5"}
 {"ts": "2026-11-22T21:21:18.987807+00:00", "kind": "skip", "variable": "low", "reason": "low still forming", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26NOV22-B46.5"}
+{"ts": "2026-11-22T21:31:21.727031+00:00", "kind": "skip", "variable": "high", "ticker": "KXHIGHTDAL-26NOV22-B66.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
