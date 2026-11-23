@@ -1,3 +1,15 @@
 {
-  "entries": {}
+  "entries": {
+    "KXLOWTAUS-26NOV23-B44.5": {
+      "cap": 45,
+      "count": 1,
+      "day": "2026-11-23",
+      "entry_ask": 0.39,
+      "floor": 44,
+      "label": "44\u00b0 to 45\u00b0",
+      "side": "yes",
+      "ts": "2026-11-23T14:51:13.184036-06:00",
+      "variable": "low"
+    }
+  }
 }
