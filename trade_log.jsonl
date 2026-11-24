@@ -2412,3 +2412,4 @@
 {"ts": "2026-11-24T20:11:39.432394+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26NOV24-B39.5"}
 {"ts": "2026-11-24T20:21:25.733014+00:00", "kind": "skip", "variable": "high", "reason": "resolved 48% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26NOV24-B46.5"}
 {"ts": "2026-11-24T20:21:27.745819+00:00", "kind": "skip", "variable": "low", "reason": "front risk widened", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26NOV24-B39.5"}
+{"ts": "2026-11-24T20:31:25.001137+00:00", "kind": "skip", "variable": "high", "reason": "resolved 51% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26NOV24-B46.5"}
