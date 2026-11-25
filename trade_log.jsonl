@@ -2546,3 +2546,4 @@
 {"ts": "2026-11-25T15:31:36.765837+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26NOV25-B53.5"}
 {"ts": "2026-11-25T15:31:38.612592+00:00", "kind": "skip", "variable": "low", "reason": "low still forming", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26NOV25-B33.5"}
 {"ts": "2026-11-25T15:42:01.329911+00:00", "kind": "skip", "variable": "high", "reason": "resolved 0% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHTDAL-26NOV25-B53.5"}
+{"ts": "2026-11-25T15:42:03.829524+00:00", "kind": "skip", "variable": "low", "reason": "model 34.6 vs market 33.5 disagree > 1.0\u00b0F", "mode": "shadow", "intent_ticker": "KXLOWTDAL-26NOV25-B33.5"}
