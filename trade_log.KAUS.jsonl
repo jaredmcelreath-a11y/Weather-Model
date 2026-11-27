@@ -1902,3 +1902,4 @@
 {"ts": "2026-11-27T19:11:56.041083+00:00", "kind": "skip", "variable": "high", "reason": "resolved 23% < 70%", "mode": "shadow", "intent_ticker": "KXHIGHAUS-26NOV27-B70.5"}
 {"ts": "2026-11-27T19:11:57.819121+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26NOV27-B33.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
 {"ts": "2026-11-27T19:21:56.171347+00:00", "kind": "entry", "ticker": "KXHIGHAUS-26NOV27-B70.5", "side": "yes", "count": 1, "entry_ask": 0.72, "stake": 0.72, "mode": "shadow", "variable": "high", "day": "2026-11-27", "floor": 70, "cap": 71, "label": "70\u00b0 to 71\u00b0"}
+{"ts": "2026-11-27T19:21:57.826780+00:00", "kind": "skip", "variable": "low", "ticker": "KXLOWTAUS-26NOV27-B33.5", "reason": "market already settled (yes 0.99/1.00)", "mode": "shadow"}
