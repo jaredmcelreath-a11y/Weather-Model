@@ -1,0 +1,1 @@
+{"ts": "2026-11-27T00:01:30.210189Z", "series": "KXLOWTAUS", "variable": "low", "ticker": "KXLOWTAUS-26NOV26-T32", "floor": 32, "cap": null, "strike_type": "greater", "label": "33\u00b0 or above", "side": "YES", "price": 0.89, "yes_bid": 0.85, "volume": 2944.11, "reference": 33.8, "margin": 7.0, "kind": "guarded", "hours_to_close": 6.97, "storm": 0}
